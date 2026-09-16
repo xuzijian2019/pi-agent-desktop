@@ -97,6 +97,24 @@ test("assembles Pi 0.84 deltas and reseeds the stream after reconnects", () => {
   assert.match(rpcManagerSource, /streamingMessage: this\.inner\.agent\.state\?\.streamingMessage/);
 });
 
+test("refreshes context usage between model calls without letting stale responses overwrite it", () => {
+  const reconcileSource = source.slice(
+    source.indexOf("const reconcileAgentState"),
+    source.indexOf("// Recovery net for missed SSE events"),
+  );
+  const messageEndSource = source.slice(
+    source.indexOf('case "message_end"'),
+    source.indexOf('case "tool_execution_start"'),
+  );
+
+  assert.match(messageEndSource, /completed\.role === "assistant"[\s\S]*?refreshContextUsage\(sid\)/);
+  assert.match(reconcileSource, /applyContextUsage\(state, sid, sessionGeneration, runId, usageRequestId\)/);
+  assert.ok(reconcileSource.indexOf("applyContextUsage(state") < reconcileSource.indexOf("if (busy || !agentRunningRef.current) return"));
+  assert.match(source, /requestId !== contextUsageRequestIdRef\.current/);
+  assert.match(source, /sessionGenerationRef\.current !== generation/);
+  assert.match(source, /promptRunIdRef\.current !== runId/);
+});
+
 test("keeps live following cancellable when the user scrolls away from the tail", () => {
   const streamUpdateSource = source.slice(
     source.indexOf('case "message_start"'),

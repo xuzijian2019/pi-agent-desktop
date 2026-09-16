@@ -442,6 +442,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevelOption>("auto");
   const [retryInfo, setRetryInfo] = useState<{ attempt: number; maxAttempts: number; errorMessage?: string } | null>(null);
   const [contextUsage, setContextUsage] = useState<{ percent: number | null; contextWindow: number; tokens: number | null } | null>(null);
+  const contextUsageRequestIdRef = useRef(0);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [forkingEntryId, setForkingEntryId] = useState<string | null>(null);
   const [currentModelOverride, setCurrentModelOverride] = useState<{ provider: string; modelId: string } | null>(null);
@@ -543,6 +544,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       contextLoadIdRef.current += 1;
       toolsLoadIdRef.current += 1;
       sessionGenerationRef.current += 1;
+      contextUsageRequestIdRef.current += 1;
       agentRunningRef.current = false;
       bashRunningRef.current = false;
       initialScrollDoneRef.current = false;
@@ -1185,14 +1187,43 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [loadSession]);
 
+  const applyContextUsage = useCallback((
+    state: AgentStateResponse | undefined,
+    sid: string,
+    generation: number,
+    runId: number,
+    requestId: number,
+  ) => {
+    if (
+      sessionIdRef.current !== sid
+      || sessionGenerationRef.current !== generation
+      || promptRunIdRef.current !== runId
+      || requestId !== contextUsageRequestIdRef.current
+    ) return;
+    if (state?.contextUsage !== undefined) setContextUsage(state.contextUsage ?? null);
+  }, []);
+
+  const refreshContextUsage = useCallback(async (sid: string) => {
+    const generation = sessionGenerationRef.current;
+    const runId = promptRunIdRef.current;
+    const requestId = ++contextUsageRequestIdRef.current;
+    try {
+      const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
+      if (!res.ok) return;
+      const data = await res.json() as { state?: AgentStateResponse };
+      applyContextUsage(data.state, sid, generation, runId, requestId);
+    } catch {
+      // The next message or state reconciliation can refresh usage.
+    }
+  }, [applyContextUsage]);
+
   // Reconcile client streaming state with the server. When SSE events are
-  // missed (network drop, mobile tab backgrounded, half-open connection),
-  // agent_end never arrives and the UI stays in streaming state forever.
-  // If the server reports idle while we still think it's running, finish
-  // through the same settlement path used by non-streaming prompts.
+  // missed, an idle response finishes the run; busy responses still update usage.
   const reconcileAgentState = useCallback(async (sid: string) => {
     if (!agentRunningRef.current) return;
     const runId = promptRunIdRef.current;
+    const sessionGeneration = sessionGenerationRef.current;
+    const usageRequestId = ++contextUsageRequestIdRef.current;
     try {
       const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
       if (!res.ok) return;
@@ -1200,8 +1231,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // A slow response can straddle a run boundary (previous run finished
       // and the user already started the next one while this request was in
       // flight) — everything in it is stale, drop it.
-      if (promptRunIdRef.current !== runId) return;
+      if (promptRunIdRef.current !== runId || sessionGenerationRef.current !== sessionGeneration || sessionIdRef.current !== sid) return;
       const state = data.state;
+      applyContextUsage(state, sid, sessionGeneration, runId, usageRequestId);
       // Mirror compaction state unconditionally: a missed compaction_end
       // would otherwise leave the "Stop compaction" UI stuck. No state
       // (wrapper destroyed) means nothing is compacting.
@@ -1212,7 +1244,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (state?.isStreaming) seedStreamingSnapshot(state.streamingMessage);
       if (busy || !agentRunningRef.current) return;
       if (state) {
-        if (state.contextUsage !== undefined) setContextUsage(state.contextUsage ?? null);
         if (state.systemPrompt !== undefined) setSystemPrompt(state.systemPrompt ?? null);
         if (state.extensionStatuses !== undefined) setExtensionStatuses(state.extensionStatuses ?? []);
         if (state.extensionWidgets !== undefined) setExtensionWidgets(state.extensionWidgets ?? []);
@@ -1221,7 +1252,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } catch {
       // Network still down — the next poll / visibility / online tick retries.
     }
-  }, [finishPromptWithoutStream, seedStreamingSnapshot]);
+  }, [applyContextUsage, finishPromptWithoutStream, seedStreamingSnapshot]);
 
   // Recovery net for missed SSE events: while the agent is running, verify
   // against the server periodically and whenever the tab returns to the
@@ -1273,6 +1304,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           const sid = sessionIdRef.current;
           const sessionGeneration = sessionGenerationRef.current;
           const runId = promptRunIdRef.current;
+          const usageRequestId = ++contextUsageRequestIdRef.current;
           void loadSession(sid);
           fetch(`/api/agent/${encodeURIComponent(sid)}`)
             .then((r) => {
@@ -1285,7 +1317,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
                 || sessionGenerationRef.current !== sessionGeneration
                 || promptRunIdRef.current !== runId
               ) return;
-              if (d.state?.contextUsage !== undefined) setContextUsage(d.state.contextUsage ?? null);
+              applyContextUsage(d.state, sid, sessionGeneration, runId, usageRequestId);
               if (d.state?.systemPrompt !== undefined) setSystemPrompt(d.state.systemPrompt ?? null);
               if (d.state?.extensionStatuses !== undefined) setExtensionStatuses(d.state.extensionStatuses ?? []);
               if (d.state?.extensionWidgets !== undefined) setExtensionWidgets(d.state.extensionWidgets ?? []);
@@ -1410,6 +1442,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           });
         } else if (completed) {
           setMessages((prev) => [...prev, normalizeToolCalls(completed)]);
+          if (completed.role === "assistant") {
+            const sid = sessionIdRef.current;
+            if (sid) void refreshContextUsage(sid);
+          }
         }
         dispatch({ type: "reset" });
         setAgentPhase({ kind: "waiting_model" });
@@ -1468,7 +1504,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         handleExtensionUiRequest(event as ExtensionUiRequest);
         break;
     }
-  }, [addNotice, cancelEventStreamGrace, dispatch, handleExtensionUiRequest, loadSession, notifyPromptStage, onAgentEnd, scheduleEventStreamClose, scrollToBottom, seedStreamingSnapshot, settleUiStage]);
+  }, [addNotice, applyContextUsage, cancelEventStreamGrace, dispatch, handleExtensionUiRequest, loadSession, notifyPromptStage, onAgentEnd, refreshContextUsage, scheduleEventStreamClose, scrollToBottom, seedStreamingSnapshot, settleUiStage]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
