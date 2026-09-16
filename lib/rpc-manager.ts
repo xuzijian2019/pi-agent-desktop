@@ -113,10 +113,11 @@ const EDIT_TOOL_PRIORITY_INSTRUCTION = "For file changes, use the edit tool firs
 class PlainTextTheme extends Theme {
   constructor() {
     super(
-      // Pi 0.84 derives searchMatchText from text during construction, even
-      // though this headless theme overrides every color operation.
-      { thinkingXhigh: "", text: "" } as ConstructorParameters<typeof Theme>[0],
-      // Pi 0.84 derives scrollbarThumb from selectedBg during construction,
+      // Pi derives searchMatchText/scrollbarThumb/scrollbarTrack from
+      // text/thinkingXhigh/muted during construction, even though this
+      // headless theme overrides every color operation.
+      { thinkingXhigh: "", text: "", muted: "" } as ConstructorParameters<typeof Theme>[0],
+      // Pi derives searchMatchBg from selectedBg during construction,
       // even though this headless theme overrides every color operation.
       { selectedBg: "" } as ConstructorParameters<typeof Theme>[1],
       "truecolor",
