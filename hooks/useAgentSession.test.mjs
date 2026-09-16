@@ -5,7 +5,6 @@ import test from "node:test";
 const source = await readFile(new URL("./useAgentSession.ts", import.meta.url), "utf8");
 const chatWindowSource = await readFile(new URL("../components/ChatWindow.tsx", import.meta.url), "utf8");
 const nativeThemeSource = await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8");
-const promptAnchorSource = await readFile(new URL("../components/prompt-anchor.ts", import.meta.url), "utf8");
 const rpcManagerSource = await readFile(new URL("../lib/rpc-manager.ts", import.meta.url), "utf8");
 
 test("keeps the session event stream open through the idle grace window", () => {
@@ -115,7 +114,7 @@ test("refreshes context usage between model calls without letting stale response
   assert.match(source, /promptRunIdRef\.current !== runId/);
 });
 
-test("keeps live following cancellable when the user scrolls away from the tail", () => {
+test("follows committed streaming content until the user scrolls away", () => {
   const streamUpdateSource = source.slice(
     source.indexOf('case "message_start"'),
     source.indexOf('case "message_end"'),
@@ -125,39 +124,53 @@ test("keeps live following cancellable when the user scrolls away from the tail"
     source.indexOf("// Load session on mount"),
   );
 
-  assert.match(source, /const liveFollowFrameRef = useRef<number \| null>\(null\)/);
-  assert.match(streamUpdateSource, /liveFollowFrameRef\.current === null/);
-  assert.match(streamUpdateSource, /requestAnimationFrame\(\(\) => \{[\s\S]*?liveFollowFrameRef\.current = null;[\s\S]*?if \(isNearBottomRef\.current\) scrollToBottom\("auto"\)/);
-  assert.match(scrollHandlerSource, /cancelAnimationFrame\(liveFollowFrameRef\.current\)/);
+  assert.doesNotMatch(streamUpdateSource, /requestAnimationFrame/);
+  assert.match(scrollHandlerSource, /userScrollIntentUntilRef\.current/);
+  assert.match(source, /userScrollIntentUntilRef\.current = Date\.now\(\) \+ USER_SCROLL_INTENT_MS;\s*ignoreProgrammaticScrollUntilRef\.current = 0/);
+  assert.match(scrollHandlerSource, /isNearBottomRef\.current =/);
+  assert.match(chatWindowSource, /new ResizeObserver\(followTail\)/);
 });
 
-test("keeps a newly sent user message at the top while its response starts", () => {
-  const streamUpdateSource = source.slice(
-    source.indexOf('case "message_start"'),
-    source.indexOf('case "message_end"'),
-  );
-  const userScrollSource = source.slice(
-    source.indexOf("const scrollUserMsgToTop"),
-    source.indexOf("const markUserScrollIntent"),
-  );
-  const scrollEffectSource = source.slice(
-    source.indexOf("useLayoutEffect(() => {\n    if (messages.length > 0)"),
-    source.indexOf("// Load model list"),
-  );
+test("starts each prompt at the tail without pinning the user message", () => {
+  assert.match(source, /isNearBottomRef\.current = true;\s*setMessages\(\(prev\) => \[\.\.\.prev, userMsg\]\)/);
+  assert.doesNotMatch(source, /pendingScrollToUserRef|scrollUserMsgToTop|promptAnchorActive/);
+  assert.doesNotMatch(chatWindowSource, /promptAnchorSpacerHeight|chatColumnRef|lastUserMsgRef/);
+});
 
-  assert.match(streamUpdateSource, /!pendingScrollToUserRef\.current && isNearBottomRef\.current/);
-  assert.match(source, /const \[promptAnchorActive, setPromptAnchorActive\] = useState\(false\)/);
-  assert.match(source, /pendingScrollToUserRef\.current = true;\s*setPromptAnchorActive\(true\)/);
-  assert.match(userScrollSource, /const targetTop = Math\.min\(Math\.max\(0, elAbsTop - 16\), maxScrollTop\)/);
-  assert.match(userScrollSource, /cancelAnimationFrame\(liveFollowFrameRef\.current\)/);
-  assert.match(userScrollSource, /isNearBottomRef\.current = targetTop >= maxScrollTop - SCROLL_BOTTOM_THRESHOLD/);
-  assert.match(userScrollSource, /container\.scrollTo\(\{ top: targetTop, behavior: "smooth" \}\)/);
-  assert.match(scrollEffectSource, /pendingScrollToUserRef\.current = false;[\s\S]*?scrollUserMsgToTop\(\)/);
-  assert.match(promptAnchorSource, /scrollHeight - currentHeight - viewportHeight/);
-  assert.match(promptAnchorSource, /Math\.ceil\(targetTop - maxScrollTopWithoutAnchor\)/);
-  assert.match(chatWindowSource, /new ResizeObserver\(scheduleMeasurement\)/);
-  assert.match(chatWindowSource, /frame = requestAnimationFrame\(/);
-  assert.match(chatWindowSource, /<div aria-hidden="true" style=\{\{ height: promptAnchorSpacerHeight \}\} \/>/);
+test("pages older chat messages without flashing the restored viewport", () => {
+  const observerSource = chatWindowSource.slice(
+    chatWindowSource.indexOf("IntersectionObserver on the sentinel"),
+    chatWindowSource.indexOf("Push session stats up to AppShell"),
+  );
+  assert.match(observerSource, /if \(!container \|\| loading\) return/);
+  assert.match(observerSource, /setSentinelNode/);
+  assert.match(observerSource, /useLayoutEffect\(\(\) => \{/);
+  assert.match(observerSource, /restoreScrollTop\(container\.scrollHeight, prevScrollDistanceRef\.current\)/);
+  assert.doesNotMatch(observerSource, /\[visibleCount, messages\.length, scrollContainerRef\]/);
+  assert.match(chatWindowSource, /ref=\{setSentinelNode\}/);
+});
+
+test("scrolls the chat container directly instead of using scrollIntoView", () => {
+  const scrollToBottomSource = source.slice(
+    source.indexOf("const scrollToBottom = useCallback"),
+    source.indexOf("// Parent switched the active session"),
+  );
+  assert.doesNotMatch(scrollToBottomSource, /scrollIntoView/);
+  assert.match(scrollToBottomSource, /scrollContainerRef\.current/);
+  assert.match(scrollToBottomSource, /scrollHeight - container\.clientHeight/);
+  assert.match(scrollToBottomSource, /container\.scrollTop = top/);
+});
+
+test("hands off live messages to completed messages without an empty phase", () => {
+  const messageEndSource = source.slice(
+    source.indexOf('case "message_end"'),
+    source.indexOf('case "tool_execution_start"'),
+  );
+  assert.match(chatWindowSource, /key="streaming-live"/);
+  assert.match(messageEndSource, /setMessages\(/);
+  assert.match(messageEndSource, /dispatch\(\{ type: "reset" \}\)/);
+  assert.match(messageEndSource, /setAgentPhase\(null\)/);
+  assert.doesNotMatch(messageEndSource, /waiting_model/);
 });
 
 test("sizes the message tail from the rendered bottom composer", () => {

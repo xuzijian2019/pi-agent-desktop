@@ -451,7 +451,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [compactError, setCompactError] = useState<string | null>(null);
   const [compactResult, setCompactResult] = useState<CompactResultInfo | null>(null);
   const [agentPhase, setAgentPhase] = useState<AgentPhase>(null);
-  const [promptAnchorActive, setPromptAnchorActive] = useState(false);
   const [slashCommands, setSlashCommands] = useState<SlashCommandInfo[]>([]);
   const [slashCommandsLoading, setSlashCommandsLoading] = useState(false);
   const [noticeState, dispatchNotice] = useReducer(noticeReducer, { visible: [], pending: [] });
@@ -484,11 +483,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleAgentEventRef = useRef<((event: AgentEvent) => void) | null>(null);
   const initialScrollDoneRef = useRef(false);
   const pendingInitialScrollTopRef = useRef<number | null>(null);
-  const lastUserMsgRef = useRef<HTMLDivElement | null>(null);
-  const pendingScrollToUserRef = useRef(false);
   const completionScrollAllowedRef = useRef(true);
   const isNearBottomRef = useRef(true);
-  const liveFollowFrameRef = useRef<number | null>(null);
   const executeBashRef = useRef<(command: string, excludeFromContext: boolean) => Promise<void> | undefined>(undefined);
   const userScrollIntentUntilRef = useRef(0);
   const ignoreProgrammaticScrollUntilRef = useRef(0);
@@ -504,8 +500,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const setToolPresetState = opts.setToolPreset ?? setToolPreset;
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
     ignoreProgrammaticScrollUntilRef.current = Date.now() + PROGRAMMATIC_SCROLL_IGNORE_MS;
-    messagesEndRef.current?.scrollIntoView({ behavior });
+    const top = Math.max(0, container.scrollHeight - container.clientHeight);
+    if (behavior === "smooth") container.scrollTo({ top, behavior: "smooth" });
+    else container.scrollTop = top;
   }, []);
 
   // Parent switched the active session without remounting. Reset chat state in
@@ -548,7 +548,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       agentRunningRef.current = false;
       bashRunningRef.current = false;
       initialScrollDoneRef.current = false;
-      pendingScrollToUserRef.current = false;
+      isNearBottomRef.current = true;
       completionScrollAllowedRef.current = true;
       optimisticUserMessageKeyRef.current = null;
       dispatch({ type: "reset" });
@@ -1404,16 +1404,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           }
         }
         setAgentPhase(null);
-        // Live-follow the streaming output only when the user is already near
-        // the bottom of the message list. If they scrolled up, leave them there.
-        if (!pendingScrollToUserRef.current && isNearBottomRef.current && liveFollowFrameRef.current === null) {
-          // Defer the scroll so React has time to update the DOM with the new
-          // streaming content; otherwise scrollIntoView may target stale layout.
-          liveFollowFrameRef.current = requestAnimationFrame(() => {
-            liveFollowFrameRef.current = null;
-            if (isNearBottomRef.current) scrollToBottom("auto");
-          });
-        }
         break;
       }
       case "message_end": {
@@ -1448,7 +1438,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           }
         }
         dispatch({ type: "reset" });
-        setAgentPhase({ kind: "waiting_model" });
+        setAgentPhase(null);
         break;
       }
       case "tool_execution_start": {
@@ -1504,7 +1494,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         handleExtensionUiRequest(event as ExtensionUiRequest);
         break;
     }
-  }, [addNotice, applyContextUsage, cancelEventStreamGrace, dispatch, handleExtensionUiRequest, loadSession, notifyPromptStage, onAgentEnd, refreshContextUsage, scheduleEventStreamClose, scrollToBottom, seedStreamingSnapshot, settleUiStage]);
+  }, [addNotice, applyContextUsage, cancelEventStreamGrace, dispatch, handleExtensionUiRequest, loadSession, notifyPromptStage, onAgentEnd, refreshContextUsage, scheduleEventStreamClose, seedStreamingSnapshot, settleUiStage]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
@@ -1534,6 +1524,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         : message,
       timestamp: Date.now(),
     };
+    isNearBottomRef.current = true;
     setMessages((prev) => [...prev, userMsg]);
     optimisticUserMessageKeyRef.current = userMessageKey(userMsg);
     promptRunIdRef.current = promptRunId;
@@ -1541,8 +1532,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setAgentRunning(true);
     setAgentPhase(isSlashCommandPrompt ? { kind: "running_command" } : { kind: "waiting_model" });
     dispatch({ type: "start" });
-    pendingScrollToUserRef.current = true;
-    setPromptAnchorActive(true);
     completionScrollAllowedRef.current = true;
 
     const piImages = images?.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
@@ -1617,8 +1606,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       optimisticUserMessageKeyRef.current = null;
       setAgentRunning(false);
       setAgentPhase(null);
-      pendingScrollToUserRef.current = false;
-      setPromptAnchorActive(false);
       dispatch({ type: "end" });
     }
   }, [isNew, newSessionCwd, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, cancelEventStreamGrace, closeEvents, dispatch, opts.chatInputRef]);
@@ -1974,55 +1961,27 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [setToolPresetState]);
 
-  const scrollUserMsgToTop = useCallback(() => {
-    const container = scrollContainerRef.current;
-    const el = lastUserMsgRef.current;
-    if (!container || !el) return;
-    const elAbsTop = el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop;
-    const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
-    const targetTop = Math.min(Math.max(0, elAbsTop - 16), maxScrollTop);
-
-    if (liveFollowFrameRef.current !== null) {
-      cancelAnimationFrame(liveFollowFrameRef.current);
-      liveFollowFrameRef.current = null;
-    }
-    // A smooth scroll reports its position after the first streaming event can
-    // arrive, so update the tail state before the browser emits that event.
-    isNearBottomRef.current = targetTop >= maxScrollTop - SCROLL_BOTTOM_THRESHOLD;
-    ignoreProgrammaticScrollUntilRef.current = Date.now() + PROGRAMMATIC_SCROLL_IGNORE_MS;
-    container.scrollTo({ top: targetTop, behavior: "smooth" });
-  }, []);
-
   const markUserScrollIntent = useCallback((event: Event) => {
     if (event instanceof KeyboardEvent) {
       if (!SCROLL_KEYS.has(event.key)) return;
       if (event.target instanceof Element && event.target.closest("input, textarea, [contenteditable='true']")) return;
     }
     userScrollIntentUntilRef.current = Date.now() + USER_SCROLL_INTENT_MS;
+    ignoreProgrammaticScrollUntilRef.current = 0;
   }, []);
 
   const handleScrollPositionChange = useCallback(() => {
-    const container = scrollContainerRef.current;
-    if (container) {
-      const { scrollTop, clientHeight, scrollHeight } = container;
-      isNearBottomRef.current = scrollTop + clientHeight >= scrollHeight - SCROLL_BOTTOM_THRESHOLD;
-      if (!isNearBottomRef.current && liveFollowFrameRef.current !== null) {
-        cancelAnimationFrame(liveFollowFrameRef.current);
-        liveFollowFrameRef.current = null;
-      }
-    }
-    if (!agentRunningRef.current) return;
     if (Date.now() < ignoreProgrammaticScrollUntilRef.current) return;
     if (Date.now() > userScrollIntentUntilRef.current) return;
-    completionScrollAllowedRef.current = false;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const { scrollTop, clientHeight, scrollHeight } = container;
+    isNearBottomRef.current = scrollTop + clientHeight >= scrollHeight - SCROLL_BOTTOM_THRESHOLD;
+    if (agentRunningRef.current && !isNearBottomRef.current) completionScrollAllowedRef.current = false;
   }, []);
 
   // Close SSE / invalidate in-flight work when ChatWindow unmounts.
   useEffect(() => () => {
-    if (liveFollowFrameRef.current !== null) {
-      cancelAnimationFrame(liveFollowFrameRef.current);
-      liveFollowFrameRef.current = null;
-    }
     bashRecoveryIdRef.current += 1;
     promptRunIdRef.current += 1;
     cancelEventStreamGrace();
@@ -2155,17 +2114,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     };
   }, [messages.length, loading, handleScrollPositionChange, markUserScrollIntent]);
 
-  useEffect(() => {
-    if (!agentRunning) setPromptAnchorActive(false);
-  }, [agentRunning]);
-
   useLayoutEffect(() => {
     if (messages.length > 0) {
-      if (pendingScrollToUserRef.current) {
-        pendingScrollToUserRef.current = false;
-        initialScrollDoneRef.current = true;
-        scrollUserMsgToTop();
-      } else if (!initialScrollDoneRef.current) {
+      if (!initialScrollDoneRef.current) {
         initialScrollDoneRef.current = true;
         const savedScrollTop = pendingInitialScrollTopRef.current;
         pendingInitialScrollTopRef.current = null;
@@ -2174,13 +2125,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         } else {
           ignoreProgrammaticScrollUntilRef.current = Date.now() + PROGRAMMATIC_SCROLL_IGNORE_MS;
           const container = scrollContainerRef.current;
-          if (container) container.scrollTop = savedScrollTop;
+          if (container) {
+            container.scrollTop = savedScrollTop;
+            isNearBottomRef.current = container.scrollTop + container.clientHeight >= container.scrollHeight - SCROLL_BOTTOM_THRESHOLD;
+          }
         }
       } else if (!agentRunningRef.current && (completionScrollAllowedRef.current || isNearBottomRef.current)) {
-        scrollToBottom("smooth");
+        scrollToBottom("auto");
       }
     }
-  }, [messages.length, agentRunning, scrollToBottom, scrollUserMsgToTop]);
+  }, [messages.length, agentRunning, scrollToBottom]);
 
   // Load model list
   useEffect(() => {
@@ -2229,11 +2183,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     isAutoModelSelection: isNew && newSessionModel === null,
     agentPhase,
     isNew,
-    promptAnchorActive,
+    isNearBottomRef,
     addNotice,
     // Refs
     sessionIdRef, eventSourceRef, messagesEndRef, scrollContainerRef,
-    lastUserMsgRef, pendingScrollToUserRef, initialScrollDoneRef,
+    initialScrollDoneRef,
     // Actions
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
@@ -2241,7 +2195,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     handleRecallQueue,
     handleBuiltinSlashCommand, retryLoad,
     handleToolPresetChange, handleThinkingLevelChange, loadTools, loadSlashCommands, setActiveLeafId, setData, setMessages,
-    scrollToBottom, scrollUserMsgToTop,
+    scrollToBottom,
     dispatch, setAgentRunning, setForkingEntryId,
     bashRunning, pendingBash,
     // Subscriptions

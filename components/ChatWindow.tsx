@@ -22,7 +22,6 @@ import {
   VISIBLE_PAGE_SIZE,
 } from "@/lib/chat-lazy-load";
 import { sessionVisibleCounts } from "@/lib/scroll-memory";
-import { nextPromptAnchorSpacerHeight } from "./prompt-anchor";
 
 interface Props {
   session: SessionInfo | null;
@@ -257,13 +256,13 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     addNotice,
     isNew,
     sessionIdRef, messagesEndRef, scrollContainerRef,
-    lastUserMsgRef, promptAnchorActive,
+    isNearBottomRef,
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     dismissModelScopeWarnings,
     handleRecallQueue,
     handleBuiltinSlashCommand, retryLoad,
-    handleToolPresetChange, handleThinkingLevelChange, loadSlashCommands, scrollToBottom, scrollUserMsgToTop,
+    handleToolPresetChange, handleThinkingLevelChange, loadSlashCommands, scrollToBottom,
   } = useAgentSession({
     session, newSessionCwd, onAgentEnd: wrappedOnAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
@@ -317,7 +316,9 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   const [visibleCount, setVisibleCount] = useState(
     () => (lazyLoadSessionKey != null ? sessionVisibleCounts.get(lazyLoadSessionKey) : undefined) ?? VISIBLE_PAGE_SIZE,
   );
-  const sentinelRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const lazyLoadObserverRef = useRef<IntersectionObserver | null>(null);
+  const lazyLoadPagingRef = useRef(false);
   const prevScrollDistanceRef = useRef<number | null>(null);
 
   const selectConversationTurn = useCallback((turnIndex: number) => {
@@ -346,6 +347,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       if (visibleCount > VISIBLE_PAGE_SIZE) sessionVisibleCounts.set(prevKey, visibleCount);
       else sessionVisibleCounts.delete(prevKey);
     }
+    prevScrollDistanceRef.current = null;
+    lazyLoadPagingRef.current = false;
     setVisibleCount((lazyLoadSessionKey != null ? sessionVisibleCounts.get(lazyLoadSessionKey) : undefined) ?? VISIBLE_PAGE_SIZE);
   }, [lazyLoadSessionKey, visibleCount]);
 
@@ -362,32 +365,52 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
   // IntersectionObserver on the sentinel div at the top of the message list.
   // When it becomes visible, load the next page of older messages.
+  // Do not recreate this on messages.length: stream commits would re-observe
+  // and can false-intersect, flashing the viewport to the prepended top.
+  const setSentinelNode = useCallback((node: HTMLDivElement | null) => {
+    const previous = sentinelRef.current;
+    sentinelRef.current = node;
+    const observer = lazyLoadObserverRef.current;
+    if (!observer || previous === node) return;
+    if (previous) observer.unobserve(previous);
+    if (node) observer.observe(node);
+  }, []);
   useEffect(() => {
-    const sentinel = sentinelRef.current;
     const container = scrollContainerRef.current;
-    if (!sentinel || !container) return;
+    if (!container || loading) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting) {
-          // Save distance from top before prepending to restore scroll later
-          prevScrollDistanceRef.current = captureScrollDistance(container.scrollHeight, container.scrollTop);
-          setVisibleCount((prev) => getNextVisibleCount(prev));
-        }
+        if (!entries[0]?.isIntersecting || lazyLoadPagingRef.current) return;
+        lazyLoadPagingRef.current = true;
+        prevScrollDistanceRef.current = captureScrollDistance(container.scrollHeight, container.scrollTop);
+        setVisibleCount((prev) => getNextVisibleCount(prev));
       },
       { root: container, threshold: 0 }
     );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [visibleCount, messages.length, scrollContainerRef]);
+    lazyLoadObserverRef.current = observer;
+    if (sentinelRef.current) observer.observe(sentinelRef.current);
+    return () => {
+      observer.disconnect();
+      if (lazyLoadObserverRef.current === observer) lazyLoadObserverRef.current = null;
+    };
+  }, [loading, scrollContainerRef]);
 
   // After visibleCount increases (more messages prepended), restore the
-  // scroll position so the viewport doesn't jump.
-  useEffect(() => {
-    if (prevScrollDistanceRef.current == null) return;
+  // scroll position so the viewport doesn't jump. Layout phase: a paint-time
+  // restore leaves one frame at the old scrollTop (the prepended top).
+  useLayoutEffect(() => {
+    if (prevScrollDistanceRef.current == null) {
+      lazyLoadPagingRef.current = false;
+      return;
+    }
     const container = scrollContainerRef.current;
-    if (!container) return;
+    if (!container) {
+      lazyLoadPagingRef.current = false;
+      return;
+    }
     container.scrollTop = restoreScrollTop(container.scrollHeight, prevScrollDistanceRef.current);
     prevScrollDistanceRef.current = null;
+    lazyLoadPagingRef.current = false;
   }, [visibleCount, scrollContainerRef]);
   // Push session stats up to AppShell for the stats panel and ring hover summary.
   // Compare scalar fields to avoid loops from new object identity each render.
@@ -506,9 +529,6 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   const [bottomComposerHeight, setBottomComposerHeight] = useState(0);
   const bottomComposerHeightRef = useRef(0);
   const bottomComposerScrollFrameRef = useRef<number | null>(null);
-  const [promptAnchorSpacerHeight, setPromptAnchorSpacerHeight] = useState(0);
-  const promptAnchorSpacerHeightRef = useRef(0);
-  const promptAnchorScrollPendingRef = useRef(false);
 
   useLayoutEffect(() => {
     const composer = bottomComposerRef.current;
@@ -556,77 +576,24 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     };
   }, [error, isEmptyNew, loading, scrollContainerRef, scrollToBottom]);
 
+  // Follow actual layout changes, including markdown and tool output that grows
+  // after the streaming event. The scroll handler only clears this on user input.
   useLayoutEffect(() => {
-    if (!agentRunning || !promptAnchorActive) {
-      promptAnchorScrollPendingRef.current = false;
-      if (promptAnchorSpacerHeightRef.current !== 0) {
-        promptAnchorSpacerHeightRef.current = 0;
-        setPromptAnchorSpacerHeight(0);
-      }
-      return;
-    }
-
-    const container = scrollContainerRef.current;
-    const userMessage = lastUserMsgRef.current;
-    if (!container || !userMessage) return;
-
-    let corrections = 0;
-    const updatePromptAnchorSpacer = () => {
-      const userMessageTop = userMessage.getBoundingClientRect().top
-        - container.getBoundingClientRect().top
-        + container.scrollTop;
-      const targetTop = Math.max(0, userMessageTop - 16);
-      const nextHeight = nextPromptAnchorSpacerHeight(
-        targetTop,
-        container.scrollHeight,
-        container.clientHeight,
-        promptAnchorSpacerHeightRef.current,
-      );
-
-      if (nextHeight !== promptAnchorSpacerHeightRef.current && corrections < 4) {
-        corrections += 1;
-        const needsInitialScroll = promptAnchorSpacerHeightRef.current === 0 && nextHeight > 0;
-        promptAnchorSpacerHeightRef.current = nextHeight;
-        promptAnchorScrollPendingRef.current ||= needsInitialScroll;
-        setPromptAnchorSpacerHeight(nextHeight);
-        scheduleMeasurement();
-        return;
-      }
-
-      if (promptAnchorScrollPendingRef.current) {
-        promptAnchorScrollPendingRef.current = false;
-        scrollUserMsgToTop();
-      }
+    if (!agentRunning) return;
+    const column = scrollContainerRef.current?.firstElementChild;
+    if (!column) return;
+    const followTail = () => {
+      if (isNearBottomRef.current) scrollToBottom("auto");
     };
+    followTail();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(followTail);
+    observer?.observe(column);
+    return () => observer?.disconnect();
+  }, [agentRunning, isNearBottomRef, scrollContainerRef, scrollToBottom]);
 
-    let frame: number | null = null;
-    const scheduleMeasurement = () => {
-      if (frame !== null) return;
-      frame = requestAnimationFrame(() => {
-        frame = null;
-        updatePromptAnchorSpacer();
-      });
-    };
-    scheduleMeasurement();
-    const observer = typeof ResizeObserver === "undefined"
-      ? null
-      : new ResizeObserver(scheduleMeasurement);
-    observer?.observe(container);
-    observer?.observe(userMessage);
-    return () => {
-      observer?.disconnect();
-      if (frame !== null) cancelAnimationFrame(frame);
-    };
-  }, [
-    agentRunning,
-    bottomComposerHeight,
-    lastUserMsgRef,
-    messages.length,
-    promptAnchorActive,
-    scrollContainerRef,
-    scrollUserMsgToTop,
-    streamState.streamingMessage,
-  ]);
+  useLayoutEffect(() => {
+    if (agentRunning && isNearBottomRef.current) scrollToBottom("auto");
+  }, [agentRunning, messages.length, streamState.streamingMessage, isNearBottomRef, scrollToBottom]);
 
   // Group messages into turns (user prompt → collapsed process → final
   // answer) once per relevant change, not on every render. Streaming deltas
@@ -642,15 +609,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       }
     }
 
-    let lastUserIdx = -1;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user") { lastUserIdx = i; break; }
-    }
     // Anchor for live-tail detection: the last user message, or a
     // compaction summary when compaction has replaced it mid-turn.
-    // Computed independently from lastUserIdx (which is kept for the
-    // scroll-to-user ref) because a compaction summary can sit after
-    // the last user message and anchor the still-streaming segment.
     let lastAnchorIdx = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
       if (isGroupAnchor(messages[i])) { lastAnchorIdx = i; break; }
@@ -706,21 +666,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         />
       );
       if (!isVisible || options.attachRef === false) return view;
-      if (idx !== lastUserIdx) {
-        return (
-          <div key={`${keyPrefix}-${idx}`} data-conversation-turn={turnIndexByMessageIndex.get(idx)}>
-            {view}
-          </div>
-        );
-      }
       return (
-        <div
-          key={`${keyPrefix}-${idx}`}
-          data-conversation-turn={turnIndexByMessageIndex.get(idx)}
-          ref={(el) => {
-            (lastUserMsgRef as { current: HTMLDivElement | null }).current = el;
-          }}
-        >
+        <div key={`${keyPrefix}-${idx}`} data-conversation-turn={turnIndexByMessageIndex.get(idx)}>
           {view}
         </div>
       );
@@ -797,7 +744,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     return (
       <>
         {hasMore && (
-          <div ref={sentinelRef} className="py-3 text-center text-xs text-text-muted">
+          <div ref={setSentinelNode} className="py-3 text-center text-xs text-text-muted">
             {t("chat.loadEarlier", { count: startIndex })}
           </div>
         )}
@@ -808,7 +755,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     messages, entryIds, streamActive, sessionBusy, isNew, forkingEntryId,
     modelNames, messageCwd, onOpenFile, handleEditContent,
     stableHandleFork, stableHandleNavigate, sessionIdForViews,
-    visibleCount, t, lastUserMsgRef, sessionIdRef,
+    visibleCount, t, sessionIdRef, setSentinelNode,
   ]);
 
   const availableThinkingLevels = displayModelValue
@@ -1010,7 +957,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
             {renderedMessages}
             {streamState.isStreaming && streamState.streamingMessage && (
-              <MessageView message={streamState.streamingMessage as AgentMessage} isStreaming modelNames={modelNames} cwd={messageCwd} onOpenFile={onOpenFile} />
+              <MessageView key="streaming-live" message={streamState.streamingMessage as AgentMessage} isStreaming modelNames={modelNames} cwd={messageCwd} onOpenFile={onOpenFile} />
             )}
 
             {agentRunning && !streamState.streamingMessage && agentPhase && (
@@ -1035,10 +982,6 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                 } as BashExecutionMessage}
                 sessionId={session?.id ?? sessionIdRef.current ?? undefined}
               />
-            )}
-
-            {promptAnchorSpacerHeight > 0 && (
-              <div aria-hidden="true" style={{ height: promptAnchorSpacerHeight }} />
             )}
 
             {/* Clears the overlay composer so the last lines can scroll fully into view. */}
