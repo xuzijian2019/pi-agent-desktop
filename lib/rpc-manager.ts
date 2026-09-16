@@ -106,7 +106,8 @@ export interface LiveSessionSnapshot {
   parentSessionPath?: string;
 }
 
-const CODING_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+const CODING_TOOL_NAMES = ["read", "edit", "write", "bash", "grep", "find", "ls"];
+const EDIT_TOOL_PRIORITY_INSTRUCTION = "For file changes, use the edit tool first. Do not run apply_patch through bash: it is not a Pi built-in tool and may not exist on PATH. Use bash for commands and validation, not routine file patches.";
 
 // Extensions require a complete Theme, while the web UI applies its own styling.
 class PlainTextTheme extends Theme {
@@ -1313,6 +1314,9 @@ export async function startRpcSession(
     const services = await createAgentSessionServices({
       cwd: sessionCwd,
       agentDir,
+      resourceLoaderOptions: {
+        appendSystemPromptOverride: (base) => [...base, EDIT_TOOL_PRIORITY_INSTRUCTION],
+      },
       ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
     });
     const scope = await resolveVisibleModels(

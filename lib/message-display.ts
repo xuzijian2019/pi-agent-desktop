@@ -8,11 +8,19 @@ export function isEmptyThinkingBlock(block: AssistantContentBlock, options: Disp
   return block.type === "thinking" && !block.deferred && !options.isStreaming && block.thinking.trim() === "";
 }
 
+export function isDisplayableAssistantBlock(
+  block: AssistantContentBlock | null | undefined,
+  options: DisplayOptions = {},
+): block is AssistantContentBlock {
+  return block != null && !isEmptyThinkingBlock(block, options);
+}
+
 export function getDisplayableAssistantBlocks(
   message: AssistantMessage,
   options: DisplayOptions = {},
 ): AssistantContentBlock[] {
-  return (message.content ?? []).filter((block) => !isEmptyThinkingBlock(block, options));
+  const content = message.content as Array<AssistantContentBlock | null | undefined>;
+  return content.filter((block): block is AssistantContentBlock => isDisplayableAssistantBlock(block, options));
 }
 
 export function getAssistantErrorMessage(

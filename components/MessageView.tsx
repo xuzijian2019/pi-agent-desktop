@@ -9,7 +9,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { SyntaxHighlighter, vs, vscDarkPlus } from "@/lib/syntax-highlighting";
 import { getWrittenFile, sourceLanguageFromPath, type WrittenFile } from "@/lib/write-tool-display";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
-import { getAssistantErrorMessage, isEmptyThinkingBlock } from "@/lib/message-display";
+import { getAssistantErrorMessage, isDisplayableAssistantBlock } from "@/lib/message-display";
 import { parseUnifiedPatch, type SplitDiffCell } from "@/lib/patch";
 import { skillExpansionToCommand } from "@/lib/slash-display";
 import type {
@@ -519,9 +519,11 @@ function AssistantMessageView({
 }) {
   const { t } = useI18n();
   const time = showTimestamp ? formatTime(message.timestamp) : null;
-  const blockItems = (message.content ?? [])
+  const blockItems = (message.content as Array<AssistantContentBlock | null | undefined>)
     .map((block, originalIndex) => ({ block, originalIndex }))
-    .filter(({ block }) => !isEmptyThinkingBlock(block, { isStreaming }));
+    .filter((item): item is { block: AssistantContentBlock; originalIndex: number } =>
+      isDisplayableAssistantBlock(item.block, { isStreaming }),
+    );
   const blocks = blockItems.map(({ block }) => block);
   const providerError = getAssistantErrorMessage(message, { isStreaming });
   const [hovered, setHovered] = useState(false);

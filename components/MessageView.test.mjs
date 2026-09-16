@@ -58,6 +58,26 @@ test("renders partial assistant content before the provider error", () => {
   assert.match(html, /Error: Connection closed/);
 });
 
+test("renders a streaming assistant message with a transient empty block", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      I18nProvider,
+      null,
+      React.createElement(MessageView, {
+        isStreaming: true,
+        message: {
+          role: "assistant",
+          provider: "openai",
+          model: "gpt-test",
+          content: [undefined, { type: "text", text: "Partial response" }],
+        },
+      }),
+    ),
+  );
+
+  assert.match(html, /Partial response/);
+});
+
 test("renders a complete SDK skill expansion as a compact command", () => {
   const html = renderMessage({
     role: "user",
