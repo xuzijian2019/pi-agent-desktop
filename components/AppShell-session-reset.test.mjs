@@ -28,6 +28,14 @@ test("switching sessions immediately clears parent-owned session UI", async () =
   assert.match(handler, /setActiveTopPanel\(null\)/);
 });
 
+test("chat file links open in the file panel with session-scoped access", async () => {
+  const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
+  const start = source.indexOf("<ChatWindow");
+  assert.notEqual(start, -1);
+  const chatWindow = source.slice(start, source.indexOf("/>", start));
+  assert.match(chatWindow, /onOpenFile=\{\(filePath\) => handleOpenFile\(filePath, getFileName\(filePath\), \{ sourceSessionId: selectedSession\?\.id \}\)\}/);
+});
+
 test("desktop-only workspace and health behavior is gated before use", async () => {
   const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
   assert.match(source, /desktopMode \? getPrefJson<PersistedWorkspace>/);

@@ -1542,6 +1542,7 @@ export function AppShell() {
               onSelectProject={desktopMode ? () => void handleSelectProjectFromComposer() : undefined}
               projectOptions={selectedSession ? [] : availableProjectRoots}
               onProjectChange={selectedSession ? undefined : handleProjectChangeFromComposer}
+              onOpenFile={(filePath) => handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id })}
               onOpenModelsConfig={() => setModelsConfigOpen(true)}
             />
           ) : initialCwdStatus === "validating" ? (
