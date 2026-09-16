@@ -1003,7 +1003,7 @@ function WrittenFileView({ file, isError }: { file: WrittenFile; isError: boolea
             margin: 0,
             padding: "8px 0",
             border: 0,
-            background: "var(--bg)",
+            backgroundColor: "var(--bg)",
             fontFamily: "var(--font-mono)",
             fontSize: 12,
             lineHeight: 1.55,
