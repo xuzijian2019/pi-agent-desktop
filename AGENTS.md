@@ -8,7 +8,26 @@ npm run dev   # port 30141
 
 Typecheck: `node_modules/.bin/tsc --noEmit`  
 Lint: `npm run lint`  
+Unit tests: `npm test`  
+Browser E2E: `npm run test:e2e` (see below)  
 **Never run `next build` during dev** — pollutes `.next/` and breaks `npm run dev`.
+
+### Browser E2E (`npm run test:e2e`)
+
+Plain Playwright CLI — no editor or MCP integration required, so any agent (or CI)
+verifies the same way it runs unit tests.
+
+- Starts its own dev server on port 30142 with `distDir: .next-e2e`, so a `npm run dev`
+  already running on 30141 is untouched.
+- Sandboxed: `HOME`, `PI_CODING_AGENT_DIR` and the session cwd all live under
+  `/tmp/pi-web-e2e` (`tests/e2e/sandbox.ts`), wiped at the start of each run.
+  `PI_OFFLINE=1`, no credentials, no tokens spent.
+- `tests/e2e/bash-session.spec.ts` covers the bash-only loop: `?cwd=` → `!command`
+  in the composer → UI output → `/api/sessions` → JSONL on disk → reopen via `?session=`.
+- Failure artifacts for any agent to read: `test-results/<test>/error-context.md`
+  (ARIA snapshot), screenshot, video, `trace.zip`; HTML report in `playwright-report/`.
+- Browser: bundled Chromium (`npx playwright install chromium`). `PW_CHANNEL=chrome`
+  reuses a locally installed Chrome instead.
 
 ---
 

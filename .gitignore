@@ -60,3 +60,9 @@ next-env.d.ts
 # local tooling artifacts
 .playwright-mcp/
 pi-gui-session-preview.png
+
+# playwright e2e artifacts
+/.next-e2e/
+/playwright-report/
+/test-results/
+/blob-report/

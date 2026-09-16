@@ -10,7 +10,11 @@ const nextConfig: NextConfig = {
   // "C:\Users\<user>\Application Data") and fail.
   ...(isDesktopBuild
     ? { output: "standalone" as const, distDir: ".next-desktop", outputFileTracingRoot: __dirname }
-    : {}),
+    // E2E runs set PI_WEB_DIST_DIR so their dev server does not share `.next`
+    // with a dev server already running in the same checkout.
+    : process.env.PI_WEB_DIST_DIR
+      ? { distDir: process.env.PI_WEB_DIST_DIR }
+      : {}),
   serverExternalPackages: [
     "undici",
     "@earendil-works/pi-coding-agent",
