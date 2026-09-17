@@ -131,3 +131,22 @@ test("user message images open the in-app lightbox", () => {
   // The lightbox itself stays closed until the user clicks.
   assert.doesNotMatch(html, /aria-label="Image preview"/);
 });
+
+test("process-only assistant messages hide the model label while answers keep it", () => {
+  const base = { role: "assistant", provider: "openai", model: "gpt-test" };
+  const processOnly = renderMessage({
+    ...base,
+    content: [{ type: "toolCall", toolCallId: "call-1", toolName: "bash", input: { command: "ls" } }],
+  });
+  assert.doesNotMatch(processOnly, /message-assistant-model/);
+
+  const withAnswer = renderMessage({
+    ...base,
+    content: [
+      { type: "toolCall", toolCallId: "call-1", toolName: "bash", input: { command: "ls" } },
+      { type: "text", text: "done" },
+    ],
+  });
+  assert.match(withAnswer, /message-assistant-model/);
+  assert.match(withAnswer, /gpt-test/);
+});

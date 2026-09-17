@@ -578,6 +578,10 @@ function AssistantMessageView({
     .map((b) => b.text)
     .join("\n");
 
+  // Process-only messages (tool calls / thinking) belong to the collapsed
+  // process group — the model label belongs on the answer bubble alone.
+  const isProcessOnly = !blocks.some((b) => b.type === "text" || b.type === "image");
+
   const copyContent = () => {
     copyText(textContent).then(() => {
       setCopied(true);
@@ -651,7 +655,8 @@ function AssistantMessageView({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {/* Model label */}
+      {/* Model label (answers and provider errors only) */}
+      {(!isProcessOnly || providerError) && (
       <div
         className="message-assistant-model"
         style={{
@@ -699,6 +704,7 @@ function AssistantMessageView({
           );
         })()}
       </div>
+      )}
 
       <div className="message-assistant-content" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {blockItems.map(({ block, originalIndex }) => (
