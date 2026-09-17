@@ -314,6 +314,7 @@ export const zhCNLocale: LocalePlugin = {
     "i18n.close": "关闭",
     "i18n.copy": "复制",
     "i18n.copied": "已复制",
+    "i18n.viewImage": "查看大图",
     "i18n.cancel": "取消",
     "i18n.save": "保存",
     "i18n.saving": "保存中…",

@@ -8,6 +8,7 @@ import { useDiffViewMode } from "@/hooks/useDiffViewMode";
 import { useTheme } from "@/hooks/useTheme";
 import { SyntaxHighlighter, vs, vscDarkPlus } from "@/lib/syntax-highlighting";
 import { getWrittenFile, sourceLanguageFromPath, type WrittenFile } from "@/lib/write-tool-display";
+import { ImageLightbox } from "./ImageLightbox";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
 import { getAssistantErrorMessage, isDisplayableAssistantBlock } from "@/lib/message-display";
 import { parseUnifiedPatch, type SplitDiffCell } from "@/lib/patch";
@@ -237,6 +238,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   const content =
     typeof message.content === "string"
@@ -279,13 +281,21 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
             ? `data:${flat.mimeType};base64,${flat.data}`
             : "";
         return (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <button
             key={i}
-            src={src}
-            alt=""
-            style={{ maxWidth: 240, maxHeight: 240, borderRadius: 6, objectFit: "contain", display: "block", border: "1px solid rgba(59,130,246,0.15)" }}
-          />
+            type="button"
+            onClick={() => setLightboxSrc(src)}
+            title={t("i18n.viewImage")}
+            aria-label={t("i18n.viewImage")}
+            style={{ padding: 0, border: "none", background: "none", cursor: "zoom-in", lineHeight: 0 }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={src}
+              alt=""
+              style={{ maxWidth: 240, maxHeight: 240, borderRadius: 6, objectFit: "contain", display: "block", border: "1px solid rgba(59,130,246,0.15)" }}
+            />
+          </button>
         );
       })}
     </div>
@@ -383,6 +393,9 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
 
       </div>
 
+      {lightboxSrc && (
+        <ImageLightbox src={lightboxSrc} alt="" onClose={() => setLightboxSrc(null)} />
+      )}
       {/* Bottom row: action buttons + timestamp */}
       {(time || canFork || canNavigate || true) && (
         <div style={{

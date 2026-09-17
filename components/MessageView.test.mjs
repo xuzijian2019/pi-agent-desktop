@@ -115,3 +115,19 @@ test("keeps attached images when restoring a compact command for editing", () =>
     image,
   ]);
 });
+
+test("user message images open the in-app lightbox", () => {
+  const html = renderMessage({
+    role: "user",
+    content: [
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "QUJDRA==" } },
+      { type: "text", text: "see screenshot" },
+    ],
+  });
+
+  // The image sits inside a zoom-in trigger for the lightbox.
+  assert.match(html, /aria-label="View image"/);
+  assert.match(html, /data:image\/png;base64,QUJDRA==/);
+  // The lightbox itself stays closed until the user clicks.
+  assert.doesNotMatch(html, /aria-label="Image preview"/);
+});

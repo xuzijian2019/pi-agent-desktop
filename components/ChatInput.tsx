@@ -27,6 +27,7 @@ import {
 } from "@/lib/file-fuzzy";
 import { resolveSessionReferences } from "@/lib/session-reference";
 import { selectableThinkingLevels } from "@/lib/thinking-level-options";
+import { ImageLightbox } from "./ImageLightbox";
 import type { SessionInfo } from "@/lib/types";
 import { FolderIcon, getFileIcon } from "./FileIcons";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -568,6 +569,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   // Full-path flyout shown right of a hovered project row (replaces the native title tooltip).
   const [projectPathTip, setProjectPathTip] = useState<{ path: string; top: number; left: number } | null>(null);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
+
     draftKey ? draftImagesToAttachedImages(getDraft(draftKey)?.images) : []
   ));
   const [pastedTexts, setPastedTexts] = useState<PastedTextChip[]>(() => (
@@ -575,6 +577,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   ));
   const projectLabel = getProjectLabel(projectPath);
   const trimmedValue = value.trimStart();
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const bashMode = attachedImages.length === 0 && trimmedValue.startsWith("!");
   const bashExcluded = bashMode && trimmedValue.startsWith("!!");
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
@@ -2194,15 +2197,23 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             <div style={{ display: "flex", gap: 8, padding: "4px 6px 8px", flexWrap: "wrap" }}>
               {attachedImages.map((img, i) => (
                 <div key={i} style={{ position: "relative", flexShrink: 0 }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={img.previewUrl}
-                    alt=""
-                    style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", display: "block" }}
-                  />
                   <button
                     type="button"
-                    onClick={() => removeImage(i)}
+                    onClick={() => setLightboxSrc(img.previewUrl)}
+                    title="View image"
+                    aria-label="View image"
+                    style={{ padding: 0, border: "none", background: "none", cursor: "zoom-in", lineHeight: 0, display: "block" }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={img.previewUrl}
+                      alt=""
+                      style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", display: "block" }}
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); removeImage(i); }}
                     title="Remove image"
                     aria-label="Remove image"
                     style={{
@@ -2220,6 +2231,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 </div>
               ))}
             </div>
+          )}
+          {lightboxSrc && (
+            <ImageLightbox src={lightboxSrc} alt="" onClose={() => setLightboxSrc(null)} />
           )}
           <div
             className="chat-composer-editor"

@@ -314,6 +314,7 @@ export const enLocale: LocalePlugin = {
     "i18n.close": "Close",
     "i18n.copy": "Copy",
     "i18n.copied": "Copied",
+    "i18n.viewImage": "View image",
     "i18n.cancel": "Cancel",
     "i18n.save": "Save",
     "i18n.saving": "Saving…",
