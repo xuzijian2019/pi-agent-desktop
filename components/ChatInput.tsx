@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 import type { BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
 import type { SkillsResponse } from "@/lib/api-types";
 import type { ModelScopeWarning } from "@/lib/model-scope-warnings";
@@ -564,6 +565,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
   const [controlsMenuOpen, setControlsMenuOpen] = useState(false);
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
+  // Full-path flyout shown right of a hovered project row (replaces the native title tooltip).
+  const [projectPathTip, setProjectPathTip] = useState<{ path: string; top: number; left: number } | null>(null);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
     draftKey ? draftImagesToAttachedImages(getDraft(draftKey)?.images) : []
   ));
@@ -1588,6 +1591,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       }
       if (projectDropdownRef.current && !projectDropdownRef.current.contains(e.target as Node)) {
         setProjectDropdownOpen(false);
+        setProjectPathTip(null);
       }
       if (historyMenuRef.current && !historyMenuRef.current.contains(e.target as Node) && !textareaRef.current?.contains(e.target as Node)) {
         setHistoryMenuOpen(false);
@@ -2398,8 +2402,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   aria-haspopup={projectOptions.length > 0 && onProjectChange ? "menu" : undefined}
                   aria-expanded={projectOptions.length > 0 && onProjectChange ? projectDropdownOpen : undefined}
                   onClick={() => {
-                    if (projectOptions.length > 0 && onProjectChange) setProjectDropdownOpen((open) => !open);
-                    else onSelectProject?.();
+                    if (projectOptions.length > 0 && onProjectChange) {
+                      setProjectPathTip(null);
+                      setProjectDropdownOpen((open) => !open);
+                    } else onSelectProject?.();
                   }}
                   disabled={!onSelectProject && !(projectOptions.length > 0 && onProjectChange)}
                 >
@@ -2412,6 +2418,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   <div
                     className="native-popover"
                     role="menu"
+                    onMouseLeave={() => setProjectPathTip(null)}
+                    onScroll={() => setProjectPathTip(null)}
                     style={{
                       position: "absolute",
                       left: 0,
@@ -2419,6 +2427,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       zIndex: 500,
                       minWidth: 220,
                       maxWidth: 320,
+                      // The popover grows upward from the composer bar; cap it
+                      // so long project lists scroll instead of leaving the viewport.
+                      maxHeight: "min(60vh, 420px)",
+                      overflowY: "auto",
                       padding: 5,
                     }}
                   >
@@ -2432,6 +2444,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           role="menuitem"
                           onClick={() => {
                             setProjectDropdownOpen(false);
+                            setProjectPathTip(null);
                             if (!isCurrent) onProjectChange(projectRoot);
                           }}
                           style={{
@@ -2451,11 +2464,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           }}
                           onMouseEnter={(e) => {
                             if (!isCurrent) e.currentTarget.style.background = "var(--bg-hover)";
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setProjectPathTip({ path: projectRoot, top: rect.top, left: rect.right + 8 });
                           }}
                           onMouseLeave={(e) => {
                             if (!isCurrent) e.currentTarget.style.background = "transparent";
                           }}
-                          title={projectRoot}
                         >
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                             <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
@@ -2466,6 +2480,43 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       );
                     })}
                   </div>
+                )}
+                {projectPathTip && projectDropdownOpen && createPortal(
+                  (() => {
+                    const vh = window.visualViewport?.height ?? window.innerHeight;
+                    const top = Math.max(8, Math.min(projectPathTip.top, vh - 40));
+                    return (
+                      <div
+                        role="tooltip"
+                        style={{
+                          position: "fixed",
+                          top,
+                          left: projectPathTip.left,
+                          zIndex: 600,
+                          maxWidth: `calc(100vw - ${projectPathTip.left + 8}px)`,
+                          maxHeight: `calc(${vh}px - ${top + 8}px)`,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "7px 9px",
+                          background: "var(--bg)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 6,
+                          boxShadow: "4px 0 16px rgba(0,0,0,0.10)",
+                          color: "var(--text-muted)",
+                          fontSize: 12,
+                          overflow: "hidden",
+                          pointerEvents: "none",
+                        }}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+                          <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+                        </svg>
+                        <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{projectPathTip.path}</span>
+                      </div>
+                    );
+                  })(),
+                  document.body,
                 )}
               </div>
             )}
