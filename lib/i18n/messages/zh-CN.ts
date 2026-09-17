@@ -130,6 +130,7 @@ export const zhCNLocale: LocalePlugin = {
     "sidebar.switchProjectTitle": "切换到 {name}",
     "sidebar.runningCount": "{count} 个运行中",
     "sidebar.unreadCount": "{count} 条未读",
+    "sidebar.cwdMissing": "项目目录已不存在",
     "sidebar.loading": "加载中...",
     "sidebar.noSessions": "未找到会话",
     "sidebar.agentRunning": "Agent 运行中…",

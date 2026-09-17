@@ -818,9 +818,15 @@ export function AppShell() {
       signal: controller.signal,
     })
       .then(async (response) => {
+        // Stale session/workspace cwds (directory deleted since) are expected:
+        // degrade to "nothing to trust" instead of a console error.
+        if (response.status === 400 || response.status === 404) {
+          setProjectTrust(null);
+          return;
+        }
         const data = await response.json() as ProjectTrustStatus & { error?: string };
         if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
-        setProjectTrust(data);
+        setProjectTrust(data.cwdMissing ? null : data);
       })
       .catch((error) => {
         if (error instanceof DOMException && error.name === "AbortError") return;

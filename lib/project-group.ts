@@ -20,6 +20,9 @@ export interface ProjectGroup {
   runningIds: Set<string>;
   /** Branches observed in this group (cwd's `worktreeBranch`), deduped, sorted. */
   branches: string[];
+  /** True when every session's cwd no longer exists on disk; absent for
+   *  transient client-built groups before the first server refresh. */
+  cwdMissing?: boolean;
 }
 
 function basenameOf(path: string): string {
@@ -79,6 +82,7 @@ export function groupByProject(
       if (s.worktreeBranch) branchSet.add(s.worktreeBranch);
     }
     group.branches = [...branchSet].sort();
+    group.cwdMissing = group.sessions.every((s) => s.cwdMissing === true);
   }
 
   return [...groups.values()].sort((a, b) => b.latestModified.localeCompare(a.latestModified));

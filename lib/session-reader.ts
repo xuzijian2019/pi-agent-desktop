@@ -3,7 +3,7 @@ import {
   buildContextEntries as piBuildContextEntries,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { closeSync, openSync, readSync } from "fs";
+import { closeSync, existsSync, openSync, readSync } from "fs";
 import { normalize as normalizePath } from "path";
 import type { AgentMessage, SessionEntry, SessionHeader, SessionInfo, SessionContext } from "./types";
 import type { SessionEntry as PiSessionEntry } from "@earendil-works/pi-coding-agent";
@@ -30,6 +30,9 @@ async function loadAllSessions(): Promise<SessionInfo[]> {
   await Promise.all(uniqueCwds.map(async (cwd) => {
     projectByCwd.set(cwd, await resolveProject(cwd));
   }));
+  // existsSync per unique cwd (not per session) so the sidebar can flag
+  // sessions whose directory was deleted since they ran.
+  const cwdMissingByCwd = new Map(uniqueCwds.map((cwd) => [cwd, !existsSync(cwd)]));
 
   return piSessions.map((s) => {
     cacheSessionPath(s.id, s.path);
@@ -46,6 +49,7 @@ async function loadAllSessions(): Promise<SessionInfo[]> {
       parentSessionId: s.parentSessionPath ? pathToId.get(sessionPathKey(s.parentSessionPath)) : undefined,
       projectRoot: project?.projectRoot ?? s.cwd,
       ...(project?.branch ? { worktreeBranch: project.branch } : {}),
+      ...(s.cwd && cwdMissingByCwd.get(s.cwd) ? { cwdMissing: true } : {}),
     };
   });
 }

@@ -298,6 +298,8 @@ export interface SessionInfo {
   projectRoot?: string;
   /** Branch name when cwd is a linked git worktree (not the main checkout) */
   worktreeBranch?: string;
+  /** True when cwd no longer exists on disk (deleted/moved since the session ran) */
+  cwdMissing?: boolean;
 }
 
 export interface SessionContext {

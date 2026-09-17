@@ -130,6 +130,7 @@ export const enLocale: LocalePlugin = {
     "sidebar.switchProjectTitle": "Switch to {name}",
     "sidebar.runningCount": "{count} running",
     "sidebar.unreadCount": "{count} unread",
+    "sidebar.cwdMissing": "Project directory no longer exists",
     "sidebar.loading": "Loading...",
     "sidebar.noSessions": "No sessions found",
     "sidebar.agentRunning": "Agent running…",

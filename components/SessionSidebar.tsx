@@ -931,7 +931,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             className="sidebar-project-tree-row-main"
             onClick={toggleCollapse}
             aria-expanded={!isCollapsed}
-            title={group.projectRoot}
+            title={group.cwdMissing ? `${group.projectRoot} · ${t("sidebar.cwdMissing")}` : group.projectRoot}
           >
             <span className="sidebar-project-tree-folder" aria-hidden="true">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
@@ -942,7 +942,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 )}
               </svg>
             </span>
-            <span className="sidebar-project-tree-name">{group.displayName}</span>
+            <span className="sidebar-project-tree-name" style={group.cwdMissing ? { opacity: 0.55 } : undefined}>{group.displayName}</span>
             {branchSubtitle && (
               <span className="sidebar-project-tree-branch" title={branchSubtitle}>
                 {branchSubtitle}
@@ -2118,6 +2118,25 @@ function SessionItem({
             <RunningSessionIndicator />
           ) : isUnread ? (
             <UnreadSessionIndicator />
+          ) : session.cwdMissing ? (
+            <span
+              title={t("sidebar.cwdMissing")}
+              style={{
+                width: 14,
+                height: 14,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+                color: "var(--text-dim)",
+              }}
+            >
+              <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
+                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+            </span>
           ) : (
             <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
@@ -2125,7 +2144,7 @@ function SessionItem({
           )}
           <span
             className="session-item-title"
-            title={title}
+            title={session.cwdMissing ? `${title} · ${t("sidebar.cwdMissing")}` : title}
             style={{
               flex: 1,
               minWidth: 0,
@@ -2135,7 +2154,7 @@ function SessionItem({
               fontSize: 13,
               fontWeight: isSelected ? 500 : 400,
               lineHeight: 1.4,
-              color: "var(--text)",
+              color: session.cwdMissing ? "var(--text-dim)" : "var(--text)",
             }}
           >
             {title}

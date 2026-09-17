@@ -57,6 +57,8 @@ export interface SkillsResponse {
 export interface ProjectTrustStatus {
   requiresTrust: boolean;
   trusted: boolean;
+  /** GET only: the cwd no longer exists on disk, so there is nothing to trust. */
+  cwdMissing?: boolean;
 }
 
 export type PluginScope = "global" | "project";
