@@ -189,3 +189,53 @@ test("keeps the message column and composer on the scrollport axis", () => {
   assert.doesNotMatch(chatWindowSource, /--chat-scrollbar-inset/);
   assert.doesNotMatch(nativeThemeSource, /width: calc\(100% - 16px\)/);
 });
+
+test("carries the last tool preset and effort level into new sessions", () => {
+  // Stored-preference helpers validate the pref values before use.
+  assert.match(source, /const TOOL_PRESET_VALUES = new Set\(\["none", "default", "full"\]\)/);
+  assert.match(source, /const EXPLICIT_THINKING_LEVELS = new Set\(\["off", "minimal", "low", "medium", "high", "xhigh", "max"\]\)/);
+  assert.match(source, /function loadStoredToolPreset\(\)[\s\S]*?TOOL_PRESET_VALUES\.has\(raw\)[\s\S]*?: "default"/);
+  assert.match(source, /function loadStoredThinkingLevel\(\)[\s\S]*?EXPLICIT_THINKING_LEVELS\.has\(raw\)[\s\S]*?: null/);
+
+  // Only brand-new sessions seed their toolbar state from the stored prefs;
+  // existing sessions must keep showing their own saved values until loaded.
+  assert.match(source, /useState<"none" \| "default" \| "full">\(\(\) => \(isNew \? loadStoredToolPreset\(\) : "default"\)\)/);
+  assert.match(source, /useState<ThinkingLevelOption>\(\(\) => \(isNew \? loadStoredThinkingLevel\(\) : null\) \?\? "auto"\)/);
+  assert.match(source, /useRef<Exclude<ThinkingLevelOption, "auto"> \| null>\(isNew \? loadStoredThinkingLevel\(\) : null\)/);
+
+  // Switching identities back to a new session re-seeds both, including the
+  // creation-time override ref so ensureNewSession sends the stored effort.
+  const resetSource = source.slice(
+    source.indexOf("if (isNew) {\n        // New sessions relaunch"),
+    source.indexOf("const currentModel = currentModelOverride"),
+  );
+  assert.match(resetSource, /const storedThinking = loadStoredThinkingLevel\(\)/);
+  assert.match(resetSource, /setToolPreset\(loadStoredToolPreset\(\)\)/);
+  assert.match(resetSource, /setThinkingLevel\(storedThinking \?\? "auto"\)/);
+  assert.match(resetSource, /thinkingLevelOverrideRef\.current = storedThinking/);
+
+  // Explicit picks persist; "auto" clears the effort preference again.
+  const thinkingSource = source.slice(
+    source.indexOf("const handleThinkingLevelChange = useCallback"),
+    source.indexOf("const handleToolPresetChange = useCallback"),
+  );
+  assert.match(thinkingSource, /if \(level === "auto"\) removePref\(APP_PREF_KEYS\.thinkingLevel\)/);
+  assert.match(thinkingSource, /else setPref\(APP_PREF_KEYS\.thinkingLevel, level\)/);
+
+  const toolSource = source.slice(
+    source.indexOf("const handleToolPresetChange = useCallback"),
+    source.indexOf("const markUserScrollIntent = useCallback"),
+  );
+  assert.match(toolSource, /setPref\(APP_PREF_KEYS\.toolPreset, preset\)/);
+
+  // ensureNewSession ships both stored selections so pi applies (and clamps
+  // the effort level to the model's supported set) at construction time.
+  const ensureSource = source.slice(
+    source.indexOf("const ensureNewSession = useCallback"),
+    source.indexOf("const loadSlashCommands = useCallback"),
+  );
+  assert.match(ensureSource, /const toolNames = getToolNamesForPreset\(toolPreset\)/);
+  assert.match(ensureSource, /const selectedThinkingLevel = thinkingLevelOverrideRef\.current/);
+  assert.match(ensureSource, /toolNames,\n\s+\.\.\.\(selectedModel/);
+  assert.match(ensureSource, /\.\.\.\(selectedThinkingLevel\s*\?\s*\{ thinkingLevel: selectedThinkingLevel \}/);
+});

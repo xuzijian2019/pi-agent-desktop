@@ -14,6 +14,7 @@ import { normalizeToolCalls } from "@/lib/normalize";
 import { sendAgentCommand } from "@/lib/agent-client";
 import { fetchWithRetry } from "@/lib/fetch-timeout";
 import { getToolNamesForPreset, type ToolEntry } from "@/lib/tool-presets";
+import { APP_PREF_KEYS, getPref, removePref, setPref } from "@/lib/app-prefs";
 import { rememberScrollPosition, sessionScrollTops } from "@/lib/scroll-memory";
 import { applyAssistantMessageEvent, type ClientAssistantMessageEvent } from "@/lib/streaming-message";
 import { modelScopeWarningKey, type ModelScopeWarning } from "@/lib/model-scope-warnings";
@@ -33,6 +34,21 @@ interface StreamingState {
 
 // Max rate at which streaming markdown re-renders (leading + trailing edge).
 const STREAM_UPDATE_THROTTLE_MS = 80;
+
+const TOOL_PRESET_VALUES = new Set(["none", "default", "full"]);
+const EXPLICIT_THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+
+/** Last tool preset the user picked; new sessions launch with it. */
+function loadStoredToolPreset(): "none" | "default" | "full" {
+  const raw = getPref(APP_PREF_KEYS.toolPreset);
+  return raw !== null && TOOL_PRESET_VALUES.has(raw) ? raw as "none" | "default" | "full" : "default";
+}
+
+/** Last effort level the user picked; new sessions request it (pi clamps per model). */
+function loadStoredThinkingLevel(): Exclude<ThinkingLevelOption, "auto"> | null {
+  const raw = getPref(APP_PREF_KEYS.thinkingLevel);
+  return raw !== null && EXPLICIT_THINKING_LEVELS.has(raw) ? raw as Exclude<ThinkingLevelOption, "auto"> : null;
+}
 
 type StreamAction =
   | { type: "start" }
@@ -438,8 +454,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [modelThinkingLevelMaps, setModelThinkingLevelMaps] = useState<Record<string, Record<string, string | null>>>({});
   const [newSessionModel, setNewSessionModel] = useState<SelectedModel | null>(null);
   const [newSessionDefaultModel, setNewSessionDefaultModel] = useState<SelectedModel | null>(null);
-  const [toolPreset, setToolPreset] = useState<"none" | "default" | "full">("default");
-  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevelOption>("auto");
+  const [toolPreset, setToolPreset] = useState<"none" | "default" | "full">(() => (isNew ? loadStoredToolPreset() : "default"));
+  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevelOption>(() => (isNew ? loadStoredThinkingLevel() : null) ?? "auto");
   const [retryInfo, setRetryInfo] = useState<{ attempt: number; maxAttempts: number; errorMessage?: string } | null>(null);
   const [contextUsage, setContextUsage] = useState<{ percent: number | null; contextWindow: number; tokens: number | null } | null>(null);
   const contextUsageRequestIdRef = useRef(0);
@@ -493,7 +509,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const ensuringNewSessionRef = useRef<Promise<string | null> | null>(null);
   const newSessionPromotedRef = useRef(false);
   const newSessionModelOverrideRef = useRef<SelectedModel | null>(null);
-  const thinkingLevelOverrideRef = useRef<Exclude<ThinkingLevelOption, "auto"> | null>(null);
+  const thinkingLevelOverrideRef = useRef<Exclude<ThinkingLevelOption, "auto"> | null>(isNew ? loadStoredThinkingLevel() : null);
   const promptRunIdRef = useRef(0);
   const optimisticUserMessageKeyRef = useRef<string | null>(null);
 
@@ -580,8 +596,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setSlashCommands([]);
       setLoading(Boolean(session?.id) && !cachedSession);
       if (isNew) {
-        setToolPreset("default");
-        setThinkingLevel("auto");
+        // New sessions relaunch with the user's last picked preset/effort; the
+        // stored effort is sent explicitly at creation and pi clamps it to the
+        // model's supported levels (same-or-above, else nearest below).
+        const storedThinking = loadStoredThinkingLevel();
+        setToolPreset(loadStoredToolPreset());
+        setThinkingLevel(storedThinking ?? "auto");
+        thinkingLevelOverrideRef.current = storedThinking;
         setNewSessionModel(null);
       }
     }
@@ -1936,6 +1957,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const handleThinkingLevelChange = useCallback(async (level: ThinkingLevelOption) => {
     setThinkingLevel(level);
+    // Persist the explicit choice so the next session relaunches with it.
+    // "auto" clears the stored preference (pi's own default applies again).
+    if (level === "auto") removePref(APP_PREF_KEYS.thinkingLevel);
+    else setPref(APP_PREF_KEYS.thinkingLevel, level);
     if (isNew && !sessionIdRef.current) {
       thinkingLevelOverrideRef.current = level === "auto" ? null : level;
     }
@@ -1952,6 +1977,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleToolPresetChange = useCallback(async (preset: "none" | "default" | "full") => {
     const toolNames = getToolNamesForPreset(preset);
     setToolPresetState(preset);
+    setPref(APP_PREF_KEYS.toolPreset, preset);
     const sid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
     if (!sid) return;
     try {

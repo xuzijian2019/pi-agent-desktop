@@ -170,6 +170,9 @@ Tool names are passed at session creation (`POST /api/agent/new` → `toolNames[
 ### Model defaults for new sessions
 `GET /api/models` returns `defaultModel` read from `~/.pi/agent/settings.json`. `ChatWindow` pre-selects this on mount for new sessions. Explicit browser model/thinking selections are applied atomically during AgentSession construction, then `lib/startup-preferences.ts` persists their effective values without replaying `set_model`/`set_thinking_level`; implicit `enabledModels` fallbacks and thinking pins are not persisted.
 
+### Effort and tool presets carry across sessions
+The last explicitly picked effort (thinking) level and tool preset persist in `localStorage` (`APP_PREF_KEYS.thinkingLevel` / `.toolPreset`). New sessions seed their toolbar from them and `ensureNewSession` sends both at creation, so pi clamps a stored effort level the model lacks to the same-or-next-higher supported level (`clampThinkingLevel` in pi-ai) and returns the effective value, which the UI adopts. Existing sessions keep their own saved values until the user changes something. Picking "auto" clears the stored effort; pi's `defaultThinkingLevel` from settings.json then applies again.
+
 ### `enabledModels` scoping
 The `enabledModels` setting uses pi's `--models` syntax: minimatch globs against `provider/modelId` or a bare `modelId`, fuzzy matching for non-glob patterns, and an optional `:thinkingLevel` suffix. Never compare those patterns as literal strings — `lib/model-scope.ts` delegates to the SDK's `resolveModelScopeWithDiagnostics()` so pi-web and the TUI agree on the visible model list, and falls back to all available models when patterns resolve to nothing. `startRpcSession()` resolves that scope before creating an AgentSession and passes the selected initial model, thinking pin, and SDK-native `scopedModels` atomically; `GET /api/models` reuses the helper only for selector data, `thinkingLevelPins`, and `modelScopeWarnings` display.
 
