@@ -537,6 +537,7 @@ export const zhCNLocale: LocalePlugin = {
     "chat.modelScopeConfigure": "去配置",
     "chat.modelScopeDismiss": "关闭",
     "chat.attachmentError": "图片添加失败",
+    "chat.removePastedText": "移除粘贴内容",
     "chat.inputHistory": "输入历史",
     "models.apiKeyStored": "API Key 已保存。在下方输入新 Key 可替换，或断开连接以移除。",
     "models.apiKeyPrompt": "输入 {name} 的 API Key 以启用 {count} 个模型。",

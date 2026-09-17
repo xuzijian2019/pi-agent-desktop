@@ -537,6 +537,7 @@ export const enLocale: LocalePlugin = {
     "chat.modelScopeConfigure": "Configure providers",
     "chat.modelScopeDismiss": "Dismiss",
     "chat.attachmentError": "Could not attach images",
+    "chat.removePastedText": "Remove pasted text",
     "chat.inputHistory": "Input history",
     "models.apiKeyStored": "API key is stored. Enter a new key below to replace it, or disconnect to remove it.",
     "models.apiKeyPrompt": "Enter your {name} API key to enable {count} models.",

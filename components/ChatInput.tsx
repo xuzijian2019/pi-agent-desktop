@@ -7,6 +7,14 @@ import type { ModelScopeWarning } from "@/lib/model-scope-warnings";
 import type { TextContent, UserMessage } from "@/lib/types";
 import { clearDraft, getDraft, setDraft, type ChatDraftImage } from "@/lib/draft-store";
 import {
+  buildPasteToken,
+  normalizePastedText,
+  shouldChipPastedText,
+  splicePastedTexts,
+  type ChatDraftText,
+  type PastedTextChip,
+} from "@/lib/pasted-text";
+import {
   MAX_ATTACHED_IMAGE_BYTES,
   MAX_ATTACHED_IMAGES,
   isBase64ImageWithinLimits,
@@ -251,6 +259,18 @@ function draftImagesToAttachedImages(images: ChatDraftImage[] | undefined): Atta
     .filter(isBase64ImageWithinLimits)
     .slice(0, MAX_ATTACHED_IMAGES)
     .map(draftImageToAttachedImage);
+}
+
+export function draftTextsToPastedTexts(texts: ChatDraftText[] | undefined): PastedTextChip[] {
+  return (texts ?? []).map((text) => ({
+    id: text.id,
+    token: buildPasteToken(text.id, text.content),
+    content: text.content,
+  }));
+}
+
+export function pastedTextsToDraftTexts(chips: PastedTextChip[]): ChatDraftText[] {
+  return chips.map(({ id, content }) => ({ id, content }));
 }
 
 export function canRestoreUserMessage(
@@ -547,6 +567,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
     draftKey ? draftImagesToAttachedImages(getDraft(draftKey)?.images) : []
   ));
+  const [pastedTexts, setPastedTexts] = useState<PastedTextChip[]>(() => (
+    draftKey ? draftTextsToPastedTexts(getDraft(draftKey)?.texts) : []
+  ));
   const projectLabel = getProjectLabel(projectPath);
   const trimmedValue = value.trimStart();
   const bashMode = attachedImages.length === 0 && trimmedValue.startsWith("!");
@@ -595,9 +618,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const draftKeyRef = useRef(draftKey);
   const valueRef = useRef(value);
   const attachedImagesRef = useRef(attachedImages);
+  const pastedTextsRef = useRef(pastedTexts);
   const pendingImageCountRef = useRef(0);
   valueRef.current = value;
   attachedImagesRef.current = attachedImages;
+  pastedTextsRef.current = pastedTexts;
 
   useImperativeHandle(ref, () => ({
     insertIfEmpty(text: string) {
@@ -753,6 +778,42 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     });
   }, []);
 
+  // Large text pastes become a chip token in the composer plus the full
+  // content held here; spliced back as a fenced block on send.
+  const insertPastedTextChip = useCallback((content: string) => {
+    const id = pastedTextsRef.current.reduce((max, chip) => Math.max(max, chip.id), 0) + 1;
+    const token = buildPasteToken(id, content);
+    const ta = textareaRef.current;
+    let inserted = false;
+    if (ta) {
+      ta.focus();
+      // execCommand keeps the textarea's native undo stack intact.
+      try {
+        inserted = document.execCommand("insertText", false, token);
+      } catch {
+        inserted = false;
+      }
+    }
+    if (!inserted) {
+      const current = valueRef.current;
+      const start = ta?.selectionStart ?? current.length;
+      const end = ta?.selectionEnd ?? start;
+      const next = current.slice(0, start) + token + current.slice(end);
+      setValue(next);
+      requestAnimationFrame(() => {
+        if (!ta) return;
+        ta.setSelectionRange(start + token.length, start + token.length);
+      });
+    }
+    setPastedTexts((prev) => [...prev, { id, token, content }]);
+  }, []);
+
+  const removePaste = useCallback((id: number) => {
+    const removed = pastedTextsRef.current.find((chip) => chip.id === id);
+    setPastedTexts((prev) => prev.filter((chip) => chip.id !== id));
+    if (removed) setValue((prev) => prev.split(removed.token).join(""));
+  }, []);
+
   const clearInput = useCallback(() => {
     setValue("");
     setAtQuery(null);
@@ -761,18 +822,29 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (draftKey) clearDraft(draftKey);
     if (draftKeyRef.current && draftKeyRef.current !== draftKey) clearDraft(draftKeyRef.current);
     clearImages();
+    setPastedTexts([]);
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
   }, [clearImages, draftKey]);
+
+  // Chips whose token was deleted from the composer by hand are dropped so
+  // state, draft persistence and the chip row all follow the visible text.
+  useEffect(() => {
+    setPastedTexts((prev) => {
+      const next = prev.filter((chip) => value.includes(chip.token));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [value]);
 
   useEffect(() => {
     if (!draftKey || draftKeyRef.current !== draftKey) return;
     setDraft(draftKey, {
       value,
       images: attachedImages.map(imageToDraftImage),
+      texts: pastedTextsToDraftTexts(pastedTexts),
     });
-  }, [attachedImages, draftKey, value]);
+  }, [attachedImages, draftKey, value, pastedTexts]);
 
   useEffect(() => {
     const previousDraftKey = draftKeyRef.current;
@@ -782,6 +854,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       setDraft(previousDraftKey, {
         value: valueRef.current,
         images: attachedImagesRef.current.map(imageToDraftImage),
+        texts: pastedTextsToDraftTexts(pastedTextsRef.current),
       });
     }
 
@@ -795,6 +868,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       prev.forEach(revokeImagePreview);
       return draftImagesToAttachedImages(draft?.images);
     });
+    setPastedTexts(draftTextsToPastedTexts(draft?.texts));
   }, [draftKey]);
 
   useEffect(() => {
@@ -811,7 +885,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, []);
 
   const handleSend = useCallback(async () => {
-    const msg = value.trim();
+    const msg = splicePastedTexts(value, pastedTexts).trim();
     if (!msg && !attachedImages.length) return;
     if (isStreaming) return;
     onAudioUnlock?.();
@@ -825,7 +899,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const resolvedMessage = await resolveSessionReferences(msg, sessionMentionTargetsRef.current);
     onSend(resolvedMessage, attachedImages.length ? attachedImages : undefined);
     clearInput();
-  }, [value, attachedImages, isStreaming, onBuiltinCommand, onSend, clearInput, onAudioUnlock]);
+  }, [value, pastedTexts, attachedImages, isStreaming, onBuiltinCommand, onSend, clearInput, onAudioUnlock]);
 
   const slashQuery = value.startsWith("/") && !/\s/.test(value.slice(1))
     ? value.slice(1).toLowerCase()
@@ -1142,7 +1216,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, []);
 
   const sendQueued = useCallback(async (mode: "steer" | "followup") => {
-    const msg = value.trim();
+    const msg = splicePastedTexts(value, pastedTexts).trim();
     if (!msg && !attachedImages.length) return;
     if (attachedImages.length) return;
     onAudioUnlock?.();
@@ -1159,7 +1233,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       onFollowUp(resolvedMessage, attachedImages.length ? attachedImages : undefined);
     }
     clearInput();
-  }, [value, attachedImages, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput, onAudioUnlock]);
+  }, [value, pastedTexts, attachedImages, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput, onAudioUnlock]);
 
   const getNextSlashIndex = useCallback((direction: "up" | "down" | "left" | "right") => {
     const lastIndex = displayedSlashCommands.length - 1;
@@ -1369,6 +1443,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       processImageFiles(files);
       return;
     }
+    // Large plain-text pastes become a compact chip so the composer stays
+    // readable; spliced back as a fenced block on send. Skipped in bash mode:
+    // a fence glued into a shell command would corrupt it.
+    const text = e.clipboardData?.getData("text/plain") ?? "";
+    if (!bashMode && shouldChipPastedText(text)) {
+      e.preventDefault();
+      insertPastedTextChip(normalizePastedText(text));
+      return;
+    }
     // WebKitGTK (Linux) delivers an empty clipboardData.items list on paste
     // even when the clipboard holds an image (WebKit bug 320303). Fall back to
     // the Tauri clipboard-manager readImage() only in the desktop shell, and
@@ -1383,7 +1466,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         /* ignore — nothing to paste */
       });
     }
-  }, [processImageFiles]);
+  }, [processImageFiles, bashMode, insertPastedTextChip]);
 
   useEffect(() => {
     if (slashQuery === null) {
@@ -2063,6 +2146,46 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             );
           })()}
           <div ref={composerRef} className="chat-composer">
+          {pastedTexts.length > 0 && (
+            <div style={{ display: "flex", gap: 6, padding: "4px 6px 0", flexWrap: "wrap" }}>
+              {pastedTexts.map((chip) => (
+                <span
+                  key={chip.id}
+                  title={chip.content.length > 200 ? `${chip.content.slice(0, 200)}…` : chip.content}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 4,
+                    padding: "3px 4px 3px 8px",
+                    background: "var(--bg-subtle, var(--bg-panel))",
+                    border: "1px solid var(--border)",
+                    borderRadius: 6,
+                    color: "var(--text-muted)",
+                    fontSize: 11,
+                    fontFamily: "var(--font-mono)",
+                    maxWidth: 260,
+                  }}
+                >
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{chip.token}</span>
+                  <button
+                    type="button"
+                    onClick={() => removePaste(chip.id)}
+                    title={t("chat.removePastedText")}
+                    aria-label={t("chat.removePastedText")}
+                    style={{
+                      flexShrink: 0,
+                      width: 16, height: 16, borderRadius: "50%",
+                      background: "var(--bg-panel)", border: "1px solid var(--border)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      cursor: "pointer", padding: 0, color: "var(--text-muted)",
+                    }}
+                  >
+                    <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                      <line x1="1" y1="1" x2="7" y2="7" /><line x1="7" y1="1" x2="1" y2="7" />
+                    </svg>
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           {attachedImages.length > 0 && (
             <div style={{ display: "flex", gap: 8, padding: "4px 6px 8px", flexWrap: "wrap" }}>
               {attachedImages.map((img, i) => (

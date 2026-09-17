@@ -1,4 +1,5 @@
 import { APP_PREF_KEYS, getPrefJson, setPrefJson } from "@/lib/app-prefs";
+import type { ChatDraftText } from "@/lib/pasted-text";
 
 export interface ChatDraftImage {
   data: string;
@@ -8,10 +9,12 @@ export interface ChatDraftImage {
 export interface ChatDraft {
   value: string;
   images: ChatDraftImage[];
+  texts?: ChatDraftText[];
 }
 
 const drafts = new Map<string, ChatDraft>();
 const MAX_PERSISTED_IMAGE_BYTES = 400_000; // approx decoded size via base64 length
+const MAX_PERSISTED_TEXT_CHARS = 131_072;
 const MAX_PERSISTED_DRAFTS = 40;
 
 let hydrated = false;
@@ -21,16 +24,21 @@ function cloneDraft(draft: ChatDraft): ChatDraft {
   return {
     value: draft.value,
     images: draft.images.map((image) => ({ ...image })),
+    texts: draft.texts?.map((text) => ({ ...text })),
   };
 }
 
 function isEmptyDraft(draft: ChatDraft): boolean {
-  return !draft.value && draft.images.length === 0;
+  return !draft.value && draft.images.length === 0 && (draft.texts?.length ?? 0) === 0;
 }
 
 function imagePersistable(image: ChatDraftImage): boolean {
   // base64 length ≈ 4/3 of bytes; keep a conservative cap so localStorage stays usable.
   return image.data.length * 0.75 <= MAX_PERSISTED_IMAGE_BYTES;
+}
+
+function textPersistable(text: ChatDraftText): boolean {
+  return typeof text.id === "number" && typeof text.content === "string" && text.content.length <= MAX_PERSISTED_TEXT_CHARS;
 }
 
 function hydrateFromStorage(): void {
@@ -47,6 +55,9 @@ function hydrateFromStorage(): void {
         .filter((image) => image && typeof image.data === "string" && typeof image.mimeType === "string")
         .filter(imagePersistable)
         .map((image) => ({ data: image.data, mimeType: image.mimeType })),
+      texts: Array.isArray(draft.texts)
+        ? draft.texts.filter(textPersistable).map((text) => ({ id: text.id, content: text.content }))
+        : [],
     });
   }
 }
@@ -63,6 +74,7 @@ function schedulePersist(): void {
         {
           value: draft.value,
           images: draft.images.filter(imagePersistable),
+          texts: (draft.texts ?? []).filter(textPersistable),
         },
       ] as const);
     setPrefJson(APP_PREF_KEYS.chatDrafts, Object.fromEntries(entries));

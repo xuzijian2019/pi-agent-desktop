@@ -8,7 +8,7 @@ const jiti = createJiti(import.meta.url, {
   jsx: { runtime: "automatic" },
   tsconfigPaths: true,
 });
-const { ChatInput, ModelErrorBanner, ModelScopeWarningBanner, canRestoreUserMessage, filterModelOptions, getUserMessageText, getUserMessageDraftImages } = await jiti.import("./ChatInput.tsx");
+const { ChatInput, ModelErrorBanner, ModelScopeWarningBanner, canRestoreUserMessage, filterModelOptions, getUserMessageText, getUserMessageDraftImages, draftTextsToPastedTexts, pastedTextsToDraftTexts } = await jiti.import("./ChatInput.tsx");
 const { I18nProvider } = await jiti.import("../hooks/useI18n.tsx");
 
 /** The banner reads its title through useI18n, so it needs the provider. */
@@ -191,4 +191,20 @@ test("renders ChatInput controls with responsive container classes and accessibi
   assert.match(html, /class="chat-composer"/);
   assert.match(html, /class="chat-composer-controls"/);
   assert.match(html, /aria-label="Disable completion sound"/);
+});
+
+test("draft text chips round-trip through the draft shape", () => {
+  const texts = [
+    { id: 1, content: "State  Recv-Q\nLISTEN 0" },
+    { id: 3, content: "```\nfenced\n```" },
+  ];
+
+  const chips = draftTextsToPastedTexts(texts);
+  assert.deepEqual(
+    chips.map((chip) => chip.token),
+    ["[Pasted text 1 · 2 lines]", "[Pasted text 3 · 3 lines]"],
+  );
+  assert.deepEqual(pastedTextsToDraftTexts(chips), texts);
+  // Round-trip is lossless so drafts restore with identical tokens.
+  assert.deepEqual(pastedTextsToDraftTexts(draftTextsToPastedTexts(texts)), texts);
 });
