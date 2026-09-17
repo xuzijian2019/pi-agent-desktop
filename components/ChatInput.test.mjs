@@ -181,8 +181,6 @@ test("renders ChatInput controls with responsive container classes and accessibi
         onSend() {},
         onAbort() {},
         onCompact() {},
-        onSoundToggle() {},
-        soundEnabled: true,
         isStreaming: false,
       }),
     ),
@@ -190,7 +188,8 @@ test("renders ChatInput controls with responsive container classes and accessibi
 
   assert.match(html, /class="chat-composer"/);
   assert.match(html, /class="chat-composer-controls"/);
-  assert.match(html, /aria-label="Disable completion sound"/);
+  assert.match(html, /aria-label="Compact context"/);
+  assert.doesNotMatch(html, /completion sound/i);
 });
 
 test("draft text chips round-trip through the draft shape", () => {
