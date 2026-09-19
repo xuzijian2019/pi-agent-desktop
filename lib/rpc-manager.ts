@@ -389,6 +389,9 @@ export class AgentSessionWrapper {
       const result = await generateSessionTitle(this.inner as unknown as AgentSession, { waitForIdle: false });
       if (!this._alive || this.inner.sessionManager.getSessionName()) return;
       this.inner.setSessionName(result.title);
+      // The run started before a name existed, so its activity card is still
+      // the untitled placeholder — name it now instead of at the next prompt.
+      patchActivity(this.sessionId, this.runId, { title: result.title });
       invalidateSessionListCache();
     } catch (error) {
       console.warn(`[rpc] auto-name failed for ${this.sessionId}: ${error instanceof Error ? error.message : String(error)}`);
@@ -397,7 +400,7 @@ export class AgentSessionWrapper {
 
   private startActivity(): void {
     this.activityOutcome = "completed";
-    beginActivity(this.sessionId, this.runId, this.cwd, this.inner.sessionManager.getSessionName() || this.getLiveSnapshot()?.firstMessage || this.sessionId);
+    beginActivity(this.sessionId, this.runId, this.cwd, this.inner.sessionManager.getSessionName() || this.getLiveSnapshot()?.firstMessage || "");
   }
 
   private emit(event: AgentEvent): void {

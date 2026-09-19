@@ -47,10 +47,10 @@ export function ActivityPanel({ visible, cwd, onOpen }: { visible: boolean; cwd:
     {filtered.slice(0, count).map(run => {
       const shared = activeRun(run) ? runs.filter(r => r.sessionId !== run.sessionId && activeRun(r) && (r.checkout ?? r.cwd) === (run.checkout ?? run.cwd)) : [];
       return <article className="workbench-card" key={run.sessionId}>
-        <strong>{run.title}</strong><span className={`workbench-status status-${run.status}`}>{t(`wb.${run.status}`)}</span>
+        <strong>{run.title || <span className="workbench-untitled">{t("wb.untitledSession")}</span>}</strong><span className={`workbench-status status-${run.status}`}>{t(`wb.${run.status}`)}</span>
         <small title={run.cwd}>{run.projectRoot?.split(/[\\/]/).pop() || run.cwd.split(/[\\/]/).pop()} · {run.branch || t("wb.detached")}</small>
         <p>{t(`wb.${run.phase}`)} · {Math.max(0, Math.floor(((run.finishedAt ?? now) - run.startedAt) / 1000))}s · {t("wb.queued", { count: run.queueCount })}</p>
-        {!!shared.length && <p title={shared.map(r => r.title).join("\n")}>{t("wb.sharedCheckout", { count: shared.length })}</p>}
+        {!!shared.length && <p title={shared.map(r => r.title || t("wb.untitledSession")).join("\n")}>{t("wb.sharedCheckout", { count: shared.length })}</p>}
         <div className="workbench-actions"><button onClick={() => onOpen(run.sessionId)}>{t(run.pendingInput ? "wb.openRequest" : "wb.open")}</button><button onClick={() => onOpen(run.sessionId, true)}>{t("wb.followUp")}</button>{activeRun(run) && <button disabled={busy === run.runId} onClick={() => void stop(run)}>{t("wb.stop")}</button>}</div>
       </article>;
     })}

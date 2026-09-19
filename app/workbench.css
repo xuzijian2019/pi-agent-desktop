@@ -54,6 +54,7 @@
 .workbench-toolbar > [role="status"] { font-size: 11.5px; color: var(--text-dim); }
 .workbench-card { margin: 10px 0; padding: 14px 16px; border: 1px solid var(--separator); border-radius: var(--radius-lg); background: var(--surface-muted); overflow-wrap: anywhere; }
 .workbench-card > strong { font-size: 13px; font-weight: 600; }
+.workbench-card > strong > .workbench-untitled { color: var(--text-dim); font-weight: 500; }
 .workbench-card .workbench-actions { margin-bottom: 0; padding-top: 4px; }
 .workbench-actions button, .workbench-actions a { background: transparent; }
 .workbench-actions > button:first-child { background: var(--bg-hover); }

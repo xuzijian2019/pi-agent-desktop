@@ -31,7 +31,7 @@ export function beginActivity(sessionId: string, runId: string, cwd: string, tit
   const previous = state().runs.get(sessionId);
   if (previous?.runId === runId && activeRun(previous)) return;
   const now = Date.now();
-  state().runs.set(sessionId, { sessionId, runId, cwd, title: title.slice(0, 160) || sessionId, status: "running", phase: "waiting_model", startedAt: now, updatedAt: now, pendingInput: false, queueCount: 0 }); changed();
+  state().runs.set(sessionId, { sessionId, runId, cwd, title: title.slice(0, 160), status: "running", phase: "waiting_model", startedAt: now, updatedAt: now, pendingInput: false, queueCount: 0 }); changed();
 }
 export function patchActivity(sessionId: string, runId: string, patch: Partial<ActivityRun>) {
   const previous = state().runs.get(sessionId);
