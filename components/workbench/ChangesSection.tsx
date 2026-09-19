@@ -94,12 +94,12 @@ export function ChangesSection({ visible, cwd, expanded, onExpandedChange, selec
         {count > 0 && <span className="workbench-section-badge">{count}</span>}
       </button>
       {status && count > 0 && <span className="review-counts"><span className="review-added">+{status.additions}</span><span className="review-removed">−{status.deletions}</span></span>}
-      {/* A clean tree leaves a quiet header: nothing to re-read, so no refresh
-          control. A failed load keeps it, because that is the one case where
-          re-reading is the point. */}
-      {(count > 0 || error) && <button type="button" className="workbench-section-action" onClick={() => { invalidateUiCache("/api/git/"); setRevision(value => value + 1); }} aria-label={t("contextPanel.diffRefresh")} title={t("contextPanel.diffRefresh")}>
+      {/* External editors do not emit an in-app change event. Keep refresh
+          available even for a clean tree so clean-to-dirty transitions can be
+          discovered without switching sessions. */}
+      <button type="button" className="workbench-section-action" onClick={() => { invalidateUiCache("/api/git/"); setRevision(value => value + 1); }} aria-label={t("contextPanel.diffRefresh")} title={t("contextPanel.diffRefresh")}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M20 11a8 8 0 1 0 2 5.3M20 4v7h-7" /></svg>
-      </button>}
+      </button>
     </div>
     {expanded && <div id={id} className="workbench-section-body">
       {error ? <p className="review-message" role="alert">{error}</p> : !status ? <p className="review-message">{t("files.loading")}</p> : !count ? <p className="review-message">{t("contextPanel.diffEmpty")}</p> :

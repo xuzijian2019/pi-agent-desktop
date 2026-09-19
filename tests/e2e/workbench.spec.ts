@@ -405,6 +405,29 @@ test("the Changes section expands patches inline without opening file tabs", asy
   await expect(toggle).toContainText("2");
 });
 
+test("a clean Changes section can refresh after an external edit", async ({ page, request }) => {
+  const cwd = await realpath(await project(page, true));
+  await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);
+  await expect(page.getByPlaceholder("Message…", { exact: false })).toBeEditable();
+  await mode(page, "files");
+  const { region: changes, toggle } = section(page, "Changes");
+  await toggle.click();
+  await expect(changes.getByText("No changed files", { exact: true })).toBeVisible();
+  const refresh = changes.getByRole("button", { name: "Refresh changes", exact: true });
+  await expect(refresh).toBeVisible();
+
+  await writeFile(path.join(cwd, "readme.md"), "# Externally updated\n");
+  await expect.poll(async () => {
+    const response = await request.get(`/api/git/status?cwd=${encodeURIComponent(cwd)}`);
+    return (await response.json()).files?.length;
+  }).toBe(1);
+  // No session/cwd change is necessary: the clean-state control revalidates
+  // both status and any patches through the normal cache invalidation path.
+  await refresh.click();
+  await expect(toggle).toContainText("1");
+  await expect(changes.getByRole("button", { name: /readme\.md/ })).toBeVisible();
+});
+
 test("transcript search jumps to an inactive branch, reveals output, and preserves the draft", async ({ page, request }) => {
   const cwd = path.join(WORK_ROOT, `search-${randomUUID()}`); await mkdir(cwd, { recursive: true });
   const id = randomUUID(); const timestamp = new Date().toISOString();
