@@ -2204,15 +2204,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       });
                     }}
                     disabled={isStreaming}
-                    onMouseEnter={(e) => {
-                      if (isStreaming) return;
-                      e.currentTarget.style.background = "var(--bg-hover)";
-                      e.currentTarget.style.color = "var(--text)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = modelDropdownOpen ? "var(--bg-hover)" : "none";
-                      e.currentTarget.style.color = "var(--text-muted)";
-                    }}
                     title={modelOptions.length > 0 ? "Change model" : "No available models"}
                   >
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2281,8 +2272,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                     if (!isActive || isAutoModelSelection) { setDraftSetup(previous => previous ? { ...previous, model: { provider: opt.provider, modelId: opt.modelId } } : previous); onModelChange(opt.provider, opt.modelId); }
                                   }}
                                   className={`composer-option-row${isActive ? " is-active" : ""}`}
-                                  onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                                  onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "none"; }}
                                 >
                                   {isActive
                                     ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon"><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
@@ -2322,16 +2311,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   setControlsMenuOpen(true);
                 }}
                 className={`composer-more-button${controlsMenuOpen ? " is-hidden" : ""}`}
-                onMouseEnter={(e) => {
-                  if (controlsMenuOpen) return;
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                  e.currentTarget.style.color = "var(--text)";
-                }}
-                onMouseLeave={(e) => {
-                  if (controlsMenuOpen) return;
-                  e.currentTarget.style.background = "none";
-                  e.currentTarget.style.color = "var(--text-muted)";
-                }}
               >
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="8" r="1.25" /><circle cx="8" cy="8" r="1.25" /><circle cx="13" cy="8" r="1.25" /></svg>
               </button>
@@ -2345,15 +2324,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   disabled={isStreaming}
                    title={t("chat.changeReasoning", { level: thinkingDisplayLabel })}
                    aria-label={t("chat.changeReasoningLabel")}
-                  onMouseEnter={(e) => {
-                    if (isStreaming) return;
-                    e.currentTarget.style.background = "var(--bg-hover)";
-                    e.currentTarget.style.color = "var(--text)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = thinkingDropdownOpen ? "var(--bg-hover)" : "none";
-                    e.currentTarget.style.color = "var(--text-muted)";
-                  }}
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M9.5 2A5.5 5.5 0 0 0 4 7.5c0 1.7.78 3.21 2 4.21V14a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1v-2.29c1.22-1 2-2.51 2-4.21A5.5 5.5 0 0 0 9.5 2z" />
@@ -2376,8 +2346,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           key={lvl}
                           onClick={() => { setThinkingDropdownOpen(false); if (!isActive) { setDraftSetup(previous => previous ? { ...previous, effort: lvl } : previous); onThinkingLevelChange(lvl); } }}
                           className={`composer-option-row${isActive ? " is-active" : ""}`}
-                          onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                          onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "none"; }}
                         >
                           {isActive
                             ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon"><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
@@ -2403,15 +2371,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   disabled={isStreaming}
                    title={t("chat.changeToolPreset") + `: ${toolPresetLabel}`}
                    aria-label={t("chat.changeToolPreset")}
-                  onMouseEnter={(e) => {
-                    if (isStreaming) return;
-                    e.currentTarget.style.background = "var(--bg-hover)";
-                    e.currentTarget.style.color = "var(--text)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = toolDropdownOpen ? "var(--bg-hover)" : "none";
-                    e.currentTarget.style.color = "var(--text-muted)";
-                  }}
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
@@ -2430,8 +2389,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           key={lvl}
                           onClick={() => { setToolDropdownOpen(false); if (!isActive) { setDraftSetup(previous => previous ? { ...previous, tools: preset } : previous); onToolPresetChange(preset); } }}
                           className={`composer-option-row${isActive ? " is-active" : ""}`}
-                          onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                          onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "none"; }}
                         >
                           {isActive
                             ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon"><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
@@ -2458,15 +2415,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   className={`native-toolbar-button composer-compact-button${(isCompact && !controlsMenuOpen) ? " is-icon-only" : ""}${isCompacting ? " is-compacting" : ""}`}
                   onClick={isCompacting ? onAbortCompaction : onCompact}
                   disabled={isStreaming && !isCompacting}
-                  onMouseEnter={(e) => {
-                    if (isStreaming && !isCompacting) return;
-                    e.currentTarget.style.background = isCompacting ? "color-mix(in srgb, var(--danger) 16%, transparent)" : "var(--bg-hover)";
-                    e.currentTarget.style.color = isCompacting ? "var(--danger)" : "var(--text)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = isCompacting ? "color-mix(in srgb, var(--danger) 8%, transparent)" : "none";
-                    e.currentTarget.style.color = isCompacting ? "var(--danger)" : "var(--text-muted)";
-                  }}
                    title={isCompacting ? t("chat.stopCompaction") : t("chat.compactContext")}
                    aria-label={isCompacting ? t("chat.stopCompaction") : t("chat.compactContext")}
                 >
@@ -2494,12 +2442,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   setControlsMenuOpen(false);
                 }}
                 className="composer-collapse-button"
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "var(--bg-selected)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                }}
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <line x1="18" y1="6" x2="6" y2="18" />
