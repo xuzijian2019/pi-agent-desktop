@@ -51,6 +51,7 @@ import { isTauriDesktop, setCloseQuitsNative } from "@/lib/desktop-native";
 import { encodeFilePathForApi, getFileName } from "@/lib/file-paths";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
 import { PRODUCT_NAME } from "@/lib/branding";
+import { hasForks } from "@/lib/session-forks";
 import {
   resolveInitialNavigation,
   workspaceFileTabsMatchContext,
@@ -1458,17 +1459,19 @@ export function AppShell() {
                 </svg>
                  {!isMobile && <span>{translate("history.label")}</span>}
               </button>
-              <BranchNavigator
-                tree={branchTree}
-                activeLeafId={branchActiveLeafId}
-                onLeafChange={handleBranchLeafChange}
-                inline
-                compact={isMobile}
-                containerRef={topBarRef}
-                open={activeTopPanel === "branches"}
-                onToggle={() => toggleTopPanel("branches")}
-                hasSession
-              />
+              {hasForks(branchTree) && (
+                <BranchNavigator
+                  tree={branchTree}
+                  activeLeafId={branchActiveLeafId}
+                  onLeafChange={handleBranchLeafChange}
+                  inline
+                  compact={isMobile}
+                  containerRef={topBarRef}
+                  open={activeTopPanel === "branches"}
+                  onToggle={() => toggleTopPanel("branches")}
+                  hasSession
+                />
+              )}
               {(() => {
                 const hasMessages = Boolean(
                   selectedSession
