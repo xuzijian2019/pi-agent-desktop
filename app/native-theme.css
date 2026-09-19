@@ -38,7 +38,7 @@
   --accent-border: rgba(29, 29, 31, 0.22);
   /* The single focus affordance: every :focus-visible rule in this file is
      `outline: none` plus `box-shadow: 0 0 0 3px var(--focus-ring)`. */
-  --focus-ring: color-mix(in srgb, var(--accent) 35%, transparent);
+  --focus-ring: color-mix(in srgb, var(--accent) 18%, transparent);
   --danger: #d92d20;
   --success: #248a3d;
   --warning: #b87503;
@@ -107,7 +107,7 @@ html.dark {
   --accent-contrast: #1d1d1f;
   --accent-soft: rgba(245, 245, 247, 0.14);
   --accent-border: rgba(245, 245, 247, 0.3);
-  --focus-ring: color-mix(in srgb, var(--accent) 35%, transparent);
+  --focus-ring: color-mix(in srgb, var(--accent) 18%, transparent);
   --danger: #ff6961;
   --success: #30d158;
   --warning: #ffd60a;
@@ -2284,7 +2284,7 @@ pre, code {
 .chat-composer:focus-within {
   border-color: var(--accent-border) !important;
   outline: none !important;
-  box-shadow: var(--shadow-composer), 0 0 0 3px var(--focus-ring) !important;
+  box-shadow: var(--shadow-composer), 0 0 0 2px var(--focus-ring) !important;
 }
 
 /* The shell above owns the ring for the whole composer, so the textarea
