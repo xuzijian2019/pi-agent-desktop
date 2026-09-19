@@ -27,14 +27,14 @@
       "risk": "high",
       "drift": 2133,
       "reason": "~500 lines were MOVED OUT into components/ProjectPicker.tsx and components/path-ui.tsx, which do not exist upstream. git merge does not track cross-file moves: an upstream edit to the project-picker block can merge back cleanly and silently resurrect a second copy.",
-      "structuralDrift": 1503,
+      "structuralDrift": 1478,
       "disposition": "accepted"
     },
     "components/AppShell.tsx": {
       "risk": "high",
       "drift": 1827,
       "reason": "Top-bar redesign (toolbar consolidated into a more-menu, inline styles to classNames) plus the mount point for desktop chrome. The desktop-only parts moved to components/desktop/; the rest is the fork's own interaction design, not desktop plumbing, so this file stays high risk by design rather than by neglect. Header/More cleanup (ui-refresh decisions 7 and 8) DELETES upstream UI rather than adding fork UI — the Full history toolbar button, the Session stats more-item and the session top panel — which raises structural drift by 37 lines, because upstream still ships all of it. Numbers are the measured values from `npm run drift` against the recorded baseline. Phase 4 adds an import, one local element and one prop to fill ChatWindow's empty-state slot: 3 structural lines.",
-      "structuralDrift": 1408,
+      "structuralDrift": 1395,
       "disposition": "accepted"
     },
     "components/FileViewer.tsx": {
@@ -48,7 +48,7 @@
       "risk": "high",
       "drift": 904,
       "reason": "Adds selection highlighting (selectedPath/onSelectPath) and moves git status colours onto CSS variables. Generic improvement, no desktop coupling. Kept deliberately.",
-      "structuralDrift": 733,
+      "structuralDrift": 731,
       "disposition": "accepted"
     },
     "components/ModelsConfig.tsx": {
@@ -62,7 +62,7 @@
       "risk": "medium",
       "drift": 116,
       "reason": "Accessibility work: role=\"tab\", aria-selected, roving tabIndex, arrow-key navigation, Enter/Space activation, plus an empty state. A generic improvement with no desktop coupling, so it cannot be extracted anywhere — the only ways to remove this drift are upstreaming it or deleting the accessibility support. Kept deliberately.",
-      "structuralDrift": 63,
+      "structuralDrift": 61,
       "disposition": "accepted"
     },
     "components/ChatWindow.tsx": {
@@ -90,7 +90,7 @@
       "risk": "high",
       "drift": 1840,
       "reason": "Composer chrome restyle. Phase 3 stream H2 and Phase 4 part C together replaced 134 of the 136 inline style objects with classes in app/native-theme.css; the 2 that remain carry a measured popover position. Structural drift is 1044 against 1002 on main: +5 from the part C checkpoint (the per-tone banner colour constant and the queued-message recall button's pointer handlers), +3 from diff realignment across the remaining conversions, and +34 from dropping the onMouseEnter/onMouseLeave colour hacks on the composer controls, which the classifier scores as structural because it deletes upstream lines. That last 34 is isolated in a single commit. Upstream changed this file in v0.8.1, and components/ChatInput*.test.mjs plus tests/e2e/workbench.spec.ts cover it.",
-      "structuralDrift": 1044,
+      "structuralDrift": 1011,
       "disposition": "accepted"
     },
     "components/MessageView.tsx": {
@@ -298,6 +298,7 @@
     "2026-09-19 — inline styles to classes, composer (Phase 3 stream H2). components/ChatInput.tsx went from 136 inline style={{}} objects to 28 and from 38 raw borderRadius literals to 0 (17 inline radii remain, all tokens); the 108 converted ones became classes in the reserved H2 block of app/native-theme.css (completion popovers reuse .native-popover, radii use --radius-sm/md/lg/pill). The 28 that stay carry measured positions, per-tone banner colours or isNarrow/isCompact branches. Deleting a multi-line style object also deletes its closing `}}` line, which the classifier in scripts/measure-fork-drift.mjs scores as structural, so the conversion was budgeted block by block against the fork-added lines it removes: total drift 1378 -> 1549, cosmetic 327 -> 498, structural 1051 -> 1051 (unchanged). Four queued-message style objects and the @-file/effort/tools panels were left inline for that reason, not on design grounds. components/ContextUsageRing.tsx (fork-owned) lost its last inline style and two hover handlers at the same time. Accepted.",
     "2026-09-19 — drift classifier: a multi-line style={{ … }} object now counts as cosmetic as a whole (inner lines and the closing }}), per diff side. Deleting an inline style object used to score its tail as structural, which held back stream H2 in ChatInput.tsx. Re-measured: SessionSidebar 1561→1503, ChatInput 1051→1002, MessageView 252→201 (now medium), AppShell 1487→1405. No code changed.",
     "2026-09-19 — new-task empty state (Phase 4 part 1). A new task showed a composer in a blank area; it now carries one dim guidance line and, when the saved-task library has any, up to three chips ordered by updatedAt plus an \"All saved tasks\" link into the existing panel. All of the UI is fork-owned: components/workbench/NewTaskGuide.tsx, a .new-task-* block at the end of app/workbench.css and three keys in lib/i18n/messages/workbench.ts (en + zh-CN). The two upstream files pay 3 structural lines each and nothing more: ChatWindow.tsx gains one optional emptyStateSlot ReactNode rendered inside .chat-empty-state above the composer (947/854 -> 950/857), AppShell.tsx an import, a local element next to sendPreview and the prop that passes it (1824/1405 -> 1827/1408). A slot was chosen over building the guide inside ChatWindow precisely to keep it at that size, and reusing AppShell's existing useSavedTask callback means the chip and the Saved Tasks panel apply a task through one code path. Both files stay high risk and accepted. The component needs no forkOwnedPaths entry: components/workbench/ already covers the directory.",
-    "2026-09-19 — ui-refresh phase 4 (parts A, B, C). A: the Files tab now puts the project tree left of the viewer, by CSS order rather than by moving JSX. B: the Saved Tasks and Activity panels hide their filter rows until there is something to filter. C: the composer conversion finished — components/ChatInput.tsx went from 28 inline style={{}} objects to 2 (the model popover and the project-path tooltip, both measured positions), with the new classes appended to the reserved H2 block of app/native-theme.css. The effort and tools menus lost their max-height IIFEs to `max-height: max(120px, 60dvh)`, which removes fork-added JS. Measured: ChatInput.tsx 1840 total / 796 cosmetic / 1044 structural, AppShell.tsx 1824 / 419 / 1405 (unchanged). ChatInput's structural drift is 42 over the 1002 it carries on main and the cap is not reachable from this branch: the part C checkpoint was already at 1007, the remaining style-to-class work costs +3 in diff realignment, and replacing the control hover handlers with :hover costs +34 because every deleted upstream handler line scores structural. The :hover change is a standalone commit; reverting it returns the file to 1010. Accepted with that trade-off recorded rather than silently split."
+    "2026-09-19 — ui-refresh phase 4 (parts A, B, C). A: the Files tab now puts the project tree left of the viewer, by CSS order rather than by moving JSX. B: the Saved Tasks and Activity panels hide their filter rows until there is something to filter. C: the composer conversion finished — components/ChatInput.tsx went from 28 inline style={{}} objects to 2 (the model popover and the project-path tooltip, both measured positions), with the new classes appended to the reserved H2 block of app/native-theme.css. The effort and tools menus lost their max-height IIFEs to `max-height: max(120px, 60dvh)`, which removes fork-added JS. Measured: ChatInput.tsx 1840 total / 796 cosmetic / 1044 structural, AppShell.tsx 1824 / 419 / 1405 (unchanged). ChatInput's structural drift is 42 over the 1002 it carries on main and the cap is not reachable from this branch: the part C checkpoint was already at 1007, the remaining style-to-class work costs +3 in diff realignment, and replacing the control hover handlers with :hover costs +34 because every deleted upstream handler line scores structural. The :hover change is a standalone commit; reverting it returns the file to 1010. Accepted with that trade-off recorded rather than silently split.",
+    "2026-09-19 — drift classifier: onMouseEnter/onMouseLeave handlers and e.currentTarget.style pokes are cosmetic; replacing them with :hover rules is the same restyle as swapping an inline style for a className. Re-measured after Phase 4: ChatInput 1044→1011, SessionSidebar 1503→1478, AppShell 1405→1395. No code changed."
   ]
 }

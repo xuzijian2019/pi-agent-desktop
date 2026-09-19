@@ -47,6 +47,9 @@ const COSMETIC = new RegExp(
     `^\\s*(?:${STYLE_PROPS})\\s*:`,
     "^\\s*[\"']?#[0-9a-fA-F]{3,8}",
     "var\\(--",
+    // Hover hacks that poke inline styles; replacing them with :hover is cosmetic.
+    "onMouse(?:Enter|Leave)=",
+    "currentTarget\\.style\\.",
   ].join("|"),
 );
 
