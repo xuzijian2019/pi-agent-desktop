@@ -79,8 +79,9 @@ test("saved task applies to a draft, preserves settings and restores the panel w
   await expect(panel).toBeVisible();
   await composer.fill("Keep this draft");
   await panel.getByRole("button", { name: "Use", exact: true }).click();
+  await composer.fill("Keep this draft plus a late edit");
   await page.getByRole("button", { name: "Append task prompt" }).click();
-  await expect(composer).toHaveValue("Keep this draft\n\nReview this project carefully.");
+  await expect(composer).toHaveValue("Keep this draft plus a late edit\n\nReview this project carefully.");
 });
 
 test("the composer send preview keeps the reference snapshot and goes stale after edits", async ({ page, request }) => {

@@ -819,12 +819,19 @@ export function AppShell() {
   const showPlaceholder = initialSessionRestored && !showChat;
 
   const branchNavigate = useCallback((cwd: string) => { handleNewSession("", cwd); }, [handleNewSession]);
-  const applySavedTask = useCallback((task: SavedTask, cwd: string, draft: ChatDraft | null, append: boolean, generation: number) => {
+  const applySavedTask = useCallback(async (task: SavedTask, cwd: string, append: boolean, generation: number) => {
+    const draftKey = `new:${cwd}`;
     if (generation !== navigationGeneration.current) { setTaskConflict(undefined); return; }
+    // The active composer is authoritative, including edits not yet persisted.
+    // Only an inactive project's draft needs an asynchronous storage read.
+    const draft = !selectedSession && effectiveNewSessionCwd === cwd && chatInputRef.current
+      ? chatInputRef.current.snapshot()
+      : await loadDraft(draftKey);
+    if (generation !== navigationGeneration.current || getDraftStatus(draftKey) === "conflict") { setTaskConflict(undefined); return; }
     const setup = { model: task.model ?? draft?.setup?.model ?? null, effort: task.effort === "inherit" ? draft?.setup?.effort ?? "inherit" : task.effort, tools: task.tools === "inherit" ? draft?.setup?.tools ?? "inherit" : task.tools };
-    setDraft(`new:${cwd}`, { value: append && draft?.value ? `${draft.value}\n\n${task.prompt}` : task.prompt, images: append ? draft?.images ?? [] : [], texts: append ? draft?.texts : [], references: append ? draft?.references : {}, setup });
+    setDraft(draftKey, { value: append && draft?.value ? `${draft.value}\n\n${task.prompt}` : task.prompt, images: append ? draft?.images ?? [] : [], texts: append ? draft?.texts : [], references: append ? draft?.references : {}, setup });
     setTaskConflict(undefined); handleNewSession("", cwd);
-  }, [handleNewSession]);
+  }, [handleNewSession, selectedSession, effectiveNewSessionCwd]);
   const useSavedTask = useCallback(async (task: SavedTask) => {
     const cwd = selectedSession?.cwd ?? effectiveNewSessionCwd;
     if (!cwd) throw new Error(translate("wb.selectProject"));
@@ -835,7 +842,7 @@ export function AppShell() {
     if (getDraftStatus(`new:${cwd}`) === "conflict") throw new Error(translate("wb.draftConflict"));
     if (generation !== navigationGeneration.current) return;
     if (draft && (draft.value || draft.images.length)) setTaskConflict({ task, cwd, draft, generation });
-    else applySavedTask(task, cwd, draft, false, generation);
+    else await applySavedTask(task, cwd, false, generation);
   }, [selectedSession, effectiveNewSessionCwd, applySavedTask, translate]);
   const openTranscriptResult = useCallback(async (result: TranscriptResult, query: string, signal: AbortSignal) => {
     const generation = ++navigationGeneration.current;
@@ -1720,7 +1727,7 @@ export function AppShell() {
         <div hidden={rightPanelMode !== "activity"} className="workbench-mode-body"><ActivityPanel visible={rightPanelOpen && rightPanelMode === "activity"} cwd={activeCwd} onOpen={openActivitySession} /></div>
         <div hidden={rightPanelMode !== "search"} className="workbench-mode-body"><TranscriptSearchPanel visible={rightPanelOpen && rightPanelMode === "search"} onOpen={openTranscriptResult} /></div>
         <div hidden={rightPanelMode !== "tasks"} className="workbench-mode-body">
-          {taskConflict && <div className="workbench-card" role="dialog" aria-label={translate("wb.existingDraft")}><p>{translate("wb.existingDraft")}</p><button onClick={() => setTaskConflict(undefined)}>{translate("wb.keepDraft")}</button><button onClick={() => applySavedTask(taskConflict.task, taskConflict.cwd, taskConflict.draft, false, taskConflict.generation)}>{translate("wb.replaceDraft")}</button><button onClick={() => applySavedTask(taskConflict.task, taskConflict.cwd, taskConflict.draft, true, taskConflict.generation)}>{translate("wb.appendPrompt")}</button></div>}
+          {taskConflict && <div className="workbench-card" role="dialog" aria-label={translate("wb.existingDraft")}><p>{translate("wb.existingDraft")}</p><button onClick={() => setTaskConflict(undefined)}>{translate("wb.keepDraft")}</button><button onClick={() => void applySavedTask(taskConflict.task, taskConflict.cwd, false, taskConflict.generation)}>{translate("wb.replaceDraft")}</button><button onClick={() => void applySavedTask(taskConflict.task, taskConflict.cwd, true, taskConflict.generation)}>{translate("wb.appendPrompt")}</button></div>}
           <SavedTasksPanel visible={rightPanelOpen && rightPanelMode === "tasks"} cwd={activeCwd} seed={taskSeed} onUse={useSavedTask} onCapture={captureTask} />
         </div>
         <div hidden={rightPanelMode !== "files"} className="workbench-files-body">
