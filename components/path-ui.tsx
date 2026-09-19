@@ -32,9 +32,10 @@ export function displayCwd(cwd: string, homeDir?: string): string {
  * to the left edge; the inner plaintext bidi isolation keeps the path itself
  * rendered strictly left-to-right (no punctuation reordering).
  */
-export function PathLabel({ text, style }: { text: string; style?: CSSProperties }) {
+export function PathLabel({ text, style, className }: { text: string; style?: CSSProperties; className?: string }) {
   return (
     <span
+      className={className}
       style={{
         overflow: "hidden",
         textOverflow: "ellipsis",
@@ -54,7 +55,7 @@ export function PathLabel({ text, style }: { text: string; style?: CSSProperties
 
 const DROPDOWN_ANIMATION_MS = 140;
 
-export function AnimatedDropdown({ open, children, style, className }: { open: boolean; children: ReactNode; style: CSSProperties; className?: string }) {
+export function AnimatedDropdown({ open, children, style, className }: { open: boolean; children: ReactNode; style?: CSSProperties; className?: string }) {
   const [mounted, setMounted] = useState(open);
   const [visible, setVisible] = useState(open);
 
