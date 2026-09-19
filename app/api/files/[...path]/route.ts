@@ -568,7 +568,7 @@ export async function GET(
     const sessionId = request.nextUrl.searchParams.get("sessionId");
 
     const allowedRoots = await getAllowedFileRoots();
-    const allowedByRoot = isFilePathAllowed(filePath, allowedRoots);
+    const allowedByRoot = isFilePathAllowed(filePath, allowedRoots) || isExistingFilePathAllowed(filePath, allowedRoots);
     const allowedBySessionReference =
       !allowedByRoot &&
       type !== "list" &&

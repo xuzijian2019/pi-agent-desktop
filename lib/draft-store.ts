@@ -1,8 +1,10 @@
+import type { TaskSetup } from "./task-types";
+import type { ReferenceSelection } from "./prepare-outgoing";
 import { APP_PREF_KEYS } from "@/lib/app-prefs";
 import type { ChatDraftText } from "@/lib/pasted-text";
 
 export interface ChatDraftImage { data: string; mimeType: string }
-export interface ChatDraft { value: string; images: ChatDraftImage[]; texts?: ChatDraftText[] }
+export interface ChatDraft { value: string; images: ChatDraftImage[]; texts?: ChatDraftText[]; setup?: TaskSetup; references?: Record<string, ReferenceSelection> }
 type RecordValue = { revision: number; draft: ChatDraft | null };
 export type DraftStatus = "loading" | "pending" | "saved" | "failed" | "conflict";
 const drafts = new Map<string, ChatDraft>();
@@ -83,9 +85,10 @@ export async function loadDraft(key: string, discardLocal = false): Promise<Chat
   }
 }
 export function setDraft(key: string, draft: ChatDraft): void {
-  const value = !draft.value && !draft.images.length && !draft.texts?.length ? null : structuredClone(draft);
+  const value = !draft.value && !draft.images.length && !draft.texts?.length && !draft.setup ? null : structuredClone(draft);
   const previous = drafts.get(key) ?? null;
   if (previous === value || (previous && value && previous.value === value.value
+    && JSON.stringify(previous.setup) === JSON.stringify(value.setup) && JSON.stringify(previous.references) === JSON.stringify(value.references)
     && previous.images.length === value.images.length
     && previous.images.every((image, index) => image.data === value.images[index].data && image.mimeType === value.images[index].mimeType)
     && (previous.texts?.length ?? 0) === (value.texts?.length ?? 0)
