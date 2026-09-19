@@ -213,7 +213,7 @@ html.dark {
   border-color: var(--separator);
   border-radius: var(--radius-md);
   background: var(--surface-elevated);
-  box-shadow: var(--shadow-control), 0 10px 28px rgba(15, 23, 42, 0.1);
+  box-shadow: var(--shadow-composer);
   transform: translateY(-50%);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
@@ -221,9 +221,6 @@ html.dark {
   animation: conversation-navigator-preview-in 140ms var(--ease-native);
 }
 
-html.dark .conversation-navigator-preview {
-  box-shadow: var(--shadow-control), 0 12px 30px rgba(0, 0, 0, 0.32);
-}
 
 .conversation-navigator-question {
   display: -webkit-box;
@@ -401,7 +398,7 @@ html.dark .conversation-navigator-preview {
 .file-tab.is-active {
   border-color: var(--border);
   background: var(--surface);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  box-shadow: var(--shadow-control);
   color: var(--text);
 }
 
@@ -1160,7 +1157,7 @@ pre, code {
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-dialog);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -3390,7 +3387,7 @@ pre, code {
 
 .file-viewer-image-stage img {
   border-radius: var(--radius-sm);
-  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.18) !important;
+  box-shadow: var(--shadow-popover) !important;
 }
 
 .file-viewer-audio-stage {
@@ -3584,9 +3581,7 @@ span.linenumber {
 .notice-shelf-item {
   border-color: var(--separator) !important;
   background: color-mix(in srgb, var(--surface-elevated) 94%, transparent) !important;
-  box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.05),
-    0 10px 28px -16px rgba(15, 23, 42, 0.24) !important;
+  box-shadow: var(--shadow-composer) !important;
   color: var(--text-muted) !important;
   font-size: 13px !important;
   font-weight: 500;
@@ -3948,7 +3943,7 @@ span.linenumber {
 .file-tab.is-active {
   border-color: var(--border);
   background: var(--surface);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  box-shadow: var(--shadow-control);
   color: var(--text);
 }
 
