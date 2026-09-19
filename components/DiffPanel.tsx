@@ -5,7 +5,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { getFileIcon } from "./FileIcons";
 import { getRelativeFilePath } from "@/lib/file-paths";
 import { parseUnifiedPatch } from "@/lib/patch";
-import { uiFetch } from "@/lib/web-ui-client";
+import { invalidateUiCache, uiFetch } from "@/lib/web-ui-client";
 import type { GitFileDiffResponse, GitFileStatus, GitStatusResponse } from "@/lib/git-types";
 
 function FileDiff({ cwd, file, selected, refreshKey }: {
@@ -70,7 +70,7 @@ export function DiffPanel({ cwd, selectedFilePath, refreshKey = 0 }: {
     <div className="review-summary">
       <span>{t("wb.workingChanges")}</span>
       {status && <span className="review-counts"><span className="review-added">+{status.additions}</span><span className="review-removed">−{status.deletions}</span></span>}
-      <button onClick={() => setRevision(value => value + 1)} aria-label={t("contextPanel.diffRefresh")} title={t("contextPanel.diffRefresh")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M20 11a8 8 0 1 0 2 5.3M20 4v7h-7" /></svg></button>
+      <button onClick={() => { invalidateUiCache("/api/git/"); setRevision(value => value + 1); }} aria-label={t("contextPanel.diffRefresh")} title={t("contextPanel.diffRefresh")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M20 11a8 8 0 1 0 2 5.3M20 4v7h-7" /></svg></button>
     </div>
     {error ? <p className="review-message" role="alert">{error}</p> : !status ? <p className="review-message">{t("files.loading")}</p> : !status.files.length ? <p className="review-message">{t("contextPanel.diffEmpty")}</p> :
       status.files.map(file => <FileDiff key={file.filePath} cwd={cwd} file={file} selected={file.filePath === selectedFilePath} refreshKey={refreshKey + revision} />)}

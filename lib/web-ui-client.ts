@@ -4,7 +4,10 @@
 // other, and timers re-ask for it every few seconds. One module-level map keyed
 // by URL collapses both: an in-flight GET is shared, a settled one is replayed.
 // Only GETs are cached — they are the repeated ones, and they have no effects.
-const CACHE_TTL_MS = 5_000;
+// Bursts of identical GETs arrive within milliseconds; pollers are 10 s apart.
+// One second collapses the former without ever replaying a stale answer to a
+// user who just changed something on disk and pressed Refresh.
+const CACHE_TTL_MS = 1_000;
 const CACHE_MAX = 32;
 export const FORBIDDEN_MESSAGE = "This folder is not accessible or no longer exists.";
 
