@@ -152,6 +152,7 @@ export const zhCNLocale: LocalePlugin = {
     "sidebar.sortByName": "按名称排序",
     "sidebar.addProject": "添加项目",
     "sidebar.moreActions": "项目操作",
+    "sidebar.sessionActions": "会话操作",
     "sidebar.newChat": "新建会话",
     "sidebar.archiveProject": "移除项目",
     "contextPanel.tabOpen": "打开",

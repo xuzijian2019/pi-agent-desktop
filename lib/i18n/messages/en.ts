@@ -152,6 +152,7 @@ export const enLocale: LocalePlugin = {
     "sidebar.sortByName": "Sort by name",
     "sidebar.addProject": "Add project",
     "sidebar.moreActions": "Project actions",
+    "sidebar.sessionActions": "Session actions",
     "sidebar.newChat": "New Session",
     "sidebar.archiveProject": "Remove project",
     "contextPanel.tabOpen": "Open",

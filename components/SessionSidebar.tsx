@@ -2257,8 +2257,8 @@ function SessionItem({
             <button
               ref={menuButtonRef}
               onClick={toggleMenu}
-              title={t("sidebar.moreActions")}
-              aria-label={t("sidebar.moreActions")}
+              title={t("sidebar.sessionActions")}
+              aria-label={t("sidebar.sessionActions")}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               style={{
