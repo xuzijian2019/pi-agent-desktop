@@ -3171,6 +3171,29 @@ pre, code {
   height: 100%;
 }
 
+/* On a phone the Files panel is the whole screen, so the tree's saved width
+   would leave the viewer too narrow for its own toolbar. Cap the tree at a
+   share of the panel below the tablet breakpoint; the resize handle keeps its
+   full range above it. */
+@media (max-width: 640px) {
+  .file-panel-split > .file-panel-tree {
+    width: min(var(--file-tree-width, 300px), 40%);
+    min-width: min(var(--file-tree-width, 300px), 40%);
+    flex-basis: min(var(--file-tree-width, 300px), 40%);
+  }
+
+  /* Last resort for the narrowest phones: scroll the toolbar rather than let
+     the viewer shell clip the mode buttons off its right edge. */
+  .file-panel-viewer .file-viewer-toolbar {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .file-panel-viewer .file-viewer-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 .file-panel-empty-state {
   display: flex;
   padding: 28px;
