@@ -341,14 +341,14 @@ function QueuedMessageRow({ kind, label, text }: { kind: "steer" | "follow-up"; 
           fontSize: 10,
           fontFamily: "var(--font-mono)",
           padding: "1px 7px",
-          borderRadius: 999,
+          borderRadius: "var(--radius-pill, 999px)",
           border: `1px solid ${kind === "steer" ? "color-mix(in srgb, var(--accent) 45%, transparent)" : "var(--border)"}`,
           color: kind === "steer" ? "var(--accent)" : "var(--text-dim)",
         }}
       >
         {label}
       </span>
-      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</span>
+      <span className="composer-ellipsis">{text}</span>
     </div>
   );
 }
@@ -381,7 +381,7 @@ function ModelNoticeBanner({
         padding: "7px 10px",
         overflowY: "auto",
         border: `1px solid rgba(${color},0.3)`,
-        borderRadius: 6,
+        borderRadius: "var(--radius-sm)",
         background: `rgba(${color},0.07)`,
         color: `rgb(${color})`,
         fontSize: 11,
@@ -397,16 +397,16 @@ function ModelNoticeBanner({
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        style={{ flexShrink: 0, marginTop: 1 }}
+        className="composer-notice-icon"
         aria-hidden="true"
       >
         <path d="M10.3 2.9 1.8 17a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 2.9a2 2 0 0 0-3.4 0Z" />
         <line x1="12" y1="9" x2="12" y2="13" />
         <line x1="12" y1="17" x2="12.01" y2="17" />
       </svg>
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ fontWeight: 600, flex: 1 }}>{title}</div>
+      <div className="composer-notice-main">
+        <div className="composer-notice-head">
+          <div className="composer-notice-title">{title}</div>
           {action}
           {onDismiss && (
             <button
@@ -414,22 +414,7 @@ function ModelNoticeBanner({
               onClick={onDismiss}
               aria-label={dismissLabel}
               title={dismissLabel}
-              style={{
-                flexShrink: 0,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: 18,
-                height: 18,
-                padding: 0,
-                border: "none",
-                borderRadius: 4,
-                background: "transparent",
-                color: "inherit",
-                cursor: "pointer",
-                fontSize: 13,
-                lineHeight: 1,
-              }}
+              className="composer-notice-dismiss"
             >
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
                 <line x1="5" y1="5" x2="19" y2="19" />
@@ -438,7 +423,7 @@ function ModelNoticeBanner({
             </button>
           )}
         </div>
-        <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{body}</div>
+        <div className="composer-notice-body">{body}</div>
       </div>
     </div>
   );
@@ -489,18 +474,7 @@ export function ModelScopeWarningBanner({
         <button
           type="button"
           onClick={onOpenModelsConfig}
-          style={{
-            flexShrink: 0,
-            padding: "2px 8px",
-            border: `1px solid rgba(234,179,8,0.45)`,
-            borderRadius: 5,
-            background: "transparent",
-            color: "inherit",
-            cursor: "pointer",
-            fontSize: 11,
-            lineHeight: 1.4,
-            whiteSpace: "nowrap",
-          }}
+          className="composer-notice-action"
         >
           {t("chat.modelScopeConfigure")}
         </button>
@@ -520,12 +494,8 @@ function DraftSavingIndicator({ loading }: { loading: boolean }) {
   }, []);
   if (!visible) return null;
   return (
-    <div style={{ position: "relative", height: 0, pointerEvents: "none" }}>
-      <span role="status" style={{
-        position: "absolute", right: 0, bottom: 8,
-        fontSize: 11, color: "var(--text-muted)", background: "var(--surface)",
-        padding: "2px 6px", borderRadius: 4,
-      }}>
+    <div className="composer-draft-anchor">
+      <span role="status" className="composer-draft-status">
         {loading ? "Loading draft…" : "Saving draft…"}
       </span>
     </div>
@@ -1711,7 +1681,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           <div style={{
             marginBottom: 8,
             border: "1px solid var(--border)",
-            borderRadius: 6,
+            borderRadius: "var(--radius-md)",
             background: "var(--bg-panel)",
             padding: "5px 0",
           }}>
@@ -1779,7 +1749,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           <div style={{
             marginBottom: 8, padding: "5px 10px",
             background: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.25)",
-            borderRadius: 6, fontSize: 12, color: "rgba(180,130,0,0.9)",
+            borderRadius: "var(--radius-sm)", fontSize: 12, color: "rgba(180,130,0,0.9)",
             display: "flex", alignItems: "center", gap: 6,
           }}>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -1793,7 +1763,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           <div style={{
             marginBottom: 8, padding: "5px 10px",
             background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.24)",
-            borderRadius: 6, fontSize: 12, color: "rgba(5,150,105,0.95)",
+            borderRadius: "var(--radius-sm)", fontSize: 12, color: "rgba(5,150,105,0.95)",
             display: "flex", alignItems: "center", gap: 6,
           }}>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -1810,7 +1780,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               padding: "7px 10px",
               background: "rgba(239,68,68,0.07)",
               border: "1px solid rgba(239,68,68,0.3)",
-              borderRadius: 6,
+              borderRadius: "var(--radius-sm)",
               color: "#ef4444",
               fontFamily: "var(--font-mono)",
               fontSize: 12,
@@ -2236,7 +2206,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             <DraftSavingIndicator key={draftKey} loading={persistenceStatus === "loading"} />
           )}
           {draftKey && (persistenceStatus === "failed" || persistenceStatus === "conflict") && (
-            <div role="status" style={{ fontSize: 12, padding: "4px 6px" }}>
+            <div role="status" className="composer-draft-conflict">
               {persistenceStatus === "conflict"
                 ? "Draft changed in another tab. Your input is preserved; choose which version to keep."
                 : "Draft could not be saved. Keep this tab open and retry."}
@@ -2251,36 +2221,20 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           {invalidDraftImages && <div role="alert">Some restored images are invalid or exceed the attachment limits. Remove and reattach them before sending.</div>}
           {orphanedPaste && <div role="alert">Pasted text is missing. Paste it again or remove its placeholder before sending.</div>}
           {pastedTexts.length > 0 && (
-            <div style={{ display: "flex", gap: 6, padding: "4px 6px 0", flexWrap: "wrap" }}>
+            <div className="composer-paste-row">
               {pastedTexts.map((chip) => (
                 <span
                   key={chip.id}
                   title={chip.content.length > 200 ? `${chip.content.slice(0, 200)}…` : chip.content}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 4,
-                    padding: "3px 4px 3px 8px",
-                    background: "var(--bg-subtle, var(--bg-panel))",
-                    border: "1px solid var(--border)",
-                    borderRadius: 6,
-                    color: "var(--text-muted)",
-                    fontSize: 11,
-                    fontFamily: "var(--font-mono)",
-                    maxWidth: 260,
-                  }}
+                  className="composer-paste-chip"
                 >
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{chip.token}</span>
+                  <span className="composer-ellipsis">{chip.token}</span>
                   <button
                     type="button"
                     onClick={() => removePaste(chip.id)}
                     title={t("chat.removePastedText")}
                     aria-label={t("chat.removePastedText")}
-                    style={{
-                      flexShrink: 0,
-                      width: 16, height: 16, borderRadius: "50%",
-                      background: "var(--bg-panel)", border: "1px solid var(--border)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      cursor: "pointer", padding: 0, color: "var(--text-muted)",
-                    }}
+                    className="composer-chip-remove"
                   >
                     <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                       <line x1="1" y1="1" x2="7" y2="7" /><line x1="7" y1="1" x2="1" y2="7" />
@@ -2291,21 +2245,21 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             </div>
           )}
           {attachedImages.length > 0 && (
-            <div style={{ display: "flex", gap: 8, padding: "4px 6px 8px", flexWrap: "wrap" }}>
+            <div className="composer-attachments">
               {attachedImages.map((img, i) => (
-                <div key={i} style={{ position: "relative", flexShrink: 0 }}>
+                <div key={i} className="composer-attachment">
                   <button
                     type="button"
                     onClick={() => setLightboxSrc(img.previewUrl)}
                     title="View image"
                     aria-label="View image"
-                    style={{ padding: 0, border: "none", background: "none", cursor: "zoom-in", lineHeight: 0, display: "block" }}
+                    className="composer-attachment-open"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={img.previewUrl}
                       alt=""
-                      style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", display: "block" }}
+                      className="composer-attachment-thumb"
                     />
                   </button>
                   <button
@@ -2313,13 +2267,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     onClick={(e) => { e.stopPropagation(); removeImage(i); }}
                     title="Remove image"
                     aria-label="Remove image"
-                    style={{
-                      position: "absolute", top: -4, right: -4,
-                      width: 16, height: 16, borderRadius: "50%",
-                      background: "var(--bg-panel)", border: "1px solid var(--border)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      cursor: "pointer", padding: 0, color: "var(--text-muted)",
-                    }}
+                    className="composer-chip-remove is-corner"
                   >
                     <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                       <line x1="1" y1="1" x2="7" y2="7" /><line x1="7" y1="1" x2="1" y2="7" />

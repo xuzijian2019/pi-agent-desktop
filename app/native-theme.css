@@ -4171,4 +4171,233 @@ span.linenumber {
 
 /* -- H2: composer chips, popovers and controls (ChatInput.tsx) ------------ */
 
+/* Text helpers shared by the composer chips, menus and completion rows. */
+.composer-ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-nowrap {
+  white-space: nowrap;
+}
+
+.composer-wrap-anywhere {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.composer-clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.composer-icon {
+  flex: 0 0 auto;
+}
+
+.composer-check {
+  margin-left: auto;
+  color: var(--accent);
+}
+
+/* Keeps a menu row's label aligned with the rows that do carry a tick. */
+.composer-check-spacer {
+  flex: 0 0 auto;
+  width: 10px;
+}
+
+.composer-path-dim {
+  color: var(--text-dim);
+}
+
+.composer-anchor {
+  position: relative;
+}
+
+.composer-anchor.is-static {
+  flex-shrink: 0;
+}
+
+/* Model / scope notice banners ------------------------------------------- */
+.composer-notice-icon {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.composer-notice-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.composer-notice-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.composer-notice-title {
+  flex: 1;
+  font-weight: 600;
+}
+
+.composer-notice-body {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.composer-notice-dismiss {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms var(--ease-native);
+}
+
+.composer-notice-dismiss:hover {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.composer-notice-action {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 120ms var(--ease-native);
+}
+
+.composer-notice-action:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.composer-status-detail {
+  margin-left: 4px;
+  opacity: 0.7;
+}
+
+/* Draft persistence indicators ------------------------------------------- */
+.composer-draft-anchor {
+  position: relative;
+  height: 0;
+  pointer-events: none;
+}
+
+.composer-draft-status {
+  position: absolute;
+  right: 0;
+  bottom: 8px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.composer-draft-conflict {
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+/* Pasted-text chips and image attachments --------------------------------- */
+.composer-paste-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 6px 0;
+}
+
+.composer-paste-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 260px;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.composer-chip-remove {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background 120ms var(--ease-native),
+    color 120ms var(--ease-native);
+}
+
+.composer-chip-remove:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.composer-chip-remove.is-corner {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+}
+
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 6px 8px;
+}
+
+.composer-attachment {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.composer-attachment-open {
+  display: block;
+  padding: 0;
+  border: none;
+  background: none;
+  line-height: 0;
+  cursor: zoom-in;
+}
+
+.composer-attachment-thumb {
+  display: block;
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  object-fit: cover;
+}
+
 /* -- H3: message view (MessageView.tsx) ----------------------------------- */
