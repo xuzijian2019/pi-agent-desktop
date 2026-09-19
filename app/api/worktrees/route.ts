@@ -1,14 +1,16 @@
+import { branchInventory, previewBranch, executeBranch } from "@/lib/git-branches";
+import { hasBusyCheckout } from "@/lib/rpc-manager";
+import { isApiRequestAllowed } from "@/lib/request-security";
+import { uiRouteError } from "@/lib/web-ui-route";
 import { NextResponse } from "next/server";
 import { existsSync } from "fs";
 import {
-  addWorktree,
   listLocalBranches,
   listRemoteBranches,
   listWorktrees,
   partitionBranchList,
   removeWorktree,
   resolveProject,
-  switchBranch,
 } from "@/lib/worktree";
 import { allowFileRoot, isCwdAllowed } from "@/lib/file-access";
 
@@ -63,7 +65,7 @@ export async function GET(req: Request) {
       isGit,
       isTopLevel: project.isTopLevel,
       worktrees,
-      ...(includeBranches ? { branches, remoteBranches } : {}),
+      ...(includeBranches ? { branches, remoteBranches, branchInventory: isGit ? await branchInventory(cwd) : null } : {}),
     });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
@@ -72,6 +74,7 @@ export async function GET(req: Request) {
 
 // POST /api/worktrees  body: { cwd, branch }  →  { path, branch }
 export async function POST(req: Request) {
+  if (!isApiRequestAllowed(req)) return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   try {
     const body = await req.json() as { cwd?: string; branch?: string };
     if (!body.cwd || typeof body.cwd !== "string") {
@@ -86,11 +89,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Directory does not exist: ${body.cwd}` }, { status: 400 });
     }
 
-    const result = await addWorktree(body.cwd, body.branch);
+    const inventory = await branchInventory(body.cwd);
+    const existing = inventory.branches.find(b => b.ref === `refs/heads/${body.branch}`);
+    const preview = await previewBranch(body.cwd, { action: existing ? "switch" : "create", location: "worktree", name: body.branch, ref: existing?.ref, baseRef: "HEAD" });
+    const result = await executeBranch(preview.token, false, hasBusyCheckout);
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: message }, { status: 400 });
+    return uiRouteError(error);
   }
 }
 
@@ -98,6 +103,7 @@ export async function POST(req: Request) {
 // Checks out the branch in the cwd's own checkout (local branch, or a new
 // tracking branch when the name only exists on one remote).
 export async function PUT(req: Request) {
+  if (!isApiRequestAllowed(req)) return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   try {
     const body = await req.json() as { cwd?: string; branch?: string };
     if (!body.cwd || typeof body.cwd !== "string") {
@@ -112,11 +118,15 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: `Directory does not exist: ${body.cwd}` }, { status: 400 });
     }
 
-    const result = await switchBranch(body.cwd, body.branch);
+    const inventory = await branchInventory(body.cwd);
+    const local = inventory.branches.find(b => !b.remote && b.name === body.branch);
+    const remote = inventory.branches.filter(b => b.remote && b.name.slice(b.name.indexOf("/") + 1) === body.branch);
+    if (!local && remote.length !== 1) return NextResponse.json({ error: "Select an unambiguous branch from the Git branch control" }, { status: 409 });
+    const preview = await previewBranch(body.cwd, { action: "switch", location: "current", ref: (local ?? remote[0]).ref });
+    const result = await executeBranch(preview.token, false, hasBusyCheckout);
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: message }, { status: 400 });
+    return uiRouteError(error);
   }
 }
 

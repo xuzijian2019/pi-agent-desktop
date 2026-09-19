@@ -1,3 +1,5 @@
+import { beginActivity, patchActivity, finishActivity } from "./activity";
+import { withCheckoutGuard, checkoutRoot } from "./checkout-guard";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
@@ -84,6 +86,7 @@ const IDLE_RESET_EVENT_TYPES = new Set([
 ]);
 
 export interface RpcSessionStartOptions {
+  persistPreferences?: boolean;
   toolNames?: string[];
   initialModel?: { provider: string; modelId: string };
   thinkingLevel?: ThinkingLevel;
@@ -168,6 +171,7 @@ export class AgentSessionWrapper {
   private extensionWidgets = new Map<string, ExtensionWidgetItem>();
   private promptRunning = false;
   private extensionRunActive = false;
+  private activityOutcome: "completed" | "failed" | "stopped" = "completed";
   runId = randomUUID();
   private extensionsBound = false;
   private extensionBindingPromise: Promise<void> | null = null;
@@ -198,7 +202,7 @@ export class AgentSessionWrapper {
   }
 
   isRunning(): boolean {
-    return this._alive && (this.promptRunning || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning);
+    return this._alive && (this.promptRunning || this.extensionRunActive || this.pendingUiRequests.size > 0 || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning);
   }
 
   /**
@@ -366,7 +370,29 @@ export class AgentSessionWrapper {
     }
   }
 
+  private startActivity(): void {
+    this.activityOutcome = "completed";
+    beginActivity(this.sessionId, this.runId, this.cwd, this.inner.sessionManager.getSessionName() || this.getLiveSnapshot()?.firstMessage || this.sessionId);
+  }
+
   private emit(event: AgentEvent): void {
+    if (event.type === "agent_start") this.startActivity();
+    if (event.type === "prompt_error") this.activityOutcome = "failed";
+    if (event.type === "message_end") {
+      const msg = event.message as { stopReason?: string } | undefined;
+      if (msg?.stopReason === "error") this.activityOutcome = "failed";
+      if (msg?.stopReason === "aborted") this.activityOutcome = "stopped";
+    }
+    const phase = event.type === "tool_execution_start" ? "running_tools"
+      : event.type === "tool_execution_end" ? "waiting_model"
+      : event.type.includes("compaction_start") ? "compacting"
+      : event.type.includes("compaction_end") ? "waiting_model"
+      : event.type.includes("retry_start") ? "retrying"
+      : event.type.includes("retry_end") ? "waiting_model" : undefined;
+    if (phase) patchActivity(this.sessionId, this.runId, { phase });
+    if (event.type === "extension_ui_request") { if (this.pendingUiRequests.size > 0) this.startActivity(); this.updateActivityInput(); }
+    if (this.pendingUiRequests.size === 0 && (event.type === "agent_settled" && !this.promptRunning || event.type === "prompt_done" && !this.extensionRunActive)) finishActivity(this.sessionId, this.runId, this.activityOutcome);
+
     for (const listener of this.listeners) {
       try {
         listener(event);
@@ -376,6 +402,12 @@ export class AgentSessionWrapper {
         console.error("Agent session event listener failed:", error);
       }
     }
+  }
+
+  private updateActivityInput(): void {
+    const pendingInput = this.pendingUiRequests.size > 0;
+    patchActivity(this.sessionId, this.runId, { pendingInput, status: pendingInput ? "waiting" : "running" });
+    if (!pendingInput && !this.isRunning()) finishActivity(this.sessionId, this.runId, this.activityOutcome);
   }
 
   private resetIdleTimer(): void {
@@ -425,6 +457,15 @@ export class AgentSessionWrapper {
   }
 
   async send(command: Record<string, unknown>): Promise<unknown> {
+    if (["prompt", "steer", "follow_up"].includes(String(command.type))) {
+      // Hold only through prompt admission (Bash is blocking). Logical runs
+      // remain visible to branch-operation checks until settlement.
+      return withCheckoutGuard(this.cwd, () => this.sendCommand(command));
+    }
+    return this.sendCommand(command);
+  }
+
+  private async sendCommand(command: Record<string, unknown>): Promise<unknown> {
     this.resetIdleTimer();
     const type = command.type as string;
     if (this.shouldWaitForExtensions(type)) await this.waitForExtensionsBound();
@@ -444,6 +485,7 @@ export class AgentSessionWrapper {
         const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
         if (!this.isRunning()) this.runId = randomUUID();
         this.promptRunning = true;
+        this.startActivity();
         notifyRunningChange();
         this.inner.prompt(command.message as string, {
           ...(promptImages?.length ? { images: promptImages } : {}),
@@ -469,6 +511,9 @@ export class AgentSessionWrapper {
       }
 
       case "abort":
+        this.activityOutcome = "stopped";
+        for (const pending of this.pendingUiResponses.values()) pending.cancel();
+        for (const id of this.activeCustomUis.keys()) this.closeCustomUi(id, undefined);
         await this.withFinalRunningNotification(() => this.inner.abort());
         return null;
 
@@ -611,18 +656,22 @@ export class AgentSessionWrapper {
       case "clear_queue": {
         // Full clear only: pi has no single-item dequeue, and clear+requeue
         // races against the agent loop pulling messages mid-flight.
-        return this.inner.clearQueue();
+        const cleared = this.inner.clearQueue();
+        patchActivity(this.sessionId, this.runId, { queueCount: 0 });
+        return cleared;
       }
 
       case "steer": {
         const steerImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
         await this.inner.steer(command.message as string, steerImages?.length ? steerImages : undefined);
+        patchActivity(this.sessionId, this.runId, { queueCount: this.inner.pendingMessageCount });
         return null;
       }
 
       case "follow_up": {
         const followImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
         await this.inner.followUp(command.message as string, followImages?.length ? followImages : undefined);
+        patchActivity(this.sessionId, this.runId, { queueCount: this.inner.pendingMessageCount });
         return null;
       }
 
@@ -712,17 +761,25 @@ export class AgentSessionWrapper {
           throw new Error("Cannot run a shell command while the session is busy");
         }
         this.runId = randomUUID();
-        const execution = this.inner.executeBash(
-          command.command as string,
-          undefined,
+        this.startActivity();
+        patchActivity(this.sessionId, this.runId, { phase: "running_command" });
+        const { execution } = await withCheckoutGuard(this.cwd, async () => ({ execution: this.inner.executeBash(
+          command.command as string, undefined,
           { excludeFromContext: command.excludeFromContext as boolean | undefined },
-        );
+        ) }));
         notifyRunningChange();
         try {
           const result = await execution;
           this.persistBashOnlySession();
+          const outcome = result as { exitCode?: number; cancelled?: boolean };
+          if (outcome.cancelled) this.activityOutcome = "stopped";
+          else if (outcome.exitCode) this.activityOutcome = "failed";
           return result;
+        } catch (error) {
+          this.activityOutcome = "failed";
+          throw error;
         } finally {
+          finishActivity(this.sessionId, this.runId, this.activityOutcome);
           this.resetIdleTimer();
           invalidateSessionListCache();
           notifyRunningChange();
@@ -730,6 +787,7 @@ export class AgentSessionWrapper {
       }
 
       case "abort_bash": {
+        this.activityOutcome = "stopped";
         this.inner.abortBash();
         return null;
       }
@@ -741,6 +799,7 @@ export class AgentSessionWrapper {
 
   destroy(): void {
     if (!this._alive) return;
+    finishActivity(this.sessionId, this.runId, "interrupted");
     this._alive = false;
     if (this.idleTimer) clearTimeout(this.idleTimer);
     if (this.inner.isBashRunning) this.inner.abortBash();
@@ -957,6 +1016,7 @@ export class AgentSessionWrapper {
         signal?.removeEventListener("abort", onAbort);
         this.pendingUiRequests.delete(id);
         this.pendingUiResponses.delete(id);
+        this.updateActivityInput();
       };
       const settle = (value: T) => {
         cleanup();
@@ -1302,7 +1362,7 @@ export async function startRpcSession(
   }
   const sessionCwd = sessionManager.getCwd();
   const finishStartingSession = trackStartingSession(sessionCwd);
-  const starting = (async () => {
+  const starting = withCheckoutGuard(sessionCwd, async () => {
     // Some extensions access the SDK's global theme even outside the terminal UI.
     initTheme();
     const agentDir = getAgentDir();
@@ -1350,6 +1410,7 @@ export async function startRpcSession(
           : {}),
         ...(thinkingLevel ? { thinkingLevel } : {}),
       });
+    if (options.persistPreferences === false && initialModel && (!initial.model || initial.model.provider !== initialModel.provider || initial.model.id !== initialModel.modelId)) throw new Error("Saved task model is unavailable. Select an available model or inherit.");
     const { session: inner } = await createAgentSessionFromServices({
       services,
       sessionManager,
@@ -1359,7 +1420,7 @@ export async function startRpcSession(
       ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
     });
 
-    const persistedPreferences = await persistExplicitStartupPreferences(
+    const persistedPreferences = options.persistPreferences === false ? { modelDefaultChanged: false } : await persistExplicitStartupPreferences(
       services.settingsManager,
       {
         ...(initialModel ? { model: initialModel } : {}),
@@ -1400,11 +1461,17 @@ export async function startRpcSession(
     wrapper.beginExtensionBinding({ forceEmptySystemPrompt: toolNames?.length === 0 });
 
     return { session: wrapper, realSessionId };
-  })().finally(() => {
+  }).finally(() => {
     locks.delete(sessionId);
     finishStartingSession();
   });
 
   locks.set(sessionId, starting);
   return starting;
+}
+
+export async function hasBusyCheckout(cwd: string): Promise<boolean> {
+  const root = await checkoutRoot(cwd);
+  const cwds = [...getStartingSessionCwds().keys(), ...[...getRegistry().values()].filter(s => s.isRunning()).map(s => s.cwd)];
+  return (await Promise.all(cwds.map(checkoutRoot))).includes(root);
 }
