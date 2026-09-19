@@ -67,10 +67,11 @@ test("the composer send preview keeps the reference snapshot and goes stale afte
   const chip = page.getByRole("button", { name: "Preview outgoing message", exact: true });
   await chip.click();
   const panel = page.getByRole("dialog", { name: "Preview outgoing message", exact: true });
-  // It floats above the composer, inside its width.
+  // It floats just above its chip, clamped inside the composer's width.
   const panelBox = (await panel.boundingBox())!;
+  const chipBox = (await chip.boundingBox())!;
   const composerBox = (await page.locator(".chat-composer").boundingBox())!;
-  expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(composerBox.y + 2);
+  expect(Math.abs(panelBox.y + panelBox.height - (chipBox.y - 6))).toBeLessThan(2);
   expect(panelBox.x).toBeGreaterThanOrEqual(composerBox.x);
   expect(panelBox.x + panelBox.width).toBeLessThanOrEqual(composerBox.x + composerBox.width);
   await expect(panel.locator("details[open]").filter({ has: page.getByText("Final outgoing text", { exact: true }) }).locator("pre")).toContainText("Original reference snapshot");
