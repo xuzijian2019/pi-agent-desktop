@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -10,6 +11,7 @@ const jiti = createJiti(import.meta.url, {
 });
 const { ChatInput, ModelErrorBanner, ModelScopeWarningBanner, canRestoreUserMessage, filterModelOptions, getUserMessageText, getUserMessageDraftImages, draftTextsToPastedTexts, pastedTextsToDraftTexts } = await jiti.import("./ChatInput.tsx");
 const { I18nProvider } = await jiti.import("../hooks/useI18n.tsx");
+const nativeThemeSource = await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8");
 
 /** The banner reads its title through useI18n, so it needs the provider. */
 function renderWithI18n(element) {
@@ -168,7 +170,10 @@ test("renders compact errors above the input as a wrapping alert", () => {
   assert.match(html, /role="alert"/);
   assert.match(html, /Compaction failed: OpenAI API error/);
   assert.match(html, /&lt;html&gt;request forbidden&lt;\/html&gt;/);
-  assert.match(html, /white-space:pre-wrap/);
+  assert.match(html, /class="composer-compact-alert"/);
+  // The wrapping that keeps a long provider error inside the composer now
+  // lives on the class rather than on an inline style.
+  assert.match(nativeThemeSource, /\.composer-compact-alert \{[\s\S]*?white-space: pre-wrap;[\s\S]*?overflow-wrap: anywhere;/);
   assert.ok(html.indexOf('role="alert"') < html.indexOf("<textarea"));
 });
 
