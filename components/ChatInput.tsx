@@ -2617,31 +2617,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   </div>
                 )}
                 <button
-                  className="native-toolbar-button"
+                  className={`native-toolbar-button composer-compact-button${(isCompact && !controlsMenuOpen) ? " is-icon-only" : ""}${isCompacting ? " is-compacting" : ""}`}
                   onClick={isCompacting ? onAbortCompaction : onCompact}
                   disabled={isStreaming && !isCompacting}
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                    padding: (isCompact && !controlsMenuOpen) ? "0 6px" : "8px 12px",
-                    width: (isCompact && !controlsMenuOpen) ? 32 : undefined,
-                    height: 32,
-                    background: isCompacting ? "color-mix(in srgb, var(--danger) 8%, transparent)" : "none",
-                    border: "none",
-                    borderRadius: "var(--radius-sm)",
-                    color: isCompacting ? "var(--danger)" : "var(--text-muted)",
-                    cursor: (isStreaming && !isCompacting) ? "not-allowed" : "pointer",
-                    fontSize: 12, opacity: (isStreaming && !isCompacting) ? 0.5 : 1,
-                    transition: "background 0.12s, color 0.12s",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (isStreaming && !isCompacting) return;
-                    e.currentTarget.style.background = isCompacting ? "color-mix(in srgb, var(--danger) 16%, transparent)" : "var(--bg-hover)";
-                    e.currentTarget.style.color = isCompacting ? "var(--danger)" : "var(--text)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = isCompacting ? "color-mix(in srgb, var(--danger) 8%, transparent)" : "none";
-                    e.currentTarget.style.color = isCompacting ? "var(--danger)" : "var(--text-muted)";
-                  }}
                    title={isCompacting ? t("chat.stopCompaction") : t("chat.compactContext")}
                    aria-label={isCompacting ? t("chat.stopCompaction") : t("chat.compactContext")}
                 >
@@ -2668,28 +2646,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   setThinkingDropdownOpen(false);
                   setControlsMenuOpen(false);
                 }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: 36,
-                  height: 32,
-                  padding: 0,
-                  marginLeft: 0,
-                  background: "var(--bg-hover)",
-                  border: "none",
-                  borderLeft: "1px solid color-mix(in srgb, var(--border) 72%, transparent)",
-                  borderRadius: "0 var(--radius-sm) var(--radius-sm) 0",
-                  color: "var(--text)",
-                  cursor: "pointer",
-                  transition: "background 0.12s, color 0.12s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "var(--bg-selected)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                }}
+                className="composer-collapse-button"
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <line x1="18" y1="6" x2="6" y2="18" />
