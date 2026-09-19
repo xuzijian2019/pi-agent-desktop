@@ -10,6 +10,7 @@ import {
   APP_VERSION,
   APP_VERSION_DISPLAY,
   PRODUCT_NAME,
+  WEB_APP_VERSION,
 } from "@/lib/branding";
 import { APP_PREF_KEYS, getPrefBool, setPrefBool } from "@/lib/app-prefs";
 import {
@@ -310,7 +311,11 @@ export function AppSettings({ onClose }: { onClose: () => void }) {
         : t("appSettings.upToDate");
 
   const currentVersion = appRelease?.currentVersion ?? APP_VERSION;
-  const currentVersionText = `v${currentVersion === APP_VERSION ? APP_VERSION_DISPLAY : currentVersion}`;
+  // Outside the packaged shell the desktop distribution version means nothing —
+  // what is running is the web package.
+  const currentVersionText = desktop
+    ? `v${currentVersion === APP_VERSION ? APP_VERSION_DISPLAY : currentVersion}`
+    : `v${WEB_APP_VERSION}`;
   const versionAriaLabel = updateAvailable
     ? `${t("appSettings.currentVersion")}: ${currentVersionText}. ${t("appSettings.latestRelease")}: ${latestReleaseText}. ${statusText}`
     : `${t("appSettings.version")}: ${currentVersionText}. ${statusText}`;
@@ -372,7 +377,7 @@ export function AppSettings({ onClose }: { onClose: () => void }) {
               {PRODUCT_NAME}
             </h2>
             <div style={{ marginTop: 5, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.6 }}>
-              {t("appSettings.tagline", { product: PRODUCT_NAME })}
+              {t(desktop ? "appSettings.tagline" : "appSettings.taglineWeb", { product: PRODUCT_NAME })}
               <br />
               {t("appSettings.taglineDetails")}
             </div>

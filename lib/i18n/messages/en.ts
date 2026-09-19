@@ -567,6 +567,7 @@ export const enLocale: LocalePlugin = {
     "updates.caption": "{product} checks official GitHub releases once a week. Review and install one complete signed app update in Settings.",
     "updates.openSettings": "Open Settings",
     "appSettings.tagline": "{product} packs the full power of the pi coding agent into an elegant desktop app.",
+    "appSettings.taglineWeb": "{product} packs the full power of the pi coding agent into an elegant interface.",
     "appSettings.taglineDetails": "Browse sessions, chat in real time, manage models and Skills — all your data stays on your computer.",
     "appSettings.close": "Close settings",
     "appSettings.updatesSection": "Version & Updates",

@@ -567,6 +567,7 @@ export const zhCNLocale: LocalePlugin = {
     "updates.caption": "{product} 每周检查一次官方 GitHub 发布。请在设置中查看并安装完整的签名应用更新。",
     "updates.openSettings": "打开设置",
     "appSettings.tagline": "{product} 将 pi 编码智能体的全部能力封进一个优雅的桌面 App。",
+    "appSettings.taglineWeb": "{product} 将 pi 编码智能体的全部能力封进一个优雅的界面。",
     "appSettings.taglineDetails": "浏览会话、实时对话、管理模型与 Skills —— 一切数据都留在你的电脑上。",
     "appSettings.close": "关闭设置",
     "appSettings.updatesSection": "版本与更新",

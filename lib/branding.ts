@@ -7,6 +7,7 @@
 export const PRODUCT_NAME = "Pi Agent" as const;
 
 import desktopPackage from "../src-tauri/pi-agent-desktop-package.json";
+import webPackage from "../package.json";
 
 /** Name and version of this packaged desktop distribution. */
 export const APP_DISTRIBUTION_NAME = "pi-agent-desktop" as const;
@@ -17,3 +18,9 @@ export const APP_VERSION = desktopPackage.version;
 export const APP_VERSION_DISPLAY = APP_VERSION.endsWith(".0")
   ? APP_VERSION.slice(0, -2)
   : APP_VERSION;
+
+/**
+ * Version of the web package that serves the interface. The desktop version
+ * above describes the packaged shell, so a browser build must show this one.
+ */
+export const WEB_APP_VERSION: string = webPackage.version;
