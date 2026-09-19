@@ -23,6 +23,8 @@ import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
 import { selectProjectDirectoryNative } from "./ProjectPicker";
+import { MissingFolderNotice } from "./MissingFolderNotice";
+import type { SidebarProjectActions } from "@/lib/missing-folder";
 import { TabBar, type Tab } from "./TabBar";
 
 // Heavy, rarely-used surfaces are code-split out of the main bundle. The
@@ -142,6 +144,7 @@ export function AppShell() {
   // from <WindowControls />, which renders nothing in a browser build.
   const desktopChrome = useDesktopChrome();
   const windowDrag = useWindowDrag();
+  const sidebarActionsRef = useRef<SidebarProjectActions | null>(null);
   const sidebarWidthRef = useRef(SIDEBAR_DEFAULT_WIDTH);
   const rightPanelWidthRef = useRef(RIGHT_PANEL_FALLBACK_WIDTH);
   const fileTreeWidthRef = useRef(FILE_TREE_DEFAULT_WIDTH);
@@ -638,7 +641,8 @@ export function AppShell() {
 
   // Global keyboard shortcuts (handles Esc, Ctrl+Alt+N etc.)
   useGlobalKeyboardShortcuts({
-    onNewSession: (cwd: string) => handleNewSession(`kb-${Date.now()}`, cwd),
+    // Via the sidebar, so a cwd whose folder is gone is redirected to one that exists.
+    onNewSession: (cwd: string) => sidebarActionsRef.current?.newSession(cwd),
     activeCwd,
   });
 
@@ -815,6 +819,10 @@ export function AppShell() {
   const effectiveNewSessionCwd = newSessionCwd ?? (selectedSession === null && activeCwd ? activeCwd : null);
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
   const projectTrustCwd = selectedSession?.cwd ?? effectiveNewSessionCwd;
+  // A deleted folder 403s every cwd-scoped call, so the composer and file tree
+  // give way to one calm state. The session list already knows; a new-session
+  // cwd falls back to the trust probe, which reports it as a status not an error.
+  const activeCwdMissing = selectedSession ? selectedSession.cwdMissing === true : projectTrust?.cwdMissing === true;
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showChat;
 
@@ -970,7 +978,9 @@ export function AppShell() {
         }
         const data = await response.json() as ProjectTrustStatus & { error?: string };
         if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
-        setProjectTrust(data.cwdMissing ? null : data);
+        // A cwdMissing payload already reads as "nothing to trust", and keeping
+        // it is what tells the chat area the folder is gone.
+        setProjectTrust(data);
       })
       .catch((error) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
@@ -1097,6 +1107,7 @@ export function AppShell() {
         selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? null}
         onCwdChange={handleCwdChange}
         onProjectsChange={handleProjectsChange}
+        actionsRef={sidebarActionsRef}
         headerControls={sidebarHeaderControls}
       />
       <div className="sidebar-footer" style={{ padding: "8px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 4 }}>
@@ -1678,7 +1689,19 @@ export function AppShell() {
 
         {/* Chat content */}
         <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-          {showChat ? (
+          {showChat && activeCwdMissing && projectTrustCwd ? (
+            <MissingFolderNotice
+              cwd={projectTrustCwd}
+              onRemoveProject={() => {
+                sidebarActionsRef.current?.removeProject(selectedSession?.projectRoot ?? projectTrustCwd);
+                setSelectedSession(null);
+                setNewSessionCwd(null);
+                setActiveCwd(null);
+                router.replace("/", { scroll: false });
+              }}
+              onPickFolder={() => sidebarActionsRef.current?.addProject()}
+            />
+          ) : showChat ? (
             <ChatWindow
               transcriptPreview={transcriptPreview}
               onCloseTranscript={closeTranscriptPreview}
@@ -1920,7 +1943,7 @@ export function AppShell() {
             </div>
           </div>
           {/* Explorer column — always-on project file tree */}
-          {activeCwd && fileTreeOpen && (
+          {activeCwd && !activeCwdMissing && fileTreeOpen && (
             <>
               <div
                 {...fileTreeResizer.separatorProps}

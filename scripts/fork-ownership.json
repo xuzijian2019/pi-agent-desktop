@@ -232,7 +232,9 @@
     "components/UpdateReminder.tsx",
     "components/AppSettings.tsx",
     "components/path-ui.tsx",
+    "components/MissingFolderNotice.tsx",
     "components/fork-extractions.test.mjs",
+    "lib/missing-folder.ts",
     "lib/branding.ts",
     "lib/branding.test.mjs",
     "lib/app-update-types.ts",
@@ -280,6 +282,7 @@
     "2026-07-26 — lib/user-home.ts added; five upstream files now call userHome() instead of homedir(). A literal homedir() reaching an fs call made @vercel/nft glob the entire user profile at build time. lib/directory-browser.ts (added upstream in v0.8.1) was the source of the fatal <home>/**/* walk, which is why Windows releases started failing exactly when v0.8.1 merged.",
     "2026-07-28 — merged pi-web v0.8.2 (i18n, explorer quick changes viewer, project trust / restricted mode, Shift+Delete). Fork markup kept, upstream i18n strings adopted inside it. The upstream CWD picker and PiWebTitle scramble blocks that merged back into SessionSidebar.tsx were dropped again; the collapsible-explorer chevron stayed out (fork's explorer is always open) while the changes-viewer toggle was kept. Numbers refreshed against the v0.8.2 baseline.",
     "2026-07-28 — lib/i18n/registry.ts (new upstream file in v0.8.2): added .ts extensions to its two relative imports so its test loads under Node type stripping; accepted as new low drift.",
+    "2026-09-19 — missing-folder path: a project whose directory was deleted offered an enabled + and a composer where every cwd-scoped call 403s. The logic lives in the new fork-owned lib/missing-folder.ts and components/MissingFolderNotice.tsx; AppShell.tsx and SessionSidebar.tsx gained only a handle prop, a mount point and two guards. Accepted as a small addition to two already-high-risk files, with erosion sentinels in components/fork-extractions.test.mjs.",
     "2026-07-31 — READMEs reduced to English (README.md, the default) plus Simplified Chinese (README.zh-CN.md), matching the two locales the UI actually ships in lib/i18n. README.ja.md and README.ru.md were still upstream pi-web docs describing an npx web server, so they were deleted rather than kept as stale descriptions of a product this fork no longer is. A sync that restores them should delete them again."
   ]
 }

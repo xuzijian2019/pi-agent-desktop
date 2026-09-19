@@ -106,6 +106,18 @@ const FORK_FEATURES = [
     markers: ["file-tab-bar", "file-tab-label", "file-tab-close"],
   },
   {
+    name: "missing-folder path (chat area)",
+    file: "components/AppShell.tsx",
+    // Losing the mount point puts the composer back in front of a directory
+    // where every cwd-scoped request answers 403.
+    markers: ["MissingFolderNotice", "activeCwdMissing", "sidebarActionsRef"],
+  },
+  {
+    name: "missing-folder path (sidebar)",
+    file: "components/SessionSidebar.tsx",
+    markers: ["resolveNewSessionCwd", "actionsRef", "group.cwdMissing"],
+  },
+  {
     name: "native theme layer",
     file: "app/layout.tsx",
     // Dropping this import silently reverts the entire restyle to upstream.

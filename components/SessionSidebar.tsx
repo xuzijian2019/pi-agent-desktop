@@ -14,6 +14,7 @@ import { isTauriDesktop } from "@/lib/desktop-updater";
 import { getDesktopPlatform, type DesktopPlatform } from "@/lib/desktop-window";
 import { useWindowDrag } from "./desktop";
 import { prefetchSessionData, invalidateSessionData } from "@/lib/session-data-cache";
+import { resolveNewSessionCwd, type SidebarProjectActions } from "@/lib/missing-folder";
 interface Props {
   selectedSessionId: string | null;
   onSelectSession: (session: SessionInfo, isRestore?: boolean) => void;
@@ -26,6 +27,7 @@ interface Props {
   selectedCwd?: string | null;
   onCwdChange?: (cwd: string | null, projectRoot?: string | null) => void;
   onProjectsChange?: (projectRoots: string[]) => void;
+  actionsRef?: React.RefObject<SidebarProjectActions | null>;
   /** Window-chrome controls (theme + sidebar collapse) rendered at the top-right of the sidebar. */
   headerControls?: ReactNode;
 }
@@ -140,7 +142,7 @@ function buildSessionTree(sessions: SessionInfo[]): SessionTreeNode[] {
   return roots;
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onProjectsChange, headerControls }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onProjectsChange, actionsRef, headerControls }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -812,7 +814,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [onSelectSession]);
 
   const handleNewSession = useCallback((cwdOverride?: string) => {
-    const cwd = cwdOverride ?? selectedCwd;
+    const cwd = resolveNewSessionCwd(cwdOverride ?? selectedCwd, allSessions, recentProjects, homeDir);
     if (!cwd) return;
     // Creating a session is also the activation gesture for an archived
     // project. This keeps the archive list useful without a second step.
@@ -831,7 +833,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       ? crypto.randomUUID()
       : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
     onNewSession?.(tempId, cwd);
-  }, [selectedCwd, archivedProjectRoots, onNewSession, projectRootFor]);
+  }, [selectedCwd, allSessions, recentProjects, homeDir, archivedProjectRoots, onNewSession, projectRootFor]);
 
   useEffect(() => {
     if (!projectPickerOpen) return;
@@ -859,6 +861,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     setProjectMenu(null);
     setProjectMenuPos(null);
   }, []);
+
+  useEffect(() => {
+    if (actionsRef) actionsRef.current = { newSession: handleNewSession, removeProject: archiveProject, addProject: handleAddProject };
+  }, [actionsRef, handleNewSession, archiveProject, handleAddProject]);
 
   const openProjectMenu = useCallback((e: React.MouseEvent<HTMLButtonElement>, projectRoot: string) => {
     e.stopPropagation();
@@ -1014,7 +1020,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               type="button"
               className="sidebar-project-tree-action"
               onClick={() => handleNewSession(group.projectRoot)}
-              title={t("sidebar.newSessionTitle", { path: group.projectRoot })}
+              disabled={group.cwdMissing}
+              aria-disabled={group.cwdMissing}
+              title={group.cwdMissing ? t("sidebar.cwdMissing") : t("sidebar.newSessionTitle", { path: group.projectRoot })}
               aria-label={t("sidebar.newSessionTitle", { path: group.projectRoot })}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
