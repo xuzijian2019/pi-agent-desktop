@@ -41,7 +41,7 @@
 .workbench-content textarea { line-height: 1.5; resize: vertical; }
 .workbench-content input::placeholder, .workbench-content textarea::placeholder { color: var(--text-dim); }
 .workbench-content input:not([type="checkbox"]):hover:not(:disabled), .workbench-content textarea:hover:not(:disabled), .workbench-content select:hover:not(:disabled) { border-color: color-mix(in srgb, var(--text-dim) 54%, var(--border)); }
-.workbench-content input:not([type="checkbox"]):focus, .workbench-content textarea:focus, .workbench-content select:focus { border-color: var(--accent-border); background: var(--surface); box-shadow: 0 0 0 3px var(--focus-ring); }
+.workbench-content input:not([type="checkbox"]):focus, .workbench-content textarea:focus, .workbench-content select:focus { border-color: var(--accent-border); background: var(--surface); outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
 .workbench-content input[type="checkbox"] { margin-right: 6px; vertical-align: -1px; accent-color: var(--accent); }
 .workbench-content button, .workbench-content a, .workbench-files-body > button { display: inline-flex; align-items: center; gap: 5px; min-height: var(--control-height-sm); padding: 4px 10px; border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--text); background: var(--bg-hover); font-size: 12px; font-weight: 500; text-decoration: none; cursor: pointer; transition: background 120ms ease, color 120ms ease; }
 .workbench-content button:disabled { opacity: .45; cursor: default; }
@@ -128,7 +128,7 @@
 .workbench-section-body > .review-message, .workbench-section-body > .workbench-empty { padding: 20px 16px; color: var(--text-dim); font-size: 12px; text-align: center; }
 .workbench-section-body.workbench-content { padding-top: 4px; }
 .workbench-section-filter { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; color: var(--text-dim); font-size: 11.5px; white-space: nowrap; cursor: pointer; }
-.workbench-section-toggle:focus-visible, .workbench-section-action:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: -3px; }
+.workbench-section-toggle:focus-visible, .workbench-section-action:focus-visible { outline: none; box-shadow: inset 0 0 0 3px var(--focus-ring); }
 
 /* Review expands in place: filenames and their patches. */
 .review-file-heading:hover { background: var(--bg-hover); color: var(--text); }
@@ -153,7 +153,8 @@
 .review-hunk { padding: 6px 16px; color: var(--text-dim); font-size: 11px; white-space: pre; }
 .review-message { padding: 12px 20px; color: var(--text-muted); font-size: 12px; }
 .review-message[role="alert"] { color: var(--danger); }
-.review-file-heading:focus-visible, .review-patch:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: -3px; }
+/* Inset: both are full-bleed inside the section scroller. */
+.review-file-heading:focus-visible, .review-patch:focus-visible { outline: none; box-shadow: inset 0 0 0 3px var(--focus-ring); }
 
 /* Transcript search: result cards in the panel, a floating banner and an inline match in the chat. */
 .transcript-filters { display: flex; gap: 6px; margin-bottom: 14px; }

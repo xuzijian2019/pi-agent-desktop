@@ -203,7 +203,8 @@ html.dark {
 }
 
 .conversation-navigator-track:focus-visible {
-  box-shadow: 0 0 0 2px var(--focus-ring);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .conversation-navigator-preview {
@@ -514,8 +515,9 @@ html.dark .conversation-navigator-preview {
 }
 
 .context-panel-file-filter:focus {
-  border-color: color-mix(in srgb, var(--text-muted) 55%, var(--border));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-muted) 10%, transparent);
+  border-color: var(--accent-border);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .file-viewer-toolbar {
@@ -653,13 +655,17 @@ select {
   font: inherit;
 }
 
+/* The one focus affordance. Everything focusable in the fork gets the same
+   3px translucent-accent ring; rules below only re-state it when they have to
+   compose with a shadow the element already carries, or invert it to `inset`
+   because the element is full-bleed inside a scroller that would clip it. */
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
 a:focus-visible {
-  outline: 3px solid var(--focus-ring);
-  outline-offset: 1px;
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 ::selection {
@@ -882,7 +888,7 @@ pre, code {
   border-color: var(--accent-border);
   background: var(--surface);
   outline: none;
-  box-shadow: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .sidebar-search-clear {
@@ -1302,9 +1308,11 @@ pre, code {
   color: var(--accent);
 }
 
+/* Inset: the row is full-bleed inside the tree scroller, which clips an
+   outer ring on the left and right edges. */
 .file-tree-row:focus-visible {
-  outline: 3px solid var(--focus-ring);
-  outline-offset: -1px;
+  outline: none;
+  box-shadow: inset 0 0 0 3px var(--focus-ring);
 }
 
 .file-tree-chevron {
@@ -1943,6 +1951,7 @@ pre, code {
 .settings-modal select:focus {
   border-color: var(--accent-border) !important;
   background: var(--surface) !important;
+  outline: none !important;
   box-shadow: 0 0 0 3px var(--focus-ring) !important;
 }
 
@@ -2281,7 +2290,8 @@ pre, code {
 
 .chat-composer:focus-within {
   border-color: var(--accent-border) !important;
-  box-shadow: var(--shadow-composer) !important;
+  outline: none !important;
+  box-shadow: var(--shadow-composer), 0 0 0 3px var(--focus-ring) !important;
 }
 
 .chat-composer textarea {
@@ -2991,9 +3001,10 @@ pre, code {
   color: var(--text);
 }
 
+/* Inset: the tab strip only has 5px of padding, so an outer ring clips. */
 .file-tab:focus-visible {
-  outline: 3px solid var(--focus-ring);
-  outline-offset: -1px;
+  outline: none;
+  box-shadow: inset 0 0 0 3px var(--focus-ring);
 }
 
 .file-tab-icon {
@@ -3107,8 +3118,9 @@ pre, code {
 }
 
 .context-panel-file-filter:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: var(--accent-border);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .file-panel-empty-state {
@@ -3338,10 +3350,15 @@ pre, code {
   transform: scale(0.92);
 }
 
-.file-viewer-mode-button:focus-visible,
+/* Inset on the mode button: it sits inside the 32px switch shell. */
+.file-viewer-mode-button:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 3px var(--focus-ring);
+}
+
 .file-viewer-icon-button:focus-visible {
-  outline: 3px solid var(--focus-ring);
-  outline-offset: -1px;
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .file-viewer-content {
@@ -4008,7 +4025,7 @@ span.linenumber {
   border-color: var(--accent-border);
   background: var(--surface);
   outline: none !important;
-  box-shadow: none !important;
+  box-shadow: 0 0 0 3px var(--focus-ring) !important;
 }
 
 .file-viewer-toolbar {
