@@ -586,6 +586,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   const isNarrow = composerTier === "narrow";
   const isCompact = composerTier === "compact" || isNarrow;
+  // Nothing to measure or compact before the session has a transcript.
+  const hasTranscript = (sessionStats?.totalMessages ?? 0) > 0;
   const [value, setValue] = useState(() => (draftKey ? getDraft(draftKey)?.value ?? "" : ""));
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [modelDropdownRect, setModelDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -2799,7 +2801,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   })()}
                 </div>
             )}
-            <ContextUsageRing contextUsage={contextUsage} sessionStats={sessionStats} onOpenStats={onSessionStatsPanelOpen} />
+            {hasTranscript && <ContextUsageRing contextUsage={contextUsage} sessionStats={sessionStats} onOpenStats={onSessionStatsPanelOpen} />}
             <ExtensionStatusBar statuses={extensionStatuses} />
           </div>
 
@@ -3057,7 +3059,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </div>
             )}
 
-            {!isStreaming && onCompact && (
+            {!isStreaming && onCompact && hasTranscript && (
               <div style={{ position: "relative" }}>
                 {compactError && (
                   <div style={{

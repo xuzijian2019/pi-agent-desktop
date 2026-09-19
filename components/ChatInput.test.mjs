@@ -182,6 +182,9 @@ test("renders ChatInput controls with responsive container classes and accessibi
         onAbort() {},
         onCompact() {},
         isStreaming: false,
+        // Compact and the usage ring are hidden until the session has a
+        // transcript, so the toolbar needs one to render in full.
+        sessionStats: { totalMessages: 1 },
       }),
     ),
   );
