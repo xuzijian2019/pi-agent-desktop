@@ -18,6 +18,8 @@ export const APP_PREF_KEYS = {
   browserNotifications: "pi-browser-notifications",
   notificationClaims: "pi-notification-claims",
   notifyOnComplete: "pi-desktop-notify-on-complete",
+  /** Auto-generate a title from a new session's first prompt. */
+  autoTitle: "pi-auto-title",
   chatDrafts: "pi-chat-drafts-v1",
   diffViewMode: "pi-diff-view-mode",
   /** Composer tool preset carried across sessions (none/default/full). */

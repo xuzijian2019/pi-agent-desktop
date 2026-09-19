@@ -190,6 +190,29 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   });
   const [projectMenu, setProjectMenu] = useState<{ root: string } | null>(null);
   const [projectMenuPos, setProjectMenuPos] = useState<{ top: number; left: number } | null>(null);
+  // Full project path, shown on hover as a bar that extends the row past the
+  // sidebar edge (replaces the browser's native title tooltip).
+  const [projectPathHint, setProjectPathHint] = useState<{ root: string; missing: boolean; top: number; left: number; height: number } | null>(null);
+  const projectPathHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideProjectPathHint = useCallback(() => {
+    if (projectPathHintTimerRef.current) clearTimeout(projectPathHintTimerRef.current);
+    projectPathHintTimerRef.current = null;
+    setProjectPathHint(null);
+  }, []);
+  const scheduleProjectPathHint = useCallback((target: HTMLElement, root: string, missing: boolean) => {
+    if (projectPathHintTimerRef.current) clearTimeout(projectPathHintTimerRef.current);
+    projectPathHintTimerRef.current = setTimeout(() => {
+      projectPathHintTimerRef.current = null;
+      const row = target.closest<HTMLElement>(".sidebar-project-tree-row");
+      const sidebar = target.closest<HTMLElement>(".session-sidebar");
+      if (!row || !sidebar) return;
+      const rowRect = row.getBoundingClientRect();
+      setProjectPathHint({ root, missing, top: rowRect.top, left: sidebar.getBoundingClientRect().right, height: rowRect.height });
+    }, 350);
+  }, []);
+  useEffect(() => () => {
+    if (projectPathHintTimerRef.current) clearTimeout(projectPathHintTimerRef.current);
+  }, []);
   const [projectBranchMenu, setProjectBranchMenu] = useState<ProjectBranchMenuState | null>(null);
   const [projectBranchLoading, setProjectBranchLoading] = useState(false);
   const projectMenuRef = useRef<HTMLDivElement>(null);
@@ -204,13 +227,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const listScrollHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
+    hideProjectPathHint();
     el.classList.add("is-scrolling");
     if (listScrollHideTimerRef.current) clearTimeout(listScrollHideTimerRef.current);
     listScrollHideTimerRef.current = setTimeout(() => {
       el.classList.remove("is-scrolling");
       listScrollHideTimerRef.current = null;
     }, 800);
-  }, []);
+  }, [hideProjectPathHint]);
   useEffect(() => () => {
     if (listScrollHideTimerRef.current) clearTimeout(listScrollHideTimerRef.current);
   }, []);
@@ -950,9 +974,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           <button
             type="button"
             className="sidebar-project-tree-row-main"
-            onClick={toggleCollapse}
+            onClick={() => { hideProjectPathHint(); toggleCollapse(); }}
+            onMouseEnter={(e) => scheduleProjectPathHint(e.currentTarget, group.projectRoot, Boolean(group.cwdMissing))}
+            onMouseLeave={hideProjectPathHint}
             aria-expanded={!isCollapsed}
-            title={group.cwdMissing ? `${group.projectRoot} · ${t("sidebar.cwdMissing")}` : group.projectRoot}
+            aria-label={group.cwdMissing ? `${group.projectRoot} · ${t("sidebar.cwdMissing")}` : group.projectRoot}
           >
             <span className="sidebar-project-tree-folder" aria-hidden="true">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
@@ -1677,6 +1703,19 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           </div>
           {activeProjects.map((group) => renderProjectGroup(group))}
         </div>
+      )}
+      {projectPathHint && createPortal(
+        <div
+          className="sidebar-project-path-hint"
+          role="tooltip"
+          style={{ top: projectPathHint.top, left: projectPathHint.left, height: projectPathHint.height }}
+        >
+          <PathLabel text={displayCwd(projectPathHint.root, homeDir)} style={{ lineHeight: 1 }} />
+          {projectPathHint.missing && (
+            <span className="sidebar-project-path-hint-missing">{t("sidebar.cwdMissing")}</span>
+          )}
+        </div>,
+        document.body,
       )}
       {projectMenu && projectMenuPos && createPortal(
         <div

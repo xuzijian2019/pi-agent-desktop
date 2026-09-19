@@ -663,6 +663,13 @@ export function AppShell() {
     setRefreshKey((k) => k + 1);
     setExplorerRefreshKey((k) => k + 1);
   }, []);
+  // Server-side renames (first-prompt auto-title, manual regenerate) arrive as
+  // session_info_changed events; mirror them into the sidebar and top bar.
+  const handleSessionRenamed = useCallback((sessionId: string, name: string) => {
+    setRefreshKey((k) => k + 1);
+    setSelectedSession((current) => current?.id === sessionId ? { ...current, name } : current);
+    setSessionStats((current) => current?.sessionId === sessionId ? { ...current, sessionName: name } : current);
+  }, []);
 
   const handleAutoName = useCallback(async () => {
     const sessionId = selectedSession?.id;
@@ -1678,6 +1685,7 @@ export function AppShell() {
               onAgentEnd={handleAgentEnd}
               onSessionCreated={handleSessionCreated}
               onSessionForked={handleSessionForked}
+              onSessionRenamed={handleSessionRenamed}
               modelsRefreshKey={modelsRefreshKey}
               chatInputRef={chatInputRef}
               onBranchDataChange={handleBranchDataChange}

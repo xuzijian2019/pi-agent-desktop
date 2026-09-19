@@ -9,14 +9,22 @@ import type { AgentSession } from "@earendil-works/pi-coding-agent";
 const TITLE_TIMEOUT_MS = 90_000;
 const MAX_TITLE_LENGTH = 80;
 
-const TITLE_PROMPT = `Create a concise title for this session based on the conversation above.
+const TITLE_PROMPT = `Create a concise title for this session based on the entire conversation above.
 
 Requirements:
 - Match the primary language used by the user.
 - Describe the user's concrete goal or the outcome, not the act of chatting.
+- Reflect the whole session so far, not only the first request; if the focus shifted, name what the session is about now.
 - Use 4-12 words for space-separated languages, or 8-24 characters for CJK text when practical.
 - Do not call any tools.
 - Return only the title as plain text, with no quotes, label, markdown, or explanation.`;
+
+/**
+ * Prefix for a title request folded into a pending user message. Without it a
+ * model tends to answer that message instead of naming the session.
+ */
+const TRAILING_USER_TITLE_PREFIX = `---
+Ignore the request above for now: it is being handled in a separate turn. Do not answer it, do not act on it, and do not call any tools. Your only task in this reply is to name the session.`;
 
 export interface GeneratedSessionTitle {
   title: string;
@@ -78,9 +86,10 @@ export function appendTitleRequestToTrailingUser(messages: AgentMessage[]): Agen
   const lastMessage = messages.at(-1);
   if (!lastMessage || lastMessage.role !== "user") return messages;
 
+  const request = `${TRAILING_USER_TITLE_PREFIX}\n\n${TITLE_PROMPT}`;
   const content = typeof lastMessage.content === "string"
-    ? `${lastMessage.content}\n\n${TITLE_PROMPT}`
-    : [...lastMessage.content, { type: "text" as const, text: TITLE_PROMPT }];
+    ? `${lastMessage.content}\n\n${request}`
+    : [...lastMessage.content, { type: "text" as const, text: request }];
 
   return [
     ...messages.slice(0, -1),
@@ -208,9 +217,21 @@ export function sanitizeTitleMessages(messages: AgentMessage[]): AgentMessage[] 
   return sanitized;
 }
 
-export async function generateSessionTitle(source: AgentSession): Promise<GeneratedSessionTitle> {
+export interface GenerateSessionTitleOptions {
+  /**
+   * Wait for the source agent's current run to finish before snapshotting
+   * its messages (default). Pass `false` to name a session from what it has
+   * so far, e.g. while its first prompt is still being answered.
+   */
+  waitForIdle?: boolean;
+}
+
+export async function generateSessionTitle(
+  source: AgentSession,
+  { waitForIdle = true }: GenerateSessionTitleOptions = {},
+): Promise<GeneratedSessionTitle> {
   const sourceAgent = source.agent;
-  await sourceAgent.waitForIdle();
+  if (waitForIdle) await sourceAgent.waitForIdle();
 
   const sanitizedMessages = sanitizeTitleMessages(sourceAgent.state.messages);
   const historyLength = sanitizedMessages.length;

@@ -11,9 +11,10 @@ import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
 import { extractTextContent } from "./session-scan";
 import { cacheSessionPath, invalidateSessionListCache } from "./session-reader";
+import { generateSessionTitle } from "./session-title";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
 import { persistExplicitStartupPreferences } from "./startup-preferences";
-import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
+import type { AgentSession, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import { PRODUCT_NAME } from "./branding";
 import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-types";
 import type { ExtensionUiRequest, ExtensionUiResponse, ExtensionWidgetItem } from "./types";
@@ -171,6 +172,8 @@ export class AgentSessionWrapper {
   private extensionWidgets = new Map<string, ExtensionWidgetItem>();
   private promptRunning = false;
   private extensionRunActive = false;
+  /** Set by the first prompt of an unnamed session; consumed by the user message_end. */
+  private autoNamePending = false;
   private activityOutcome: "completed" | "failed" | "stopped" = "completed";
   runId = randomUUID();
   private extensionsBound = false;
@@ -262,6 +265,13 @@ export class AgentSessionWrapper {
       if (event.type === "agent_settled") this.extensionRunActive = false;
       if (event.type === "agent_end") {
         invalidateSessionListCache();
+      }
+      if (this.autoNamePending && event.type === "message_end"
+        && (event.message as { role?: string } | undefined)?.role === "user") {
+        // The first user message is now part of the agent state; name the
+        // session from it without waiting for the answer.
+        this.autoNamePending = false;
+        void this.autoNameSession();
       }
       if (IDLE_RESET_EVENT_TYPES.has(event.type)) this.resetIdleTimer();
       this.emit(event);
@@ -367,6 +377,21 @@ export class AgentSessionWrapper {
   private applyForcedEmptySystemPrompt(): void {
     if (this.forceEmptySystemPrompt && this.inner.agent.state) {
       this.inner.agent.state.systemPrompt = "";
+    }
+  }
+
+  /**
+   * Background title generation for a session's first prompt. Runs alongside
+   * the answer and never overrides a name set in the meantime.
+   */
+  private async autoNameSession(): Promise<void> {
+    try {
+      const result = await generateSessionTitle(this.inner as unknown as AgentSession, { waitForIdle: false });
+      if (!this._alive || this.inner.sessionManager.getSessionName()) return;
+      this.inner.setSessionName(result.title);
+      invalidateSessionListCache();
+    } catch (error) {
+      console.warn(`[rpc] auto-name failed for ${this.sessionId}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -484,6 +509,12 @@ export class AgentSessionWrapper {
         const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
         const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
         if (!this.isRunning()) this.runId = randomUUID();
+        // Auto-name unnamed sessions from their first prompt unless the client
+        // opted out (`autoName: false`).
+        this.autoNamePending = command.autoName !== false
+          && !streamingBehavior
+          && !this.inner.sessionManager.getSessionName()
+          && this.getLiveSnapshot() === null;
         this.promptRunning = true;
         this.startActivity();
         notifyRunningChange();
@@ -498,6 +529,7 @@ export class AgentSessionWrapper {
           notifyRunningChange();
         }).catch((error) => {
           this.promptRunning = false;
+          this.autoNamePending = false;
           this.resetIdleTimer();
           invalidateSessionListCache();
           this.emit({

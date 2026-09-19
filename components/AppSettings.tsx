@@ -216,6 +216,7 @@ export function AppSettings({ onClose }: { onClose: () => void }) {
   const [browserNotifications, setBrowserNotifications] = useState(() => getPrefBool(APP_PREF_KEYS.browserNotifications, false));
   const [notificationPermission, setNotificationPermission] = useState("");
   const [notifyOnComplete, setNotifyOnComplete] = useState(() => getPrefBool(APP_PREF_KEYS.notifyOnComplete, true));
+  const [autoTitle, setAutoTitle] = useState(() => getPrefBool(APP_PREF_KEYS.autoTitle, true));
   const [customCssBusy, setCustomCssBusy] = useState(false);
   const [customCssError, setCustomCssError] = useState<string | null>(null);
 
@@ -514,6 +515,27 @@ export function AppSettings({ onClose }: { onClose: () => void }) {
                 ) : null}
               </div>
             </div>
+          </div>
+
+          <div className="native-settings-card" style={sectionCardStyle}>
+            <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={autoTitle}
+                onChange={(event) => {
+                  const next = event.target.checked;
+                  setAutoTitle(next);
+                  setPrefBool(APP_PREF_KEYS.autoTitle, next);
+                }}
+                style={{ marginTop: 2 }}
+              />
+              <span>
+                <div style={{ fontSize: 12, fontWeight: 600 }}>{t("appSettings.autoTitle")}</div>
+                <div style={{ marginTop: 2, color: "var(--text-dim)", fontSize: 11, lineHeight: 1.45 }}>
+                  {t("appSettings.autoTitleHint")}
+                </div>
+              </span>
+            </label>
           </div>
 
           {!desktop && <div className="native-settings-card" style={sectionCardStyle}>
