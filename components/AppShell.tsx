@@ -1015,6 +1015,9 @@ export function AppShell() {
   }, [projectTrustBusy, projectTrustCwd]);
 
   const activeFileTab = fileTabs.find((t) => t.id === activeFileTabId) ?? null;
+  // The composer chip that replaced the Context panel mode; kept out of the
+  // ChatWindow call so that element stays one flat attribute list.
+  const sendPreview = <SendPreview inputRef={chatInputRef} revision={draftRevision} identity={selectedSession?.id ?? `new:${effectiveNewSessionCwd}`} systemPrompt={systemPrompt} />;
 
   const copyActiveFilePath = useCallback(async () => {
     if (!activeFileTab?.filePath) return;
@@ -1709,7 +1712,7 @@ export function AppShell() {
               onCloseTranscript={closeTranscriptPreview}
               key={sessionKey}
               onDraftChange={handleDraftChange}
-              sendPreview={<SendPreview inputRef={chatInputRef} revision={draftRevision} identity={selectedSession?.id ?? `new:${effectiveNewSessionCwd}`} systemPrompt={systemPrompt} />}
+              sendPreview={sendPreview}
               onOpenTasks={() => openMode("tasks")}
               onBranchNavigate={branchNavigate}
               session={selectedSession}

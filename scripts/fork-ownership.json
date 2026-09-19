@@ -32,9 +32,9 @@
     },
     "components/AppShell.tsx": {
       "risk": "high",
-      "drift": 746,
-      "reason": "Top-bar redesign (toolbar consolidated into a more-menu, inline styles to classNames) plus the mount point for desktop chrome. The desktop-only parts moved to components/desktop/; the remaining 376 structural lines are the fork's own interaction design, not desktop plumbing, so this file stays high risk by design rather than by neglect. Workbench integration adds 138 structural lines relative to d0a8be2; totals conservatively add that delta because the v0.8.2 baseline is unavailable locally.",
-      "structuralDrift": 590,
+      "drift": 748,
+      "reason": "Top-bar redesign (toolbar consolidated into a more-menu, inline styles to classNames) plus the mount point for desktop chrome. The desktop-only parts moved to components/desktop/; the remaining 376 structural lines are the fork's own interaction design, not desktop plumbing, so this file stays high risk by design rather than by neglect. Workbench integration adds 138 structural lines relative to d0a8be2; totals conservatively add that delta because the v0.8.2 baseline is unavailable locally. Stream E (panel modes 8 -> 4) is the one stream allowed structural edits here: four mode wrappers, the Outputs back button and four panel imports left, two Files sections and one composer slot arrived, a measured +6 structural lines net.",
+      "structuralDrift": 596,
       "disposition": "accepted"
     },
     "components/FileViewer.tsx": {
@@ -256,6 +256,7 @@
     "lib/git-branches.ts",
     "lib/i18n/messages/workbench.ts",
     "lib/output-types.ts",
+    "lib/composer-popover.ts",
     "lib/panel-modes.ts",
     "lib/prepare-outgoing.ts",
     "lib/saved-tasks.ts",
@@ -286,6 +287,7 @@
     "2026-07-28 — lib/i18n/registry.ts (new upstream file in v0.8.2): added .ts extensions to its two relative imports so its test loads under Node type stripping; accepted as new low drift.",
     "2026-07-31 — READMEs reduced to English (README.md, the default) plus Simplified Chinese (README.zh-CN.md), matching the two locales the UI actually ships in lib/i18n. README.ja.md and README.ru.md were still upstream pi-web docs describing an npx web server, so they were deleted rather than kept as stale descriptions of a product this fork no longer is. A sync that restores them should delete them again.",
     "2026-09-19 — missing-folder path: a project whose directory was deleted offered an enabled + and a composer where every cwd-scoped call 403s. The logic lives in the new fork-owned lib/missing-folder.ts and components/MissingFolderNotice.tsx; AppShell.tsx and SessionSidebar.tsx gained only a handle prop, a mount point and two guards. Accepted as a small addition to two already-high-risk files, with erosion sentinels in components/fork-extractions.test.mjs.",
-    "2026-09-19 — network hygiene: idle /api/ polling coalesced into lib/web-ui-client.ts and a shared per-cwd poller (lib/git-inventory.ts). Two upstream files took guard lines only, no restructuring: FileExplorer.tsx stops the watch-dir EventSource reconnect loop once the folder answers 403/404 (+18 structural, still medium), SessionSidebar.tsx skips its 10 s worktree poll for a cwd that is gone (+7 structural, still high). Both accepted — the polls they guard are upstream's own."
+    "2026-09-19 — network hygiene: idle /api/ polling coalesced into lib/web-ui-client.ts and a shared per-cwd poller (lib/git-inventory.ts). Two upstream files took guard lines only, no restructuring: FileExplorer.tsx stops the watch-dir EventSource reconnect loop once the folder answers 403/404 (+18 structural, still medium), SessionSidebar.tsx skips its 10 s worktree poll for a cwd that is gone (+7 structural, still high). Both accepted — the polls they guard are upstream's own.",
+    "2026-09-19 — panel modes 8 -> 4 (Files, Activity, Search, Saved Tasks). Browser was deleted outright; Diff and Outputs became collapsible Changes and Pinned sections inside Files (components/workbench/ChangesSection.tsx, PinnedSection.tsx); Context became a composer chip (components/workbench/SendPreview.tsx) mounted through the existing BranchControl slot. components/AppShell.tsx gained +6 structural lines net (590 -> 596). components/ChatInput.tsx and components/ChatWindow.tsx are unchanged in line count: the dead onOpenContext prop was renamed to sendPreview in place, three swapped lines each and no additions, so neither file's recorded drift moves. Note that `npm run drift` already exited 1 on a clean tree before this stream — six risk labels disagree with the classifier because the recorded numbers predate the Phase 1 merges. Refreshing them flips components/ModelsConfig.tsx off `low`, which scripts/fork-ownership.test.mjs asserts by name, so that re-rating is left to a deliberate manifest pass rather than smuggled into this stream."
   ]
 }

@@ -161,7 +161,6 @@ export const enLocale: LocalePlugin = {
     "contextPanel.tabFiles": "Files",
     "contextPanel.tabSearch": "Search",
     "contextPanel.tabBrowser": "Browser",
-    "contextPanel.tabDiff": "Diff",
     "contextPanel.tabReview": "Review",
     "contextPanel.newPanel": "New panel",
     "contextPanel.fileActions": "File actions",

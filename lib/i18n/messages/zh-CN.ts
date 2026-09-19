@@ -161,7 +161,6 @@ export const zhCNLocale: LocalePlugin = {
     "contextPanel.tabFiles": "文件",
     "contextPanel.tabSearch": "搜索",
     "contextPanel.tabBrowser": "浏览器",
-    "contextPanel.tabDiff": "Diff",
     "contextPanel.tabReview": "审查",
     "contextPanel.newPanel": "新建面板",
     "contextPanel.fileActions": "文件操作",

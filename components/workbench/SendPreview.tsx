@@ -4,25 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObje
 import type { ChatInputHandle } from "../ChatInput";
 import type { PreparedOutgoing } from "@/lib/prepare-outgoing";
 import { useI18n } from "@/hooks/useI18n";
-
-/** Where the popover sits: above its trigger, clamped inside the composer. */
-export function placeAboveComposer(
-  trigger: { left: number; top: number },
-  composer: { left: number; right: number } | undefined,
-  viewport: { width: number; height: number },
-  desiredWidth = 420,
-  inset = 12,
-) {
-  const leftEdge = Math.max(inset, (composer?.left ?? 0) + inset);
-  const rightEdge = Math.min(viewport.width - inset, (composer?.right ?? viewport.width) - inset);
-  const width = Math.max(0, Math.min(desiredWidth, rightEdge - leftEdge));
-  return {
-    left: Math.max(leftEdge, Math.min(trigger.left, rightEdge - width)),
-    bottom: viewport.height - trigger.top + 6,
-    width,
-    maxHeight: Math.max(0, Math.min(520, trigger.top - 18)),
-  };
-}
+import { placeAboveComposer, type PopoverPlacement } from "@/lib/composer-popover";
 
 /**
  * The outgoing-message preview, as a composer chip rather than a right-panel
@@ -41,7 +23,7 @@ export function SendPreview({ inputRef, revision, identity, systemPrompt }: {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const anchor = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState<ReturnType<typeof placeAboveComposer>>();
+  const [position, setPosition] = useState<PopoverPlacement>();
   const generation = useRef(0);
   const owner = useRef(identity); owner.current = identity;
 

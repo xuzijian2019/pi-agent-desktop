@@ -19,7 +19,6 @@
 .workbench-mode-body, .workbench-files-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
 .workbench-mode-body[hidden], .workbench-files-body[hidden] { display: none; }
 .workbench-files-body .right-panel-tab-strip { padding-right: 10px !important; background: var(--bg) !important; }
-.workbench-files-body > button { align-self: flex-start; margin: 8px 10px 0; }
 
 /* Content */
 .workbench-content { padding: 16px 20px 20px; overflow: auto; font-size: 13px; color: var(--text); }

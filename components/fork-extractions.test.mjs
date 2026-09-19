@@ -77,7 +77,7 @@ const EXTRACTIONS = [
 ];
 
 const FORK_FEATURES = [
-  { name: "Shared right workbench", file: "components/AppShell.tsx", markers: ["PanelModeSelector", "TranscriptSearchPanel", "SavedTasksPanel", "ContextPanel", "OutputsPanel", "ActivityPanel", "panelMode: rightPanelMode"] },
+  { name: "Shared right workbench", file: "components/AppShell.tsx", markers: ["PanelModeSelector", "TranscriptSearchPanel", "SavedTasksPanel", "SendPreview", "PinnedSection", "ChangesSection", "ActivityPanel", "panelMode: rightPanelMode"] },
   { name: "Composer preparation and branch metadata", file: "components/ChatInput.tsx", markers: ["prepareOutgoingMessage", "<BranchControl", "snapshotRef"] },
   { name: "Runtime activity and checkout admission", file: "lib/rpc-manager.ts", markers: ["beginActivity", "finishActivity", "withCheckoutGuard", "hasBusyCheckout"] },
   {
