@@ -1793,34 +1793,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           </div>
         )}
         {/* Main input */}
-        <div style={{ position: "relative", minWidth: 0 }}>
+        <div className="composer-input-anchor">
           {historyMenuOpen && inputHistory.length > 0 && (
             <div
               ref={historyMenuRef}
-              style={{
-                position: "absolute",
-                left: 0,
-                right: 0,
-                bottom: "calc(100% + 8px)",
-                zIndex: 120,
-                background: "var(--bg)",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                boxShadow: "0 -6px 20px rgba(0,0,0,0.12)",
-                overflow: "hidden",
-                maxHeight: "min(44vh, 360px)",
-              }}
+              className="native-popover composer-completion-popover is-history"
             >
               <div
                 title={t("chat.inputHistory")}
-                style={{
-                  height: 30,
-                  padding: "0 10px",
-                  borderBottom: "1px solid var(--border)",
-                  display: "flex",
-                  alignItems: "center",
-                  color: "var(--text-dim)",
-                }}
+                className="composer-history-header"
               >
                 <svg
                   width="14"
@@ -1838,7 +1819,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   <path d="M12 7v5l3 2" />
                 </svg>
               </div>
-              <div style={{ maxHeight: "calc(min(44vh, 360px) - 31px)", overflowY: "auto", padding: 4 }}>
+              <div className="composer-completion-body is-history">
                 {inputHistory.map((item, index) => {
                   const active = index === historyActiveIndex;
                   return (
@@ -1853,26 +1834,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         applyHistoryInput(item);
                       }}
                       onMouseEnter={() => setHistoryActiveIndex(index)}
-                      style={{
-                        width: "100%",
-                        display: "flex",
-                        alignItems: "flex-start",
-                        gap: 8,
-                        padding: "7px 8px",
-                        border: "none",
-                        borderRadius: 6,
-                        background: active ? "var(--bg-selected)" : "none",
-                        color: "var(--text)",
-                        cursor: "pointer",
-                        textAlign: "left",
-                        fontSize: 12.5,
-                        lineHeight: 1.45,
-                      }}
+                      className={`composer-history-item${active ? " is-active" : ""}`}
                     >
-                      <span style={{ flexShrink: 0, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-dim)", paddingTop: 1 }}>
+                      <span className="composer-history-index">
                         {index + 1}
                       </span>
-                      <span style={{ minWidth: 0, display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 2, overflow: "hidden", overflowWrap: "anywhere" }}>
+                      <span className="composer-clamp-2">
                         {item}
                       </span>
                     </button>
@@ -1883,44 +1850,22 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           )}
           {slashMenuOpen && slashQuery !== null && (
             <div
-              className="native-popover"
-              style={{
-                position: "absolute",
-                left: 0,
-                right: 0,
-                bottom: "calc(100% + 8px)",
-                zIndex: 120,
-                background: "var(--bg)",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                boxShadow: "0 -6px 20px rgba(0,0,0,0.12)",
-                overflow: "hidden",
-                maxHeight: "min(56vh, 460px)",
-              }}
+              className="native-popover composer-completion-popover is-slash"
             >
               <div
-                style={{
-                  padding: "8px 10px",
-                  borderBottom: "1px solid var(--border)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 8,
-                  fontSize: 11,
-                  color: "var(--text-dim)",
-                }}
+                className="composer-completion-header"
               >
                  <span>{slashCommandsLoading ? t("chat.loadingCommands") : t("chat.slashCommands", { label: slashCommandCountLabel })}</span>
-                 <span style={{ fontFamily: "var(--font-mono)" }}>{t("chat.tabEnter")}</span>
+                 <span className="composer-completion-hint">{t("chat.tabEnter")}</span>
               </div>
-              <div style={{ maxHeight: "calc(min(56vh, 460px) - 34px)", overflowY: "auto", padding: 10 }}>
+              <div className="composer-completion-body is-slash">
                 {!slashCommandsLoading && filteredSlashCommands.length === 0 ? (
-                  <div style={{ padding: "2px 2px 4px", fontSize: 12, color: "var(--text-dim)" }}>
+                  <div className="composer-slash-empty">
                      {t("chat.noCommands")}
                   </div>
                 ) : (
                   groupedSlashCommands.map((group) => (
-                    <section key={group.source} style={{ marginBottom: 12 }}>
+                    <section key={group.source} className="composer-slash-group">
                       <div
                         style={{
                           position: "sticky",
@@ -1939,7 +1884,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         }}
                       >
                            <span>{t(SLASH_SOURCE_GROUP_LABEL_KEYS[group.source])}</span>
-                        <span style={{ fontFamily: "var(--font-mono)", fontWeight: 500 }}>{group.items.length}</span>
+                        <span className="composer-slash-count">{group.items.length}</span>
                       </div>
                       <div
                         style={{
@@ -1963,23 +1908,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                 applySlashCommand(command);
                               }}
                               onMouseEnter={() => setSlashActiveIndex(index)}
-                              style={{
-                                width: "100%",
-                                minWidth: 0,
-                                minHeight: 58,
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: 4,
-                                justifyContent: "center",
-                                padding: "9px 10px",
-                                border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
-                                borderRadius: 7,
-                                background: active ? "var(--bg-selected)" : "var(--bg-panel)",
-                                color: "var(--text)",
-                                cursor: "pointer",
-                                textAlign: "left",
-                                boxShadow: active ? "0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent)" : "none",
-                              }}
+                              className={`composer-slash-item${active ? " is-active" : ""}`}
                             >
                               <span style={{
                                 fontSize: 13,
@@ -1994,7 +1923,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                     marginLeft: 6,
                                     padding: "0 4px",
                                     border: "1px solid var(--border)",
-                                    borderRadius: 3,
+                                    borderRadius: "var(--radius-sm)",
                                     fontSize: 9,
                                     color: "var(--text-dim)",
                                     whiteSpace: "nowrap",
@@ -2030,38 +1959,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             const matchCountLabel = hashMatches.length === 1 ? t("chat.match") : t("chat.matches", { count: hashMatches.length });
             return (
               <div
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  right: 0,
-                  bottom: "calc(100% + 8px)",
-                  zIndex: 121,
-                  background: "var(--bg)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 8,
-                  boxShadow: "0 -6px 20px rgba(0,0,0,0.12)",
-                  overflow: "hidden",
-                  maxHeight: "min(48vh, 400px)",
-                }}
+                className="native-popover composer-completion-popover is-front"
               >
-                <div style={{
-                  padding: "8px 10px",
-                  borderBottom: "1px solid var(--border)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 8,
-                  fontSize: 11,
-                  color: "var(--text-dim)",
-                }}>
+                <div className="composer-completion-header">
                   <span>{sessionIndex ? t("chat.sessions", { label: matchCountLabel }) : t("chat.loadingSessions")}</span>
-                  <span style={{ fontFamily: "var(--font-mono)" }}>{t("chat.tabEnter")}</span>
+                  <span className="composer-completion-hint">{t("chat.tabEnter")}</span>
                 </div>
-                <div style={{ maxHeight: "calc(min(48vh, 400px) - 34px)", overflowY: "auto", padding: 4 }}>
+                <div className="composer-completion-body">
                   {!sessionIndex ? (
-                    <div style={{ padding: "6px 8px", fontSize: 12, color: "var(--text-dim)" }}>{t("chat.loadingSessions")}</div>
+                    <div className="composer-completion-empty">{t("chat.loadingSessions")}</div>
                   ) : hashMatches.length === 0 ? (
-                    <div style={{ padding: "6px 8px", fontSize: 12, color: "var(--text-dim)" }}>{t("chat.noMatchingSessions")}</div>
+                    <div className="composer-completion-empty">{t("chat.noMatchingSessions")}</div>
                   ) : hashMatches.map((entry, index) => {
                     const active = index === hashActiveIndex;
                     const name = entry.name?.trim() || entry.firstMessage.trim() || t("chat.untitledSession");
@@ -2077,27 +1985,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           applyHashCompletion(entry);
                         }}
                         onMouseEnter={() => setHashActiveIndex(index)}
-                        style={{
-                          width: "100%",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          padding: "7px 8px",
-                          border: "none",
-                          borderRadius: 6,
-                          background: active ? "var(--bg-selected)" : "none",
-                          color: "var(--text)",
-                          cursor: "pointer",
-                          textAlign: "left",
-                          fontSize: 12.5,
-                        }}
+                        className={`composer-completion-item is-session${active ? " is-active" : ""}`}
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                           <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
                         </svg>
-                        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
-                          <span style={{ display: "block", color: "var(--text-dim)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.firstMessage}</span>
+                        <span className="composer-ellipsis">
+                          <span className="composer-session-name">{name}</span>
+                          <span className="composer-session-sub">{entry.firstMessage}</span>
                         </span>
                       </button>
                     );
@@ -2116,40 +2011,19 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               : "";
             return (
               <div
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  right: 0,
-                  bottom: "calc(100% + 8px)",
-                  zIndex: 120,
-                  background: "var(--bg)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 8,
-                  boxShadow: "0 -6px 20px rgba(0,0,0,0.12)",
-                  overflow: "hidden",
-                  maxHeight: "min(48vh, 400px)",
-                }}
+                className="native-popover composer-completion-popover"
               >
                 <div
-                  style={{
-                    padding: "8px 10px",
-                    borderBottom: "1px solid var(--border)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 8,
-                    fontSize: 11,
-                    color: "var(--text-dim)",
-                  }}
+                  className="composer-completion-header"
                 >
                   <span>
                     {indexLoading ? t("chat.loadingFiles") : t("chat.files", { label: matchCountLabel, hint: truncatedHint })}
                   </span>
-                   <span style={{ fontFamily: "var(--font-mono)" }}>{t("chat.tabEnter")}</span>
+                   <span className="composer-completion-hint">{t("chat.tabEnter")}</span>
                 </div>
-                <div style={{ maxHeight: "calc(min(48vh, 400px) - 34px)", overflowY: "auto", padding: 4 }}>
+                <div className="composer-completion-body">
                   {!indexLoading && atMatches.length === 0 ? (
-                    <div style={{ padding: "6px 8px", fontSize: 12, color: "var(--text-dim)" }}>
+                    <div className="composer-completion-empty">
                        {needsServerSearch && !serverResultInUse ? t("chat.searching") : t("chat.noMatchingFiles")}
                     </div>
                   ) : (
@@ -2169,29 +2043,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             applyAtCompletion(entry);
                           }}
                           onMouseEnter={() => setAtActiveIndex(index)}
-                          style={{
-                            width: "100%",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            padding: "6px 8px",
-                            border: "none",
-                            borderRadius: 6,
-                            background: active ? "var(--bg-selected)" : "none",
-                            color: "var(--text)",
-                            cursor: "pointer",
-                            textAlign: "left",
-                            fontSize: 12.5,
-                            fontFamily: "var(--font-mono)",
-                          }}
+                          className={`composer-completion-item is-file${active ? " is-active" : ""}`}
                         >
-                          <span style={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
+                          <span className="composer-completion-icon">
                             {entry.isDir ? <FolderIcon size={14} /> : getFileIcon(name, 14)}
                           </span>
-                          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {dirPrefix && <span style={{ color: "var(--text-dim)" }}>{dirPrefix}</span>}
+                          <span className="composer-ellipsis">
+                            {dirPrefix && <span className="composer-path-dim">{dirPrefix}</span>}
                             {name}
-                            {entry.isDir && <span style={{ color: "var(--text-dim)" }}>/</span>}
+                            {entry.isDir && <span className="composer-path-dim">/</span>}
                           </span>
                         </button>
                       );
@@ -2485,23 +2345,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 </button>
                 {projectDropdownOpen && projectOptions.length > 0 && onProjectChange && (
                   <div
-                    className="native-popover"
+                    className="native-popover composer-project-menu"
                     role="menu"
                     onMouseLeave={() => setProjectPathTip(null)}
                     onScroll={() => setProjectPathTip(null)}
-                    style={{
-                      position: "absolute",
-                      left: 0,
-                      bottom: "calc(100% + 6px)",
-                      zIndex: 500,
-                      minWidth: 220,
-                      maxWidth: 320,
-                      // The popover grows upward from the composer bar; cap it
-                      // so long project lists scroll instead of leaving the viewport.
-                      maxHeight: "min(60vh, 420px)",
-                      overflowY: "auto",
-                      padding: 5,
-                    }}
                   >
                     {projectOptions.map((projectRoot) => {
                       const label = getProjectLabel(projectRoot) ?? projectRoot;
@@ -2516,35 +2363,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             setProjectPathTip(null);
                             if (!isCurrent) onProjectChange(projectRoot);
                           }}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            width: "100%",
-                            minWidth: 0,
-                            padding: "7px 9px",
-                            border: 0,
-                            borderRadius: 6,
-                            background: isCurrent ? "var(--bg-selected)" : "transparent",
-                            color: isCurrent ? "var(--text)" : "var(--text-muted)",
-                            cursor: "pointer",
-                            textAlign: "left",
-                            fontSize: 12,
-                          }}
+                          className={`composer-project-option${isCurrent ? " is-current" : ""}`}
                           onMouseEnter={(e) => {
-                            if (!isCurrent) e.currentTarget.style.background = "var(--bg-hover)";
                             const rect = e.currentTarget.getBoundingClientRect();
                             setProjectPathTip({ path: projectRoot, top: rect.top, left: rect.right + 8 });
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!isCurrent) e.currentTarget.style.background = "transparent";
                           }}
                         >
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                             <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
                           </svg>
-                          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-                          {isCurrent && <span style={{ marginLeft: "auto", color: "var(--accent)" }}>✓</span>}
+                          <span className="composer-ellipsis">{label}</span>
+                          {isCurrent && <span className="composer-check">✓</span>}
                         </button>
                       );
                     })}
@@ -2557,31 +2386,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     return (
                       <div
                         role="tooltip"
+                        className="composer-path-tooltip"
                         style={{
-                          position: "fixed",
                           top,
                           left: projectPathTip.left,
-                          zIndex: 600,
                           maxWidth: `calc(100vw - ${projectPathTip.left + 8}px)`,
                           maxHeight: `calc(${vh}px - ${top + 8}px)`,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          padding: "7px 9px",
-                          background: "var(--bg)",
-                          border: "1px solid var(--border)",
-                          borderRadius: 6,
-                          boxShadow: "4px 0 16px rgba(0,0,0,0.10)",
-                          color: "var(--text-muted)",
-                          fontSize: 12,
-                          overflow: "hidden",
-                          pointerEvents: "none",
                         }}
                       >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="composer-icon">
                           <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
                         </svg>
-                        <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{projectPathTip.path}</span>
+                        <span className="composer-wrap-anywhere">{projectPathTip.path}</span>
                       </div>
                     );
                   })(),
@@ -2659,11 +2475,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       bottom,
                       ...panelPos,
                       zIndex: 500, background: "var(--bg)", border: "1px solid var(--border)",
-                      borderRadius: 8, boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
+                      borderRadius: "var(--radius-md)", boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
                       overflow: "hidden", maxHeight: maxH, display: "flex", flexDirection: "column",
                       }}>
                       {showModelFilter && (
-                        <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+                        <div className="composer-model-filter-row">
                           <input
                             value={modelFilter}
                             onChange={(e) => setModelFilter(e.target.value)}
@@ -2685,7 +2501,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                               fontFamily: "var(--font-mono)",
                               padding: "5px 8px",
                               border: "1px solid var(--border)",
-                              borderRadius: 5,
+                              borderRadius: "var(--radius-sm)",
                               outline: "none",
                               background: "var(--bg)",
                               color: "var(--text)",
@@ -2694,9 +2510,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           />
                         </div>
                       )}
-                      <div style={{ minHeight: 0, overflowY: "auto" }}>
+                      <div className="composer-menu-scroll">
                         {modelsByProvider.length === 0 ? (
-                          <div style={{ padding: "8px 12px", color: "var(--text-dim)", fontSize: 12, whiteSpace: "nowrap" }}>
+                          <div className="composer-menu-empty">
                             {modelFilter.trim() ? t("chat.noMatchingModels") : "No available models"}
                           </div>
                         ) : modelsByProvider.map((group, gi) => (
@@ -2721,22 +2537,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                     setModelFilter("");
                                     if (!isActive || isAutoModelSelection) { setDraftSetup(previous => previous ? { ...previous, model: { provider: opt.provider, modelId: opt.modelId } } : previous); onModelChange(opt.provider, opt.modelId); }
                                   }}
-                                  style={{
-                                    display: "flex", alignItems: "center", gap: 8,
-                                    width: "100%", padding: "7px 12px",
-                                    background: isActive ? "var(--bg-selected)" : "none",
-                                    border: "none",
-                                    color: isActive ? "var(--text)" : "var(--text-muted)",
-                                    cursor: "pointer", fontSize: 12, textAlign: "left",
-                                    fontWeight: isActive ? 600 : 400,
-                                    whiteSpace: "nowrap",
-                                  }}
+                                  className={`composer-option-row${isActive ? " is-active" : ""}`}
                                   onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
                                   onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "none"; }}
                                 >
                                   {isActive
-                                    ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
-                                    : <span style={{ width: 10, flexShrink: 0 }} />}
+                                    ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon"><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
+                                    : <span className="composer-check-spacer" />}
                                   {opt.name}
                                 </button>
                               );
@@ -2877,11 +2684,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   <div className="native-popover" style={{
                     position: "absolute", bottom: "calc(100% + 6px)", right: 0,
                     zIndex: 100, background: "var(--bg)", border: "1px solid var(--border)",
-                    borderRadius: 8, boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
+                    borderRadius: "var(--radius-md)", boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
                     overflow: "hidden", minWidth: 180,
                     maxHeight: maxH, display: "flex", flexDirection: "column",
                   }}>
-                    <div style={{ minHeight: 0, overflowY: "auto" }}>
+                    <div className="composer-menu-scroll">
                     {selectableThinkingLevels(THINKING_LEVELS, availableThinkingLevels, thinkingLevelMap).map((lvl) => {
                       const isActive = (thinkingLevel ?? "auto") === lvl;
                        const desc = t(THINKING_LEVEL_DESC_KEYS[lvl]);
@@ -2892,27 +2699,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         <button
                           key={lvl}
                           onClick={() => { setThinkingDropdownOpen(false); if (!isActive) { setDraftSetup(previous => previous ? { ...previous, effort: lvl } : previous); onThinkingLevelChange(lvl); } }}
-                          style={{
-                            display: "flex", alignItems: "center", gap: 8,
-                            width: "100%", padding: "7px 12px",
-                            background: isActive ? "var(--bg-selected)" : "none",
-                            border: "none",
-                            color: isActive ? "var(--text)" : "var(--text-muted)",
-                            cursor: "pointer", fontSize: 12, textAlign: "left",
-                            fontWeight: isActive ? 600 : 400,
-                            whiteSpace: "nowrap",
-                          }}
+                          className={`composer-option-row${isActive ? " is-active" : ""}`}
                           onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
                           onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "none"; }}
                         >
                           {isActive
-                            ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
-                            : <span style={{ width: 10, flexShrink: 0 }} />}
-                          <span style={{ flex: 1 }}>
+                            ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon"><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
+                            : <span className="composer-check-spacer" />}
+                          <span className="composer-option-label">
                             {displayLabel}
-                            {showOriginal && <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", marginLeft: 5 }}>({lvl})</span>}
+                            {showOriginal && <span className="composer-option-alias">({lvl})</span>}
                           </span>
-                          <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: 8 }}>{desc}</span>
+                          <span className="composer-option-desc">{desc}</span>
                         </button>
                       );
                     })}
@@ -2966,11 +2764,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   <div className="native-popover" style={{
                     position: "absolute", bottom: "calc(100% + 6px)", right: 0,
                     zIndex: 100, background: "var(--bg)", border: "1px solid var(--border)",
-                    borderRadius: 8, boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
+                    borderRadius: "var(--radius-md)", boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
                     overflow: "hidden", minWidth: 120,
                     maxHeight: maxH, display: "flex", flexDirection: "column",
                   }}>
-                    <div style={{ minHeight: 0, overflowY: "auto" }}>
+                    <div className="composer-menu-scroll">
                     {TOOL_PRESETS.map((lvl) => {
                       const preset = TOOL_PRESET_MAP[lvl];
                       const isActive = (toolPreset ?? "default") === preset;
@@ -2979,24 +2777,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         <button
                           key={lvl}
                           onClick={() => { setToolDropdownOpen(false); if (!isActive) { setDraftSetup(previous => previous ? { ...previous, tools: preset } : previous); onToolPresetChange(preset); } }}
-                          style={{
-                            display: "flex", alignItems: "center", gap: 8,
-                            width: "100%", padding: "7px 12px",
-                            background: isActive ? "var(--bg-selected)" : "none",
-                            border: "none",
-                            color: isActive ? "var(--text)" : "var(--text-muted)",
-                            cursor: "pointer", fontSize: 12, textAlign: "left",
-                            fontWeight: isActive ? 600 : 400,
-                            whiteSpace: "nowrap",
-                          }}
+                          className={`composer-option-row${isActive ? " is-active" : ""}`}
                           onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
                           onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "none"; }}
                         >
                           {isActive
-                            ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
-                            : <span style={{ width: 10, flexShrink: 0 }} />}
-                          <span style={{ flex: 1 }}>{lvl}</span>
-                          <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: 8 }}>{desc}</span>
+                            ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon"><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
+                            : <span className="composer-check-spacer" />}
+                          <span className="composer-option-label">{lvl}</span>
+                          <span className="composer-option-desc">{desc}</span>
                         </button>
                       );
                     })}
