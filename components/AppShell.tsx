@@ -267,6 +267,7 @@ export function AppShell() {
     reclampRightPanelWidth();
     reclampFileTreeWidth();
   }, [reclampFileTreeWidth, reclampRightPanelWidth, reclampSidebarWidth, rightPanelOpen, rightPanelWidth]);
+  const [sideModeOpen, setSideModeOpen] = useState(false);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
   // Branch navigator state — populated by ChatWindow via onBranchDataChange
@@ -1416,7 +1417,7 @@ export function AppShell() {
             </button>
           )}
           {showChat && (
-            <div className="app-topbar-actions" style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
+            <div inert={sideModeOpen} className="app-topbar-actions" style={{ opacity: sideModeOpen ? 0.45 : undefined, display: "flex", alignItems: "stretch", height: "100%" }}>
               {(hasForks(branchTree) || activeTopPanel === "branches") && (
                 <BranchNavigator
                   tree={branchTree}
@@ -1670,6 +1671,7 @@ export function AppShell() {
               onOpenFile={(filePath) => handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id })}
               onOpenModelsConfig={() => setModelsConfigOpen(true)}
               onAppCommand={handleAppCommand}
+              onSideModeChange={setSideModeOpen}
             />
           ) : initialCwdStatus === "validating" ? (
             <div

@@ -200,6 +200,15 @@ export class AgentSessionWrapper {
     return this.inner.sessionManager.getCwd();
   }
 
+  /** Read-only access used to freeze an isolated ephemeral branch snapshot. */
+  getSnapshotSource(): { manager: SessionManager; model?: { provider: string; id: string } } {
+    const model = this.inner.model;
+    return {
+      manager: this.inner.sessionManager as SessionManager,
+      ...(model ? { model: { provider: model.provider, id: model.id } } : {}),
+    };
+  }
+
   isAlive(): boolean {
     return this._alive;
   }

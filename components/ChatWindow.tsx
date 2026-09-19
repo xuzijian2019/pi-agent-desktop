@@ -9,6 +9,9 @@ import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import { countToolCallBlocks, getDisplayableAssistantBlocks, splitFinalAssistantBlocks } from "@/lib/message-display";
 import { MessageView } from "./MessageView";
 import { ConversationNavigator, type ConversationTurnLocation } from "./ConversationNavigator";
+import { SideChatPanel } from "./SideChatPanel";
+import { MarkdownBody } from "./MarkdownBody";
+import { useEphemeralConversation } from "@/hooks/useEphemeralConversation";
 import { ChatCommandDialog } from "./ChatCommandDialog";
 import type { AppSlashCommand, ViewSlashCommand } from "@/lib/web-slash-commands";
 import { ChatInput, getUserMessageText, type ChatInputHandle } from "./ChatInput";
@@ -33,6 +36,7 @@ interface Props {
   sendPreview?: ReactNode;
   /** Fork slot: rendered above the composer on the empty new-task screen. */
   emptyStateSlot?: ReactNode;
+  onSideModeChange?: (open: boolean) => void;
   onAppCommand?: (command: AppSlashCommand) => string | void;
   onOpenTasks?: () => void;
   onBranchNavigate?: (cwd: string) => void;
@@ -234,7 +238,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t, entryId
   );
 }
 
-export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onSelectProject, projectOptions, onProjectChange, onOpenFile, onProjectFilesImported, onOpenModelsConfig, onDraftChange, sendPreview, emptyStateSlot, onOpenTasks, onBranchNavigate, onAppCommand }: Props) {
+export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onSelectProject, projectOptions, onProjectChange, onOpenFile, onProjectFilesImported, onOpenModelsConfig, onDraftChange, sendPreview, emptyStateSlot, onOpenTasks, onBranchNavigate, onAppCommand, onSideModeChange }: Props) {
   const { t } = useI18n();
   const [commandDialog, setCommandDialog] = useState<"fork" | "hotkeys" | "session" | null>(null);
   const openStats = useCallback(() => { onSessionStatsPanelOpen?.(); setCommandDialog("session"); }, [onSessionStatsPanelOpen]);
@@ -243,8 +247,10 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
   // on every render (it syncs the latest callback), which would blow away an
   // externally-installed wrapper after the first re-render.
   const searchPreview = transcriptPreview?.sessionId === session?.id ? transcriptPreview : undefined;
+  const [snapshotLeaf, setSnapshotLeaf] = useState<string | undefined>();
+  useEffect(() => setSnapshotLeaf(undefined), [session?.id, newSessionCwd]);
   const publishBranchData = useCallback((tree: SessionTreeNode[], leaf: string | null, change: (id: string | null) => void) => {
-    onBranchDataChange?.(tree, searchPreview?.entryId ?? leaf, id => { onCloseTranscript?.(); change(id); });
+    onBranchDataChange?.(tree, searchPreview?.entryId ?? leaf, id => { setSnapshotLeaf(id ?? undefined); onCloseTranscript?.(); change(id); });
   }, [onBranchDataChange, onCloseTranscript, searchPreview?.entryId]);
   const wrappedOnAgentEnd = useCallback(() => {
     onAgentEnd?.();
@@ -282,6 +288,18 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
   const entryIds = searchPreview?.context.entryIds ?? liveEntryIds;
   const streamState = searchPreview ? { ...liveStreamState, isStreaming: false } : liveStreamState;
   const sessionBusy = !searchPreview && (agentRunning || bashRunning);
+  const ephemeral = useEphemeralConversation(session?.id ?? sessionIdRef.current ?? null, session?.cwd ?? newSessionCwd ?? undefined, searchPreview?.entryId ?? snapshotLeaf);
+  const { side, recap, recapBusy, recapError, closeSide, cancelRecap, handleLocalCommand } = ephemeral;
+  const sideOpen = !!side;
+  const sendMain = useCallback((...args: Parameters<typeof handleSend>) => { setSnapshotLeaf(undefined); return handleSend(...args); }, [handleSend]);
+  const returnToMain = useCallback(() => {
+    closeSide(); requestAnimationFrame(() => chatInputRef?.current?.focus());
+  }, [closeSide, chatInputRef]);
+  const dispatchCommand = useCallback(async (text: string) => {
+    const result = await handleLocalCommand(text);
+    return result.handled ? result : handleBuiltinSlashCommand(text);
+  }, [handleLocalCommand, handleBuiltinSlashCommand]);
+  useEffect(() => { onSideModeChange?.(sideOpen); return () => onSideModeChange?.(false); }, [sideOpen, onSideModeChange]);
 
   useEffect(() => setCommandDialog(null), [session?.id, newSessionCwd]);
   const forkChoices = useMemo(() => liveMessages.flatMap((message, index) => message.role === "user" && liveEntryIds[index]
@@ -322,13 +340,15 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
   }, [handleFork]);
   const stableHandleNavigate = useCallback((entryId: string) => {
     if (sessionBusyRef.current) return;
+    setSnapshotLeaf(entryId);
     handleNavigate(entryId);
   }, [handleNavigate]);
 
   // Register the abort handler for the global Esc shortcut
   useEffect(() => {
-    registerAbortHandler(sessionBusy ? handleAbort : null);
-  }, [sessionBusy, handleAbort]);
+    registerAbortHandler(side ? returnToMain : sessionBusy ? handleAbort : null);
+    return () => registerAbortHandler(null);
+  }, [sessionBusy, handleAbort, side, returnToMain]);
 
   // --- Lazy-load historical messages ---
   // Only render the last N messages initially. When the user scrolls to the
@@ -838,7 +858,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
       onOpenTasks={onOpenTasks}
       onBranchNavigate={onBranchNavigate}
       onSetupChange={applyTaskSetup}
-      onSend={handleSend}
+      onSend={sendMain}
       onAbort={handleAbort}
       onSteer={agentRunning ? handleSteer : undefined}
       onFollowUp={agentRunning ? handleFollowUp : undefined}
@@ -872,7 +892,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
       slashCommandsLoading={slashCommandsLoading}
       onLoadSlashCommands={loadSlashCommands}
       onViewCommand={handleViewCommand}
-      onBuiltinCommand={handleBuiltinSlashCommand}
+      onBuiltinCommand={dispatchCommand}
       draftKey={session?.id ?? (newSessionCwd ? `new:${newSessionCwd}` : undefined)}
       cwd={session?.cwd ?? newSessionCwd}
       projectPath={session?.projectRoot ?? session?.cwd ?? newSessionCwd}
@@ -893,12 +913,21 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
       className="chat-window relative flex h-full min-w-0 flex-col overflow-hidden"
       data-session-busy={sessionBusy ? "true" : undefined}
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      onDragEnter={side ? event => { event.preventDefault(); event.stopPropagation(); } : handleDragEnter}
+      onDragOver={side ? event => { event.preventDefault(); event.stopPropagation(); } : handleDragOver}
+      onDragLeave={side ? event => { event.preventDefault(); event.stopPropagation(); } : handleDragLeave}
+      onDrop={side ? event => { event.preventDefault(); event.stopPropagation(); } : handleDrop}
     >
+      <div className="relative flex min-h-0 flex-1 flex-col" inert={!!side} aria-hidden={side ? true : undefined}>
       {searchPreview && <div className="transcript-preview-banner" role="status"><span>{t("wb.historicalSearch")}</span><button onClick={onCloseTranscript}>{t("wb.returnConversation")}</button></div>}
+      {(recapBusy || recapError || recap) && <section className="mx-4 my-2 max-h-[40%] shrink-0 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--bg-panel)] p-4" aria-label={t("recap.title")}>
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-sm"><strong>{t("recap.title")}</strong>
+          {recapBusy && <><span role="status">{t("recap.loading")}</span><button className="ml-auto text-[var(--accent)]" onClick={cancelRecap}>{t("recap.cancel")}</button></>}
+        </div>
+        {recapError && <div role="alert" className="mb-2 text-sm text-[var(--danger)]">{recapError}</div>}
+        {recap && <><div className="mb-2 text-xs text-text-muted">{t("recap.times", { snapshot: new Date(recap.snapshotAt).toLocaleTimeString(), generated: new Date(recap.generatedAt).toLocaleTimeString() })}</div><MarkdownBody>{recap.text}</MarkdownBody></>}
+      </section>}
+
       {isDragOver && (
         <div className="pointer-events-none absolute inset-0 z-50 flex animate-[drop-zone-in_0.15s_ease_both] items-center justify-center bg-[var(--accent-soft)] backdrop-blur-[1px]">
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -1087,7 +1116,9 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
       </div>
       </>
       )}
-      {commandDialog && <ChatCommandDialog kind={commandDialog} stats={sessionStats} choices={forkChoices} onClose={() => setCommandDialog(null)} onFork={id => { setCommandDialog(null); void handleFork(id); }} />}
+      </div>
+      {side && <SideChatPanel messages={side.messages} busy={side.busy} error={side.error} ready={side.ready} parentRunning={agentRunning || bashRunning} cwd={session?.cwd ?? undefined} onSend={ephemeral.sendSide} onStop={returnToMain} onClose={returnToMain} />}
+      {!side && commandDialog && <ChatCommandDialog kind={commandDialog} stats={sessionStats} choices={forkChoices} onClose={() => setCommandDialog(null)} onFork={id => { setCommandDialog(null); void handleFork(id); }} />}
     </div>
   );
 }

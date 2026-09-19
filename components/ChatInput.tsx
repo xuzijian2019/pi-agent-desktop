@@ -935,7 +935,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           setDraftSetup(previous => previous ? { ...previous, effort: level } : previous);
           onThinkingLevelChange(level);
         } else { setThinkingDropdownOpen(true); setControlsMenuOpen(true); setModelDropdownOpen(false); }
-      } else if (["compact", "reload", "name", "session", "copy"].includes(command.name)) {
+      } else if (["compact", "reload", "name", "session", "copy", "side", "btw", "recap"].includes(command.name)) {
         const result = await onBuiltinCommand?.(`/${command.name}${command.argument ? ` ${command.argument}` : ""}`);
         if (!result?.handled) throw new Error(t("chat.commandUnavailable"));
         if (result.error) throw new Error(result.error);
@@ -1277,7 +1277,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, []);
 
   const applySlashCommand = useCallback((command: SlashCommandPaletteItem, execute = false) => {
-    if (execute && command.source === "builtin" && !["name", "compact"].includes(command.name)) {
+    if (execute && command.source === "builtin" && !["name", "compact", "side", "btw"].includes(command.name)) {
       setSlashMenuOpen(false);
       void dispatchBuiltin(`/${command.name}`);
       return;
