@@ -924,17 +924,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   };
 
   return (
-    <div className="session-sidebar" style={{ display: "flex", flexDirection: "column", flex: "1 1 0%", minHeight: 0, height: "100%", overflow: "hidden" }}>
+    <div className="session-sidebar">
       {/* Header */}
       <div
         className={`session-sidebar-header${desktopPlatform === "macos" ? " session-sidebar-header--mac-inset" : ""}`}
         data-tauri-drag-region={desktopPlatform ? true : undefined}
         {...windowDrag}
-        style={{
-          padding: "12px 10px 10px",
-          borderBottom: "1px solid var(--border)",
-          flexShrink: 0,
-        }}
       >
         {/* Window-chrome controls row: right-aligned (theme + collapse); on macOS
             the traffic lights share this row's left side. */}
@@ -961,8 +956,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         </button>
 
         {/* Row 2: current folder — flat row */}
-        <div className="sidebar-folder-row" data-no-drag style={{ display: showLegacyHeaderProjectRows ? "flex" : "none", alignItems: "center", gap: 2 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
+        <div className={`sidebar-folder-row${showLegacyHeaderProjectRows ? "" : " is-hidden"}`} data-no-drag>
+          <div className="sidebar-folder-row-main">
             <ProjectPicker
               recentProjects={recentProjects}
               selectedCwd={selectedCwd}
@@ -989,9 +984,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 (w.branch ?? displayCwd(w.path, homeDir)).toLowerCase().includes(wtFilter.trim().toLowerCase()))
             : worktreeState.worktrees;
           return (
-            <div ref={wtDropdownRef} data-no-drag style={{ position: "relative" }}>
+            <div ref={wtDropdownRef} data-no-drag className="sidebar-worktree">
               <button
-                className="sidebar-header-row"
+                className={`sidebar-header-row sidebar-worktree-trigger${wtDropdownOpen ? " is-open" : ""}`}
                 onClick={() => {
                   setWtDropdownOpen((v) => !v);
                   // Opening should show the branch state as of now, not as of
@@ -999,9 +994,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                   if (!wtDropdownOpen) setWtRefreshKey((k) => k + 1);
                 }}
                  title={currentWt ? t("sidebar.switchWorktreeTitle", { path: currentWt.path }) : t("sidebar.switchWorktree")}
-                style={{ background: wtDropdownOpen ? "var(--bg-hover)" : undefined }}
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: currentWt && !currentWt.isMain ? "var(--accent)" : "var(--text-muted)" }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`sidebar-worktree-icon${currentWt && !currentWt.isMain ? " is-linked" : ""}`}>
                   <line x1="6" y1="3" x2="6" y2="15" />
                   <circle cx="18" cy="6" r="3" />
                   <circle cx="6" cy="18" r="3" />
@@ -1009,39 +1003,27 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 </svg>
                 <PathLabel
                   text={currentWt ? (currentWt.branch ?? displayCwd(currentWt.path, homeDir)) : "…"}
-                  style={{ flex: 1, fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--text)" }}
+                  className="sidebar-worktree-path"
                 />
                 {currentWt?.isMain && (
-                   <span style={{ flexShrink: 0, color: "var(--text-dim)", fontSize: 10 }}>{t("sidebar.main")}</span>
+                   <span className="sidebar-worktree-tag">{t("sidebar.main")}</span>
                 )}
                 {worktreeState.worktrees.length > 1 && (
-                  <span style={{ flexShrink: 0, color: "var(--text-dim)", fontSize: 10 }}>
+                  <span className="sidebar-worktree-tag">
                     {worktreeState.worktrees.length}
                   </span>
                 )}
-                <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="sidebar-worktree-caret">
                   <polyline points="2 3.5 5 6.5 8 3.5" />
                 </svg>
               </button>
 
               <AnimatedDropdown
-                className="native-popover"
+                className="native-popover sidebar-worktree-menu"
                 open={wtDropdownOpen}
-                style={{
-                  position: "absolute",
-                  top: "calc(100% + 4px)",
-                  left: 0,
-                  right: 0,
-                  zIndex: 100,
-                  background: "var(--bg)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 8,
-                  boxShadow: "0 6px 20px rgba(0,0,0,0.10)",
-                  overflow: "hidden",
-                }}
               >
                   {showWtFilter && (
-                    <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
+                    <div className="sidebar-worktree-filter">
                       <input
                         value={wtFilter}
                         onChange={(e) => setWtFilter(e.target.value)}
@@ -1053,41 +1035,30 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                         }}
                         placeholder={t("sidebar.filterWorktrees")}
                         autoFocus
-                        style={{
-                          width: "100%",
-                          fontSize: 11,
-                          fontFamily: "var(--font-mono)",
-                          padding: "5px 8px",
-                          border: "1px solid var(--border)",
-                          borderRadius: 5,
-                          outline: "none",
-                          background: "var(--bg)",
-                          color: "var(--text)",
-                          boxSizing: "border-box",
-                        }}
+                        className="sidebar-form-input"
                       />
                     </div>
                   )}
-                  <div style={{ maxHeight: "min(40vh, 300px)", overflowY: "auto" }}>
+                  <div className="sidebar-worktree-list">
                     {visibleWorktrees.map((wt) => {
                       const isCurrent = wt.path === selectedCwd || (wt.isMain && !worktreeState.worktrees.some((w) => w.path === selectedCwd));
                       if (wtConfirmRemove?.path === wt.path) {
                         const isForce = wtConfirmRemove.force;
                         return (
-                          <div key={wt.path} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderBottom: "1px solid var(--border)", background: "color-mix(in srgb, var(--danger) 6%, transparent)" }}>
-                            <span style={{ flex: 1, fontSize: 11, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <div key={wt.path} className="sidebar-worktree-confirm">
+                            <span className="sidebar-worktree-confirm-label">
                               {isForce ? t("sidebar.forceRemoveCheckout") : t("sidebar.confirmRemoveWorktree")}
                             </span>
                             <button
                               onClick={() => void handleRemoveWorktree(wt.path, isForce)}
                               disabled={wtBusy}
-                              style={{ padding: "3px 9px", background: "var(--danger)", border: "none", borderRadius: 5, color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}
+                              className="sidebar-worktree-confirm-accept"
                             >
                               {isForce ? t("sidebar.force") : t("i18n.remove")}
                             </button>
                             <button
                               onClick={() => setWtConfirmRemove(null)}
-                              style={{ padding: "3px 9px", background: "var(--bg-hover)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text-muted)", fontSize: 11, cursor: "pointer", flexShrink: 0 }}
+                              className="sidebar-worktree-confirm-cancel"
                             >
                               {t("sidebar.cancel")}
                             </button>
@@ -1097,8 +1068,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                       return (
                         <div
                           key={wt.path}
-                          className="wt-row"
-                          style={{ display: "flex", alignItems: "center", borderBottom: "1px solid var(--border)" }}
+                          className="wt-row sidebar-worktree-row"
                         >
                           <button
                             onClick={() => {
@@ -1108,44 +1078,24 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                               setWtFilter("");
                             }}
                             title={wt.path}
-                            style={{
-                              flex: 1,
-                              minWidth: 0,
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 7,
-                              padding: "8px 10px",
-                              background: "var(--bg)",
-                              border: "none",
-                              color: isCurrent ? "var(--text)" : "var(--text-muted)",
-                              cursor: "pointer",
-                              textAlign: "left",
-                              fontSize: 11,
-                              fontFamily: "var(--font-mono)",
-                            }}
+                            className={`sidebar-worktree-row-button${isCurrent ? " is-current" : ""}`}
                           >
                             {isCurrent ? (
-                              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="sidebar-worktree-row-check">
                                 <polyline points="1.5 5 4 7.5 8.5 2.5" />
                               </svg>
                             ) : (
-                              <span style={{ width: 10, flexShrink: 0 }} />
+                              <span className="sidebar-worktree-row-spacer" />
                             )}
-                            <PathLabel text={wt.branch ?? displayCwd(wt.path, homeDir)} style={{ flex: 1 }} />
-                            {wt.isMain && <span style={{ flexShrink: 0, color: "var(--text-dim)", fontSize: 10 }}>{t("sidebar.main")}</span>}
+                            <PathLabel text={wt.branch ?? displayCwd(wt.path, homeDir)} className="sidebar-worktree-row-path" />
+                            {wt.isMain && <span className="sidebar-worktree-tag">{t("sidebar.main")}</span>}
                           </button>
                           {isTauriDesktop() && (
                             <button
                               type="button"
                               onClick={() => { void revealItemInDirNative(wt.path); }}
                               title={t("sidebar.revealWorktree")}
-                              style={{
-                                display: "flex", alignItems: "center", justifyContent: "center",
-                                width: 28, height: 28, padding: 0, marginRight: 2,
-                                background: "none", border: "none",
-                                color: "var(--text-dim)", cursor: "pointer",
-                                borderRadius: 5, flexShrink: 0,
-                              }}
+                              className="sidebar-worktree-row-action"
                             >
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
@@ -1157,16 +1107,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                               onClick={() => { setWtError(null); setWtConfirmRemove({ path: wt.path, force: false }); }}
                               disabled={wtBusy}
                                title={t("sidebar.removeWorktreeTitle", { path: wt.path })}
-                              style={{
-                                display: "flex", alignItems: "center", justifyContent: "center",
-                                width: 34, height: 28, padding: 0, marginRight: 4,
-                                background: "none", border: "none",
-                                color: "var(--text-dim)", cursor: "pointer",
-                                borderRadius: 5, flexShrink: 0,
-                                transition: "color 0.12s, background 0.12s",
-                              }}
-                              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.background = "color-mix(in srgb, var(--danger) 8%, transparent)"; }}
-                              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "none"; }}
+                              className="sidebar-worktree-row-action is-remove"
                             >
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <polyline points="3 6 5 6 21 6" />
@@ -1180,7 +1121,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                       );
                     })}
                     {showWtFilter && visibleWorktrees.length === 0 && wtFilter.trim() && (
-                      <div style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-dim)" }}>{t("sidebar.noMatchingWorktrees")}</div>
+                      <div className="sidebar-worktree-empty">{t("sidebar.noMatchingWorktrees")}</div>
                     )}
                   </div>
 
@@ -1193,28 +1134,16 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                         setTimeout(() => wtNewInputRef.current?.focus(), 0);
                       }}
                       title={t("sidebar.createWorktreeTitle")}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 7,
-                        width: "100%",
-                        padding: "8px 10px",
-                        background: "none",
-                        border: "none",
-                        color: "var(--text-muted)",
-                        cursor: "pointer",
-                        textAlign: "left",
-                        fontSize: 11,
-                      }}
+                      className="sidebar-worktree-new"
                     >
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" style={{ flexShrink: 0 }}>
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" className="sidebar-glyph">
                         <line x1="5" y1="1" x2="5" y2="9" />
                         <line x1="1" y1="5" x2="9" y2="5" />
                       </svg>
                        <span>{t("sidebar.newWorktree")}</span>
                     </button>
                   ) : (
-                    <div style={{ padding: "6px 8px" }}>
+                    <div className="sidebar-form">
                       <input
                         ref={wtNewInputRef}
                         value={wtNewBranch}
@@ -1235,18 +1164,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                           }
                         }}
                          placeholder={t("sidebar.branchName")}
-                        style={{
-                          width: "100%",
-                          fontSize: 11,
-                          fontFamily: "var(--font-mono)",
-                          padding: "5px 8px",
-                          border: "1px solid var(--accent)",
-                          borderRadius: 5,
-                          outline: "none",
-                          background: "var(--bg)",
-                          color: "var(--text)",
-                          boxSizing: "border-box",
-                        }}
+                        className="sidebar-form-input"
                       />
                       <datalist id="pi-worktree-branches">
                         {wtBranches.map((branch) => (
@@ -1254,60 +1172,30 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                         ))}
                       </datalist>
                       {wtBranches.length > 0 && (
-                        <div style={{ marginTop: 5, maxHeight: 96, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
+                        <div className="sidebar-form-branches">
                           {wtBranches.slice(0, 8).map((branch) => (
                             <button
                               key={branch}
                               type="button"
                               onClick={() => setWtNewBranch(branch)}
-                              style={{
-                                textAlign: "left",
-                                padding: "3px 6px",
-                                border: "none",
-                                borderRadius: 4,
-                                background: branch === wtNewBranch ? "var(--bg-selected)" : "transparent",
-                                color: "var(--text-muted)",
-                                fontFamily: "var(--font-mono)",
-                                fontSize: 10,
-                                cursor: "pointer",
-                              }}
+                              className={`sidebar-form-branch${branch === wtNewBranch ? " is-current" : ""}`}
                             >
                               {branch}
                             </button>
                           ))}
                         </div>
                       )}
-                      <div style={{ display: "flex", gap: 5, marginTop: 5 }}>
+                      <div className="sidebar-form-actions">
                         <button
                           onClick={() => void handleCreateWorktree()}
                           disabled={wtBusy || !wtNewBranch.trim()}
-                          style={{
-                            flex: 1,
-                            padding: "4px 0",
-                            background: "var(--accent)",
-                            border: "none",
-                            borderRadius: 5,
-                            color: "var(--accent-contrast)",
-                            fontSize: 11,
-                            fontWeight: 600,
-                            cursor: wtBusy || !wtNewBranch.trim() ? "not-allowed" : "pointer",
-                            opacity: wtBusy || !wtNewBranch.trim() ? 0.65 : 1,
-                          }}
+                          className="sidebar-form-submit"
                         >
                            {wtBusy ? t("sidebar.creating") : t("sidebar.create")}
                         </button>
                         <button
                           onClick={() => { setWtNewOpen(false); setWtNewBranch(""); setWtError(null); }}
-                          style={{
-                            flex: 1,
-                            padding: "4px 0",
-                            background: "var(--bg-hover)",
-                            border: "1px solid var(--border)",
-                            borderRadius: 5,
-                            color: "var(--text-muted)",
-                            fontSize: 11,
-                            cursor: "pointer",
-                          }}
+                          className="sidebar-form-cancel"
                         >
                            {t("sidebar.cancel")}
                         </button>
@@ -1315,13 +1203,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     </div>
                   )}
                   {wtError && (
-                    <div style={{
-                      padding: "5px 10px 8px",
-                      color: "#dc2626",
-                      fontSize: 11,
-                      lineHeight: 1.35,
-                      overflowWrap: "anywhere",
-                    }}>
+                    <div className="sidebar-worktree-error">
                       {wtError}
                     </div>
                   )}
@@ -1332,22 +1214,19 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         {showLegacyHeaderProjectRows && inactiveWorktreeSelector && (
           <button
             type="button"
-            className="sidebar-header-row"
+            className={`sidebar-header-row ${inactiveWorktreeSelector.onClick ? "is-quiet" : "is-disabled"}`}
             aria-disabled={inactiveWorktreeSelector.onClick ? undefined : "true"}
             tabIndex={inactiveWorktreeSelector.onClick ? undefined : -1}
             onClick={inactiveWorktreeSelector.onClick}
             title={inactiveWorktreeSelector.title}
-            style={inactiveWorktreeSelector.onClick
-              ? { color: "var(--text-muted)" }
-              : { color: "var(--text-dim)", cursor: "default", opacity: 0.82 }}
           >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="sidebar-glyph">
               <line x1="6" y1="3" x2="6" y2="15" />
               <circle cx="18" cy="6" r="3" />
               <circle cx="6" cy="18" r="3" />
               <path d="M18 9a9 9 0 0 1-9 9" />
             </svg>
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11.5 }}>{inactiveWorktreeSelector.label}</span>
+            <span className="sidebar-worktree-label">{inactiveWorktreeSelector.label}</span>
           </button>
         )}
       </div>
@@ -1464,7 +1343,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           role="tooltip"
           style={{ top: projectPathHint.top, left: projectPathHint.left, height: projectPathHint.height }}
         >
-          <PathLabel text={displayCwd(projectPathHint.root, homeDir)} style={{ lineHeight: 1 }} />
+          <PathLabel text={displayCwd(projectPathHint.root, homeDir)} className="sidebar-project-path-hint-path" />
           {projectPathHint.missing && (
             <span className="sidebar-project-path-hint-missing">{t("sidebar.cwdMissing")}</span>
           )}
@@ -1544,7 +1423,7 @@ function SessionTreeItem({
       aria-level={depth + 1}
       style={depth > 0 ? { marginLeft: depth * 14 } : undefined}
     >
-      <div style={{ position: "relative" }}>
+      <div className="sidebar-session-row">
         <SessionItem
           session={node.session}
           isSelected={node.session.id === selectedSessionId}
@@ -1585,17 +1464,9 @@ function RunningSessionIndicator() {
     <span
       title={t("sidebar.agentRunning")}
       aria-label={t("sidebar.agentRunning")}
-      style={{
-        width: 14,
-        height: 14,
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flexShrink: 0,
-        color: "var(--accent)",
-      }}
+      className="sidebar-session-indicator is-running"
     >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ display: "block" }}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="sidebar-glyph-block">
         <g>
           <path
             d="M21 12a9 9 0 1 1-3.8-7.4"
@@ -1623,17 +1494,9 @@ function UnreadSessionIndicator() {
     <span
       title={t("sidebar.newActivity")}
       aria-label={t("sidebar.newSessionActivity")}
-      style={{
-        width: 14,
-        height: 14,
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flexShrink: 0,
-        color: "#0891b2",
-      }}
+      className="sidebar-session-indicator is-unread"
     >
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" style={{ display: "block" }}>
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" className="sidebar-glyph-block">
         <circle cx="7" cy="7" r="2.5" fill="currentColor" />
         <circle cx="7" cy="7" r="3" stroke="currentColor" strokeWidth="1.4" opacity="0.32">
           <animate attributeName="r" values="3;6;3" dur="1.6s" repeatCount="indefinite" />
@@ -1764,11 +1627,10 @@ function SessionItem({
 
   // Fixed-height outer wrapper — content swaps in place so the list never reflows.
   // Matches the Chats/Files view-switcher tab height.
-  const ITEM_HEIGHT = 28;
 
   return (
     <div
-      className={`session-item${isSelected ? " is-selected" : ""}${isRunning ? " is-running" : ""}${isUnread ? " is-unread" : ""}`}
+      className={`session-item${isSelected ? " is-selected" : ""}${isRunning ? " is-running" : ""}${isUnread ? " is-unread" : ""}${confirmDelete ? " is-confirming-delete" : ""}${renaming ? " is-renaming" : ""}${menuOpen ? " is-menu-open" : ""}${deleting ? " is-deleting" : ""}`}
       onClick={confirmDelete || renaming ? undefined : onClick}
       onMouseEnter={() => {
         setHovered(true);
@@ -1778,42 +1640,17 @@ function SessionItem({
         if (!isRunning && !isSelected) prefetchSessionData(session.id);
       }}
       onMouseLeave={() => { setHovered(false); }}
-      style={{
-        height: ITEM_HEIGHT,
-        display: "flex",
-        alignItems: "center",
-        paddingLeft: 14,
-        paddingRight: 8,
-        cursor: confirmDelete || renaming ? "default" : "pointer",
-        background: confirmDelete
-          ? "color-mix(in srgb, var(--danger) 6%, transparent)"
-          : isSelected ? "var(--bg-selected)" : (hovered || menuOpen) ? "var(--bg-hover)" : "transparent",
-        borderLeft: confirmDelete
-          ? "2px solid var(--danger)"
-          : isSelected ? "2px solid var(--accent)" : "2px solid transparent",
-        transition: "background 0.1s",
-        opacity: deleting ? 0.5 : 1,
-        gap: 6,
-        overflow: "hidden",
-      }}
     >
       {confirmDelete ? (
         /* ── Delete confirmation: same height, two flat buttons ── */
         <>
-          <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div className="sidebar-session-delete-label">
             {t("sidebar.deleteSession", { title: title.slice(0, 22) + (title.length > 22 ? "…" : "") })}
           </div>
-          <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
+          <div className="sidebar-session-delete-actions">
             <button
               onClick={handleDeleteConfirm}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-                height: 26, padding: "0 9px",
-                background: "var(--danger)", border: "none",
-                borderRadius: 6, color: "#fff",
-                cursor: "pointer", fontSize: 12, fontWeight: 600,
-                whiteSpace: "nowrap",
-              }}
+              className="sidebar-session-delete-confirm"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="3 6 5 6 21 6" />
@@ -1825,14 +1662,7 @@ function SessionItem({
             </button>
             <button
               onClick={handleDeleteCancel}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                height: 26, padding: "0 9px",
-                background: "var(--bg)", border: "1px solid var(--border)",
-                borderRadius: 6, color: "var(--text-muted)",
-                cursor: "pointer", fontSize: 12, fontWeight: 500,
-                whiteSpace: "nowrap",
-              }}
+              className="sidebar-session-delete-cancel"
             >
               {t("sidebar.cancel")}
             </button>
@@ -1850,17 +1680,7 @@ function SessionItem({
             if (e.key === "Escape") setRenaming(false);
           }}
           autoFocus
-          style={{
-            flex: 1,
-            fontSize: 12,
-            padding: "3px 8px",
-            border: "1px solid var(--accent)",
-            borderRadius: 5,
-            outline: "none",
-            background: "var(--bg)",
-            color: "var(--text)",
-            height: 26,
-          }}
+          className="sidebar-session-rename-input"
         />
       ) : (
         /* ── Normal view: single line — leading icon + title + "…" menu ── */
@@ -1874,24 +1694,16 @@ function SessionItem({
           ) : session.cwdMissing ? (
             <span
               title={t("sidebar.cwdMissing")}
-              style={{
-                width: 14,
-                height: 14,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-                color: "var(--text-dim)",
-              }}
+              className="sidebar-session-indicator is-missing"
             >
-              <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
+              <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="sidebar-glyph-block">
                 <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
                 <line x1="12" y1="9" x2="12" y2="13" />
                 <line x1="12" y1="17" x2="12.01" y2="17" />
               </svg>
             </span>
           ) : (
-            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="sidebar-session-icon">
               <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
             </svg>
           )}
@@ -1904,19 +1716,8 @@ function SessionItem({
               event.preventDefault();
               onClick();
             }}
-            className="session-item-title"
+            className={`session-item-title${session.cwdMissing ? " is-missing" : ""}`}
             title={session.cwdMissing ? `${title} · ${t("sidebar.cwdMissing")}` : title}
-            style={{
-              flex: 1,
-              minWidth: 0,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              fontSize: 13,
-              fontWeight: isSelected ? 500 : 400,
-              lineHeight: 1.4,
-              color: session.cwdMissing ? "var(--text-dim)" : "var(--text)",
-            }}
           >
             {title}
           </a>
@@ -1926,14 +1727,7 @@ function SessionItem({
             <button
               onClick={(e) => { e.stopPropagation(); onToggleCollapse?.(); }}
               title={collapsed ? "Expand forks" : "Collapse forks"}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                width: 20, height: 20, padding: 0, flexShrink: 0,
-                background: "none", border: "none",
-                color: "var(--text-dim)", cursor: "pointer",
-                transform: collapsed ? "rotate(-90deg)" : "none",
-                transition: "transform 0.15s",
-              }}
+              className={`sidebar-session-collapse${collapsed ? " is-collapsed" : ""}`}
             >
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="2 3.5 5 6.5 8 3.5" />
@@ -1950,16 +1744,7 @@ function SessionItem({
               aria-label={t("sidebar.sessionActions")}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                width: 24, height: 24, padding: 0, flexShrink: 0,
-                background: menuOpen ? "var(--bg-selected)" : "none",
-                border: "none", borderRadius: 6,
-                color: "var(--text-muted)", cursor: "pointer",
-                transition: "background 0.12s, color 0.12s",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-selected)"; e.currentTarget.style.color = "var(--text)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = menuOpen ? "var(--bg-selected)" : "none"; e.currentTarget.style.color = "var(--text-muted)"; }}
+              className={`sidebar-session-menu-button${menuOpen ? " is-open" : ""}`}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <circle cx="5" cy="12" r="1.7" />
@@ -1972,49 +1757,32 @@ function SessionItem({
           {menuOpen && menuPos && createPortal(
             <div
               ref={menuRef}
-              className="native-popover session-item-menu"
+              className="native-popover session-item-menu sidebar-menu-surface"
               role="menu"
               onClick={(e) => e.stopPropagation()}
-              style={{
-                position: "fixed", top: menuPos.top, left: menuPos.left,
-                width: MENU_WIDTH, zIndex: 800, padding: 5,
-                display: "flex", flexDirection: "column", gap: 1,
-              }}
+              style={{ top: menuPos.top, left: menuPos.left }}
             >
               <button
                 role="menuitem"
                 onClick={() => { setMenuOpen(false); startRename(); }}
-                style={{
-                  display: "flex", alignItems: "center", gap: 8,
-                  width: "100%", height: 30, padding: "0 8px",
-                  background: "transparent", border: 0, borderRadius: 7,
-                  color: "var(--text)", cursor: "pointer",
-                  fontSize: 12.5, textAlign: "left",
-                }}
+                className="sidebar-menu-item"
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="sidebar-glyph">
                   <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
                 </svg>
                 {t("sidebar.rename")}
               </button>
               <button
                 role="menuitem"
-                className="is-danger"
+                className="sidebar-menu-item is-danger"
                 title={t("sidebar.deleteWithShiftClick")}
                 onClick={(e) => {
                   setMenuOpen(false);
                   if (e.shiftKey) void performDelete();
                   else setConfirmDelete(true);
                 }}
-                style={{
-                  display: "flex", alignItems: "center", gap: 8,
-                  width: "100%", height: 30, padding: "0 8px",
-                  background: "transparent", border: 0, borderRadius: 7,
-                  color: "var(--danger)", cursor: "pointer",
-                  fontSize: 12.5, textAlign: "left",
-                }}
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="sidebar-glyph">
                   <polyline points="3 6 5 6 21 6" />
                   <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
                   <path d="M10 11v6M14 11v6" />
@@ -2022,20 +1790,20 @@ function SessionItem({
                 </svg>
                 {t("sidebar.delete")}
               </button>
-              <div style={{ height: 1, margin: "4px 3px", background: "var(--border)" }} />
-              <div style={{ padding: "3px 8px 5px", color: "var(--text-dim)", fontSize: 11, lineHeight: 1.6 }}>
+              <div className="sidebar-menu-separator" />
+              <div className="sidebar-menu-meta">
                 <div title={session.created}>
                   {formatRelativeTime(session.created)} · {t("sidebar.messagesCount", { count: session.messageCount })}
                 </div>
                 {session.worktreeBranch && (
-                  <div title={`Worktree: ${session.cwd}`} style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--accent)", minWidth: 0 }}>
-                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <div title={`Worktree: ${session.cwd}`} className="sidebar-menu-meta-worktree">
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="sidebar-glyph">
                       <line x1="6" y1="3" x2="6" y2="15" />
                       <circle cx="18" cy="6" r="3" />
                       <circle cx="6" cy="18" r="3" />
                       <path d="M18 9a9 9 0 0 1-9 9" />
                     </svg>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session.worktreeBranch}</span>
+                    <span className="sidebar-menu-meta-branch">{session.worktreeBranch}</span>
                   </div>
                 )}
               </div>
