@@ -5558,6 +5558,424 @@ span.linenumber {
   cursor: default;
 }
 
+/* Composer shell and editor ------------------------------------------------
+   `.chat-input-shell` and `.chat-composer-editor` already carry a rule earlier
+   in this file; these add the properties that used to sit inline. The editor's
+   inline border, padding, radius, background and shadow were already dead —
+   the earlier rule zeroes all five with !important so the composer shell owns
+   the frame — so only the box model below survives the move. */
+.chat-input-shell {
+  flex-shrink: 0;
+  padding: 0 16px 8px;
+}
+
+.chat-composer-editor {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  transition:
+    border-color var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native),
+    box-shadow var(--dur-fast) var(--ease-native);
+}
+
+/* Font size and line height come from `.chat-composer textarea` above. */
+.composer-textarea {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 24px;
+  max-height: 200px;
+  border: none;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  overflow: auto;
+  resize: none;
+}
+
+/* Queued steering / follow-up strip ---------------------------------------- */
+.composer-queue-strip {
+  margin-bottom: 8px;
+  padding: 5px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+}
+
+.composer-queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 8px 4px 10px;
+}
+
+.composer-queue-label {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.composer-queue-recall {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-native),
+    border-color var(--dur-fast) var(--ease-native);
+}
+
+.composer-queue-recall:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--bg-hover);
+}
+
+.composer-queued-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.composer-queued-kind {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.composer-queued-kind.is-steer {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+}
+
+/* Status banners above the composer ---------------------------------------- */
+.composer-retry-banner,
+.composer-compact-banner,
+.composer-compact-alert {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+.composer-retry-banner {
+  border: 1px solid rgba(234, 179, 8, 0.25);
+  background: rgba(234, 179, 8, 0.08);
+  color: rgba(180, 130, 0, 0.9);
+}
+
+.composer-compact-banner {
+  border: 1px solid rgba(16, 185, 129, 0.24);
+  background: rgba(16, 185, 129, 0.08);
+  color: rgba(5, 150, 105, 0.95);
+}
+
+.composer-compact-alert {
+  display: block;
+  padding: 7px 10px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.07);
+  color: var(--danger);
+  font-family: var(--font-mono);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Model error / model-scope warning banner. */
+.composer-notice-banner {
+  display: flex;
+  max-height: 120px;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  border: 1px solid;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-y: auto;
+}
+
+.composer-notice-banner.is-error {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.07);
+  color: rgb(239, 68, 68);
+}
+
+.composer-notice-banner.is-warning {
+  border-color: rgba(234, 179, 8, 0.3);
+  background: rgba(234, 179, 8, 0.07);
+  color: rgb(234, 179, 8);
+}
+
+/* Slash-command card internals --------------------------------------------- */
+.composer-slash-group-header {
+  position: sticky;
+  top: -10px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0 6px;
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.composer-slash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.composer-slash-name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.composer-slash-name.is-dormant {
+  color: var(--text-dim);
+}
+
+.composer-slash-dormant {
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.composer-slash-desc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow: hidden;
+}
+
+/* Model menu: the surface keeps its measured position inline. Box, border,
+   radius and shadow come from `.native-popover`, which sets them !important —
+   the inline copies these classes replace never applied. */
+.composer-model-panel {
+  position: fixed;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.composer-model-filter-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 220px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.composer-model-filter-input.is-mobile {
+  min-width: 0;
+}
+
+.composer-model-group-header {
+  padding: 6px 12px 4px;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.composer-model-group-header.is-divided {
+  border-top: 1px solid var(--border);
+}
+
+/* Effort / tools menus: only max-height is measured, so it stays inline. */
+.composer-dropdown-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.composer-dropdown-panel.is-thinking {
+  min-width: 180px;
+}
+
+.composer-dropdown-panel.is-tools {
+  min-width: 120px;
+}
+
+/* Narrow-width controls: the "…" opener, the overlay it reveals, its close
+   button and the compact toggle that lives inside it. */
+.composer-more-button {
+  display: flex;
+  width: 100%;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-native),
+    color var(--dur-fast) var(--ease-native);
+}
+
+.composer-more-button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* Kept in the layout so the controls row does not reflow while the overlay
+   it opened is on screen. */
+.composer-more-button.is-hidden {
+  visibility: hidden;
+  cursor: default;
+  pointer-events: none;
+}
+
+.composer-controls-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.composer-controls-group.is-narrow {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
+  display: none;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  gap: 1px;
+  padding: 1px;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-panel) 92%, var(--bg));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  backdrop-filter: blur(10px);
+}
+
+.composer-controls-group.is-narrow.is-open {
+  display: flex;
+}
+
+.composer-collapse-button {
+  display: flex;
+  width: 36px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0;
+  padding: 0;
+  border: none;
+  border-left: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--bg-hover);
+  color: var(--text);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-native);
+}
+
+.composer-collapse-button:hover {
+  background: var(--bg-selected);
+}
+
+.composer-compact-button {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-native),
+    color var(--dur-fast) var(--ease-native);
+}
+
+.composer-compact-button.is-icon-only {
+  width: 32px;
+  padding: 0 6px;
+}
+
+.composer-compact-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.composer-compact-button.is-compacting {
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+}
+
+/* Outranks the generic `.native-toolbar-button:hover` !important rule, which
+   would otherwise repaint the in-progress state as a plain hover. */
+.composer-compact-button.is-compacting:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 16%, transparent) !important;
+  color: var(--danger) !important;
+}
+
+.composer-compact-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* -- H3: message view (MessageView.tsx) ----------------------------------- */
 
 /* Layout of a user turn: bubble right-aligned, action row underneath it.
