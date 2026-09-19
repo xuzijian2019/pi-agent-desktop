@@ -27,49 +27,49 @@
       "risk": "high",
       "drift": 2133,
       "reason": "~500 lines were MOVED OUT into components/ProjectPicker.tsx and components/path-ui.tsx, which do not exist upstream. git merge does not track cross-file moves: an upstream edit to the project-picker block can merge back cleanly and silently resurrect a second copy.",
-      "structuralDrift": 1561,
+      "structuralDrift": 1503,
       "disposition": "accepted"
     },
     "components/AppShell.tsx": {
       "risk": "high",
       "drift": 1824,
       "reason": "Top-bar redesign (toolbar consolidated into a more-menu, inline styles to classNames) plus the mount point for desktop chrome. The desktop-only parts moved to components/desktop/; the rest is the fork's own interaction design, not desktop plumbing, so this file stays high risk by design rather than by neglect. Header/More cleanup (ui-refresh decisions 7 and 8) DELETES upstream UI rather than adding fork UI — the Full history toolbar button, the Session stats more-item and the session top panel — which raises structural drift by 37 lines, because upstream still ships all of it. Numbers are the measured values from `npm run drift` against the recorded baseline.",
-      "structuralDrift": 1487,
+      "structuralDrift": 1405,
       "disposition": "accepted"
     },
     "components/FileViewer.tsx": {
       "risk": "high",
       "drift": 599,
       "reason": "Adds FileViewerToolbar and FileViewerStatus, file icons, a live-sync indicator and a retry action. Both components are defined inside FileViewer.tsx rather than moved out, so there is no cross-file resurrection risk — only a large diff. Kept deliberately.",
-      "structuralDrift": 446,
+      "structuralDrift": 430,
       "disposition": "accepted"
     },
     "components/FileExplorer.tsx": {
       "risk": "high",
       "drift": 904,
       "reason": "Adds selection highlighting (selectedPath/onSelectPath) and moves git status colours onto CSS variables. Generic improvement, no desktop coupling. Kept deliberately.",
-      "structuralDrift": 768,
+      "structuralDrift": 733,
       "disposition": "accepted"
     },
     "components/ModelsConfig.tsx": {
       "risk": "medium",
       "drift": 281,
       "reason": "Already the correct shape: upstream inline style objects swapped for native-* classNames, 14 structural lines out of 148. Conflicts here are textual and trivially resolvable. Use this file as the model for restyling a shared component.",
-      "structuralDrift": 120,
+      "structuralDrift": 113,
       "disposition": "accepted"
     },
     "components/TabBar.tsx": {
       "risk": "medium",
       "drift": 116,
       "reason": "Accessibility work: role=\"tab\", aria-selected, roving tabIndex, arrow-key navigation, Enter/Space activation, plus an empty state. A generic improvement with no desktop coupling, so it cannot be extracted anywhere — the only ways to remove this drift are upstreaming it or deleting the accessibility support. Kept deliberately.",
-      "structuralDrift": 70,
+      "structuralDrift": 63,
       "disposition": "accepted"
     },
     "components/ChatWindow.tsx": {
       "risk": "high",
       "drift": 947,
       "reason": "Branding copy and a redesigned empty state. Part of the fork's interaction design. Kept deliberately. Workbench integration adds 32 structural lines relative to d0a8be2; totals conservatively add that delta because the v0.8.2 baseline is unavailable locally. Transcript search adds read-only historical rendering and exact-match expansion; the added drift is a conservative upper bound for this integration.",
-      "structuralDrift": 859,
+      "structuralDrift": 854,
       "disposition": "accepted"
     },
     "hooks/useTheme.ts": {
@@ -83,21 +83,21 @@
       "risk": "medium",
       "drift": 193,
       "reason": "Already the correct shape: 6 structural lines out of 54, the rest is style-to-className substitution. Nothing to revert.",
-      "structuralDrift": 108,
+      "structuralDrift": 105,
       "disposition": "accepted"
     },
     "components/ChatInput.tsx": {
       "risk": "high",
       "drift": 1549,
       "reason": "Composer chrome restyle. Phase 3 stream H2 replaced 108 of the 136 inline style objects with classes in app/native-theme.css; structural drift is unchanged at 1051 because the conversion only deletes style attributes. Upstream changed this file in v0.8.1, and components/ChatInput*.test.mjs plus tests/e2e/workbench.spec.ts cover it.",
-      "structuralDrift": 1051,
+      "structuralDrift": 1002,
       "disposition": "accepted"
     },
     "components/MessageView.tsx": {
-      "risk": "high",
+      "risk": "medium",
       "drift": 737,
       "reason": "Message bubble markup adjusted. Transcript search adds read-only historical rendering and exact-match expansion. Phase 3 stream H3 then replaced ~90 inline style objects with classes in app/native-theme.css, which is why the total is large and almost two thirds cosmetic; the structural half is unchanged transcript-search and written-file rendering.",
-      "structuralDrift": 252,
+      "structuralDrift": 201,
       "disposition": "accepted"
     },
     "components/SkillsConfig.tsx": {
@@ -295,6 +295,7 @@
     "2026-09-19 — manifest refreshed against the real v0.8.2 baseline (pi-web-upstream remote now fetched). Earlier numbers for ChatInput, ChatWindow, FileExplorer, MessageView, ModelsConfig and PluginsConfig were estimates relative to d0a8be2 and undercounted: measured structural drift is 1051 / 859 / 768 / 254 / 120 / 108. Risk labels follow the thresholds as before; no disposition changed. SkillsConfig.tsx (42 cosmetic / 14 structural) replaces ModelsConfig.tsx as the style-only reference in scripts/fork-ownership.test.mjs.",
     "2026-09-19 — stream H1: components/SessionSidebar.tsx lost 67 of its 70 inline style={{…}} objects. The menus, popovers, worktree dropdown, new-worktree form, headers, session rows and the session actions menu now carry classes defined in the reserved H1 block of app/native-theme.css; the three survivors are the runtime top/left of the two portals and the project path hint. Two onMouseEnter/onMouseLeave colour hacks became :hover rules. Measured drift moved 1987/439/1548 -> 2133/572/1561 (total/cosmetic/structural); risk stays high and the disposition stays accepted. The +13 structural is a measurement artefact, not new divergence: every one of the net-gained lines is a deletion of a BASELINE inline-style tail that the per-line classifier in scripts/measure-fork-drift.mjs cannot see as cosmetic — bare `}}` closers plus boxSizing / overflowWrap / paddingRight, which are absent from its STYLE_PROPS list. Adding those three property names to the list was measured and rejected here: it only recovers 3 of the 13 and it flips components/MessageView.tsx from high to medium, which is a manifest-wide re-rating and not this stream's call. No JSX was restructured, no code moved across files, and no behaviour, aria attribute or test id changed.",
     "2026-09-19 — inline styles → classes, MessageView.tsx (phase 3 stream H3). 97 inline style objects became 7, all of them carrying a derived value (throughput-band colour, diff row background, diff marker colour, patch line tint, the clamp height that the overflow measurement also reads). Everything else moved to a .msg-* section at the end of app/native-theme.css, referencing --radius-*, --text-*, --bg-* and --ease-native so stream G's retuned token values apply without touching this file again. Two-state styling became modifier classes or data-role attributes (tool card data-status, diff rows data-kind/data-side, extension card data-collapsed, action rows data-visible), and eight onMouseEnter/onMouseLeave colour pokes became :hover rules. Cosmetic drift rises 169 → 485; structural drift falls 254 → 252, because the style objects the fork itself had added (the written-file preview, the unified diff row, the collapsible user text) collapsed into classes. Risk stays high. No JSX tree, prop, aria attribute, test id or behaviour changed.",
-    "2026-09-19 — inline styles to classes, composer (Phase 3 stream H2). components/ChatInput.tsx went from 136 inline style={{}} objects to 28 and from 38 raw borderRadius literals to 0 (17 inline radii remain, all tokens); the 108 converted ones became classes in the reserved H2 block of app/native-theme.css (completion popovers reuse .native-popover, radii use --radius-sm/md/lg/pill). The 28 that stay carry measured positions, per-tone banner colours or isNarrow/isCompact branches. Deleting a multi-line style object also deletes its closing `}}` line, which the classifier in scripts/measure-fork-drift.mjs scores as structural, so the conversion was budgeted block by block against the fork-added lines it removes: total drift 1378 -> 1549, cosmetic 327 -> 498, structural 1051 -> 1051 (unchanged). Four queued-message style objects and the @-file/effort/tools panels were left inline for that reason, not on design grounds. components/ContextUsageRing.tsx (fork-owned) lost its last inline style and two hover handlers at the same time. Accepted."
+    "2026-09-19 — inline styles to classes, composer (Phase 3 stream H2). components/ChatInput.tsx went from 136 inline style={{}} objects to 28 and from 38 raw borderRadius literals to 0 (17 inline radii remain, all tokens); the 108 converted ones became classes in the reserved H2 block of app/native-theme.css (completion popovers reuse .native-popover, radii use --radius-sm/md/lg/pill). The 28 that stay carry measured positions, per-tone banner colours or isNarrow/isCompact branches. Deleting a multi-line style object also deletes its closing `}}` line, which the classifier in scripts/measure-fork-drift.mjs scores as structural, so the conversion was budgeted block by block against the fork-added lines it removes: total drift 1378 -> 1549, cosmetic 327 -> 498, structural 1051 -> 1051 (unchanged). Four queued-message style objects and the @-file/effort/tools panels were left inline for that reason, not on design grounds. components/ContextUsageRing.tsx (fork-owned) lost its last inline style and two hover handlers at the same time. Accepted.",
+    "2026-09-19 — drift classifier: a multi-line style={{ … }} object now counts as cosmetic as a whole (inner lines and the closing }}), per diff side. Deleting an inline style object used to score its tail as structural, which held back stream H2 in ChatInput.tsx. Re-measured: SessionSidebar 1561→1503, ChatInput 1051→1002, MessageView 252→201 (now medium), AppShell 1487→1405. No code changed."
   ]
 }

@@ -82,11 +82,24 @@ const rows = files.map((file) => {
   const diff = git("diff", "-U0", baseline, "--", file);
   let cosmetic = 0;
   let structural = 0;
+  // A multi-line `style={{ … }}` object is cosmetic as a whole: its inner
+  // lines (any property, ternaries, nested objects) and its closing `}}` count
+  // with the opener. Tracked per diff side so an added object and a removed
+  // one never share state.
+  const inStyle = { "+": false, "-": false };
 
   for (const line of diff.split("\n")) {
     if (!/^[+-]/.test(line) || /^(?:\+\+\+|---)/.test(line)) continue;
+    const sign = line[0];
     const body = line.slice(1);
     if (!body.trim()) continue;
+    const opensStyle = /style=\{\{/.test(body) && !/\}\}/.test(body.slice(body.indexOf("style={{") + 8));
+    if (inStyle[sign]) {
+      cosmetic += 1;
+      if (/\}\}/.test(body)) inStyle[sign] = false;
+      continue;
+    }
+    if (opensStyle) inStyle[sign] = true;
     if (COSMETIC.test(body)) cosmetic += 1;
     else structural += 1;
   }
