@@ -1154,13 +1154,19 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       if (closed) return;
       source?.removeEventListener("change", onChange);
       source?.close();
-      source = new EventSource(`/api/files/${encodeFilePathForApi(cwd)}?type=watch-dir`);
+      const watched = `/api/files/${encodeFilePathForApi(cwd)}`;
+      source = new EventSource(`${watched}?type=watch-dir`);
       source.addEventListener("change", onChange);
-      source.onerror = () => {
-        if (source?.readyState === EventSource.CLOSED) {
-          if (reconnectTimer) clearTimeout(reconnectTimer);
-          reconnectTimer = setTimeout(connect, 1_500);
-        }
+      source.onerror = async () => {
+        if (source?.readyState !== EventSource.CLOSED) return;
+        // A folder that is gone (404) or off-limits (403) answers the same way
+        // forever, so reconnecting every 1.5 s just loops on the error. Stay
+        // closed until `cwd` changes and this effect runs again.
+        const status = await fetch(`${watched}?type=meta`).then((r) => r.status).catch(() => 0);
+        if (closed) return;
+        if (status === 403 || status === 404) { closed = true; source?.close(); return; }
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(connect, 1_500);
       };
     };
     connect();
