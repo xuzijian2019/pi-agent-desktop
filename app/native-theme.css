@@ -38,7 +38,9 @@
   --accent-contrast: #ffffff;
   --accent-soft: rgba(29, 29, 31, 0.08);
   --accent-border: rgba(29, 29, 31, 0.22);
-  --focus-ring: rgba(29, 29, 31, 0.25);
+  /* The single focus affordance: every :focus-visible rule in this file is
+     `outline: none` plus `box-shadow: 0 0 0 3px var(--focus-ring)`. */
+  --focus-ring: color-mix(in srgb, var(--accent) 35%, transparent);
   --danger: #d92d20;
   --success: #248a3d;
   --warning: #b87503;
@@ -58,11 +60,19 @@
     "PingFang SC", "Segoe UI Variable Display", "Segoe UI", "Noto Sans SC",
     sans-serif;
 
-  /* Shape, spacing and elevation */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  /* Shape, spacing and elevation.
+
+     One radius scale, assigned by role rather than by pixel size:
+       sm   buttons, chips, inputs, small icon buttons
+       md   popovers, menus, cards, message bubbles, file tabs, panel sections
+       lg   composer, dialogs, the right panel and other large surfaces
+       pill fully rounded (dots, ticks, status badges)
+     Anything that needs a radius outside this scale is a bug in the scale,
+     not a reason for a literal. */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
   --control-height-sm: 28px;
   --control-height: 32px;
   --shadow-control: 0 1px 2px rgba(15, 23, 42, 0.045);
@@ -73,6 +83,10 @@
   --shadow-dialog: 0 28px 80px rgba(15, 23, 42, 0.22),
     0 4px 16px rgba(15, 23, 42, 0.08);
   --ease-native: cubic-bezier(0.2, 0.75, 0.25, 1);
+  /* Two durations: colour/hover feedback is immediate, anything that moves or
+     resizes gets long enough to be read as motion rather than a jump. */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
 }
 
 html.dark {
@@ -97,7 +111,7 @@ html.dark {
   --accent-contrast: #1d1d1f;
   --accent-soft: rgba(245, 245, 247, 0.14);
   --accent-border: rgba(245, 245, 247, 0.3);
-  --focus-ring: rgba(245, 245, 247, 0.32);
+  --focus-ring: color-mix(in srgb, var(--accent) 35%, transparent);
   --danger: #ff6961;
   --success: #30d158;
   --warning: #ffd60a;
@@ -2249,7 +2263,7 @@ pre, code {
   padding: 8px 9px 6px;
   background: var(--surface) !important;
   border: 1px solid var(--border) !important;
-  border-radius: var(--radius-xl) !important;
+  border-radius: var(--radius-lg) !important;
   box-shadow: var(--shadow-composer) !important;
   transition:
     border-color 160ms ease,
