@@ -67,8 +67,8 @@ export function ContextUsageRing({ contextUsage, sessionStats, onOpenStats }: Co
       type="button"
       aria-label={title}
       title={showTooltip ? title : undefined}
-      aria-haspopup="dialog"
-      aria-disabled={!hasUsage}
+      aria-haspopup={onOpenStats ? "dialog" : undefined}
+      aria-disabled={!hasUsage || !onOpenStats}
       onClick={() => {
         if (hasUsage) onOpenStats?.();
       }}
@@ -76,7 +76,7 @@ export function ContextUsageRing({ contextUsage, sessionStats, onOpenStats }: Co
         display: "flex", alignItems: "center", justifyContent: "center",
         width: 28, height: 28, padding: 0, flexShrink: 0,
         background: "none", border: "none", borderRadius: 9,
-        cursor: hasUsage ? "pointer" : "default",
+        cursor: hasUsage && onOpenStats ? "pointer" : "default",
         transition: "background 0.12s, opacity 0.12s",
         opacity: hasUsage ? 1 : 0.5,
       }}
