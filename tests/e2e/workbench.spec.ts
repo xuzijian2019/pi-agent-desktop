@@ -20,8 +20,13 @@ async function mode(page: Page, value: string) {
   const panel = page.locator("#file-panel");
   if (!(await panel.getByRole("button", { name: "Close panel", exact: true }).isVisible())) await page.locator(".right-panel-toggle-button").click();
   if (await panel.getByRole("combobox", { name: "Panel views", exact: true }).isVisible()) await panel.getByRole("combobox", { name: "Panel views" }).selectOption(value);
-  else await panel.getByRole("tab", { name: ({ search: "Search", tasks: "Saved Tasks", context: "Context", outputs: "Outputs", activity: "Activity", diff: "Diff" } as Record<string, string>)[value], exact: true }).click();
+  else await panel.getByRole("tab", { name: ({ files: "Files", search: "Search", tasks: "Saved Tasks", activity: "Activity" } as Record<string, string>)[value], exact: true }).click();
   return panel;
+}
+/** The Changes / Pinned sections inside Files: a header button and its region. */
+function section(page: Page, name: "Changes" | "Pinned") {
+  const region = page.getByRole("region", { name, exact: true });
+  return { region, toggle: region.getByRole("button", { name: new RegExp(`^${name}`) }) };
 }
 
 test("saved task applies to a draft, preserves settings and restores the panel without file tabs", async ({ page }) => {
@@ -46,7 +51,7 @@ test("saved task applies to a draft, preserves settings and restores the panel w
   await expect(composer).toHaveValue("Keep this draft\n\nReview this project carefully.");
 });
 
-test("context preview preserves the reference snapshot and becomes stale after edits", async ({ page, request }) => {
+test("the composer send preview keeps the reference snapshot and goes stale after edits", async ({ page, request }) => {
   await project(page);
   const input = page.getByPlaceholder("Message…", { exact: false });
   await input.fill("!printf context-seed"); await input.press("Enter");
@@ -57,8 +62,17 @@ test("context preview preserves the reference snapshot and becomes stale after e
   await page.route("**/api/sessions", route => route.fulfill({ json: { sessions: [{ id, name: "Reference", firstMessage: "Reference", cwd: WORK_ROOT, created: new Date().toISOString(), modified: new Date().toISOString(), messageCount: 1 }] } }));
   await page.route(`**/api/sessions/${id}/reference?*`, route => route.fulfill({ json: { reference: text, revision: text, entries: [], leafId: "leaf" } }));
   const composer = page.getByPlaceholder("Message…", { exact: false }); await composer.fill('Use #"Reference"');
-  await mode(page, "context");
-  const panel = page.getByRole("region", { name: "Context", exact: true });
+  // The preview is a composer chip now, not a right-panel mode.
+  await expect(page.locator("#file-panel").getByRole("tab", { name: "Context" })).toHaveCount(0);
+  const chip = page.getByRole("button", { name: "Preview outgoing message", exact: true });
+  await chip.click();
+  const panel = page.getByRole("dialog", { name: "Preview outgoing message", exact: true });
+  // It floats above the composer, inside its width.
+  const panelBox = (await panel.boundingBox())!;
+  const composerBox = (await page.locator(".chat-composer").boundingBox())!;
+  expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(composerBox.y + 2);
+  expect(panelBox.x).toBeGreaterThanOrEqual(composerBox.x);
+  expect(panelBox.x + panelBox.width).toBeLessThanOrEqual(composerBox.x + composerBox.width);
   await expect(panel.locator("details[open]").filter({ has: page.getByText("Final outgoing text", { exact: true }) }).locator("pre")).toContainText("Original reference snapshot");
   text = "New source revision";
   // Capture the actual command POST; no model call reaches the server.
@@ -75,9 +89,13 @@ test("context preview preserves the reference snapshot and becomes stale after e
   await expect(panel.getByText("Out of date — refresh before inspecting")).toBeVisible();
   await panel.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(panel.locator("details[open]").filter({ has: page.getByText("Final outgoing text", { exact: true }) }).locator("pre")).toContainText("Changed New source revision");
+  // Escape closes it without disturbing the draft.
+  await panel.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(composer).toHaveValue('Changed #"Reference"');
 });
 
-test("session outputs use real files, preview them, and persist shelf metadata", async ({ page, request }) => {
+test("pinned outputs use real files, open in place, and persist shelf metadata", async ({ page, request }) => {
   const cwd = path.join(WORK_ROOT, `outputs-${randomUUID()}`); await mkdir(cwd, { recursive: true });
   const output = path.join(cwd, "report.md"); await writeFile(output, "# Deliverable\nVerified output content\n");
   const id = randomUUID(); const timestamp = new Date().toISOString();
@@ -90,22 +108,48 @@ test("session outputs use real files, preview them, and persist shelf metadata",
   await expect.poll(async () => (await (await request.get("/api/sessions")).json()).sessions.some((s: { id: string }) => s.id === id), { timeout: 60000 }).toBe(true);
   await page.goto(`/?session=${id}`);
   await expect(page.getByText("Make a report", { exact: true }).first()).toBeVisible();
-  await mode(page, "outputs"); const panel = page.getByRole("region", { name: "Outputs", exact: true });
-  await expect(panel.getByText("report.md", { exact: true })).toBeVisible();
-  await panel.getByLabel("More actions", { exact: true }).click();
-  await panel.getByRole("button", { name: "Pin", exact: true }).click();
-  await expect(panel.getByRole("button", { name: "Unpin", exact: true })).toBeVisible();
-  await panel.getByRole("button", { name: "Open", exact: true }).click();
+
+  // Nothing is pinned yet, so Files shows no Pinned section at all — no empty
+  // shelf, no filters.
+  await mode(page, "files");
+  await expect(page.getByRole("region", { name: "Pinned", exact: true })).toHaveCount(0);
+
+  // Pinning from the transcript reveals the section, expanded, in Files.
+  await page.getByRole("button", { name: "Pin", exact: true }).click();
+  const pinned = section(page, "Pinned");
+  await expect(pinned.toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(pinned.toggle).toContainText("1");
+  await expect(pinned.region.getByText("report.md", { exact: true })).toBeVisible();
+
+  // Renaming the label persists through the API, not just in the view.
+  await pinned.region.getByLabel("More actions", { exact: true }).click();
+  await pinned.region.getByRole("button", { name: "Rename label", exact: true }).click();
+  await pinned.region.getByLabel("Label", { exact: true }).fill("Final report");
+  await pinned.region.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(pinned.region.getByText("Final report", { exact: true })).toBeVisible();
+
+  // Open stays inside Files: a file tab, no panel switch and no way back needed.
+  await pinned.region.getByRole("button", { name: "Open", exact: true }).click();
   await expect(page.locator("#file-panel").getByText("Verified output content", { exact: false })).toBeVisible();
-  await page.getByRole("button", { name: "Back to outputs" }).click();
-  await panel.getByLabel("More actions", { exact: true }).click();
-  await panel.getByRole("button", { name: "Hide from shelf" }).click();
-  await expect(panel.getByRole("button", { name: "Open", exact: true })).toHaveCount(0);
-  await panel.getByLabel("Show hidden").check();
-  await panel.getByLabel("More actions", { exact: true }).click();
-  await expect(panel.getByRole("button", { name: "Restore", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Back to outputs" })).toHaveCount(0);
+  await expect(pinned.region).toBeVisible();
+
+  // Hide and restore still work from the section's overflow.
+  await pinned.region.getByLabel("More actions", { exact: true }).click();
+  await pinned.region.getByRole("button", { name: "Hide from shelf" }).click();
+  await expect(pinned.region.getByRole("button", { name: "Open", exact: true })).toHaveCount(0);
+  await pinned.region.getByLabel("Show hidden").check();
+  await pinned.region.getByLabel("More actions", { exact: true }).click();
+  await expect(pinned.region.getByRole("button", { name: "Restore", exact: true })).toBeVisible();
+
   expect(await readFile(output, "utf8")).toContain("Verified output content");
-  const response = await request.get(`/api/sessions/${id}/outputs`); expect(response.ok()).toBe(true); expect((await response.json()).items[0].hidden).toBe(true);
+  const response = await request.get(`/api/sessions/${id}/outputs`); expect(response.ok()).toBe(true);
+  const item = (await response.json()).items[0];
+  expect(item.hidden).toBe(true); expect(item.pinned).toBe(true); expect(item.label).toBe("Final report");
+
+  // Unpinning empties the shelf, and the section disappears with it.
+  await pinned.region.getByRole("button", { name: "Unpin", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Pinned", exact: true })).toHaveCount(0);
 });
 
 test("branch creation and real Bash activity work without a model", async ({ page, request }) => {
@@ -140,7 +184,7 @@ test("composer metadata and rounded panel remain uncluttered at desktop and phon
   await page.route("**/api/models?*", route => route.fulfill({ json: { models: { "test:model": "Example model" }, modelList: [{ provider: "test", id: "model", name: "Example model" }], defaultModel: { provider: "test", modelId: "model" }, thinkingLevels: { "test:model": ["off"] } } }));
   await project(page, true);
   const controls = page.locator(".chat-composer-controls");
-  await expect(page.getByRole("button", { name: "Preview context", exact: true })).toHaveCount(0);
+  await expect(controls.getByRole("button", { name: "Preview outgoing message", exact: true })).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Saved Tasks", exact: true })).toHaveCount(0);
   const folder = controls.locator(".chat-project-context");
   const branch = controls.getByRole("button", { name: "⑂ main", exact: true });
@@ -163,14 +207,19 @@ test("composer metadata and rounded panel remain uncluttered at desktop and phon
 });
 
 
-test("Diff expands changed files inline without opening file tabs", async ({ page }, testInfo) => {
+test("the Changes section expands patches inline without opening file tabs", async ({ page }, testInfo) => {
   const cwd = await realpath(await project(page, true));
   await writeFile(path.join(cwd, "readme.md"), "# Updated\nNew review content\n");
   await writeFile(path.join(cwd, "second.txt"), "Second file content\n");
   await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);
   await expect(page.getByPlaceholder("Message…", { exact: false })).toBeEditable();
-  await mode(page, "diff");
-  const review = page.getByRole("region", { name: "Diff", exact: true });
+  await mode(page, "files");
+  await expect(page.locator("#file-panel").getByRole("tab", { name: "Diff" })).toHaveCount(0);
+  const { region: review, toggle } = section(page, "Changes");
+  // Collapsed by default, but the badge already counts the changed files.
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(toggle).toContainText("2");
+  await toggle.click();
   const first = review.getByRole("button", { name: /readme\.md/ });
   const second = review.getByRole("button", { name: /second\.txt/ });
   await expect(first).toHaveAttribute("aria-expanded", "false");
@@ -180,7 +229,8 @@ test("Diff expands changed files inline without opening file tabs", async ({ pag
   await expect(review.getByRole("region", { name: "readme.md", exact: true })).toContainText("# Base");
   await second.click();
   await expect(review.getByRole("region", { name: "second.txt", exact: true })).toContainText("Second file content");
-  await expect(page.locator("#file-panel .workbench-files-body")).toBeHidden();
+  // Patches read in place: no file tab was opened behind the section.
+  await expect(page.locator("#file-panel").getByText("No file open", { exact: true })).toBeVisible();
   await first.click();
   await expect(review.getByRole("region", { name: "readme.md", exact: true })).toHaveCount(0);
   await expect(second).toHaveAttribute("aria-expanded", "true");
@@ -188,6 +238,10 @@ test("Diff expands changed files inline without opening file tabs", async ({ pag
   await review.getByRole("button", { name: "Refresh changes", exact: true }).click();
   await expect(review.getByRole("region", { name: "second.txt", exact: true })).toContainText("Refreshed content");
   await page.screenshot({ path: testInfo.outputPath("inline-diff.png") });
+  // Collapsing hides the patches but keeps the badge.
+  await toggle.click();
+  await expect(review.getByRole("button", { name: /second\.txt/ })).toHaveCount(0);
+  await expect(toggle).toContainText("2");
 });
 
 test("transcript search jumps to an inactive branch, reveals output, and preserves the draft", async ({ page, request }) => {
