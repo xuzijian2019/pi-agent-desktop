@@ -5828,13 +5828,15 @@ span.linenumber {
   border-top: 1px solid var(--border);
 }
 
-/* Effort / tools menus: only max-height is measured, so it stays inline. */
+/* Effort / tools menus: the cap the JS used to measure (max of 120px and 60%
+   of the visual viewport) is expressible in CSS, so nothing stays inline. */
 .composer-dropdown-panel {
   position: absolute;
   right: 0;
   bottom: calc(100% + 6px);
   z-index: 100;
   display: flex;
+  max-height: max(120px, 60dvh);
   flex-direction: column;
   overflow: hidden;
 }

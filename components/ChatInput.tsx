@@ -2332,11 +2332,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   </svg>
                   {(!isCompact || controlsMenuOpen) && <span className="composer-nowrap">{thinkingDisplayLabel}</span>}
                 </button>
-                {thinkingDropdownOpen && (() => {
-                  const vh = typeof window !== "undefined" ? window.visualViewport?.height ?? window.innerHeight : 800;
-                  const maxH = Math.max(120, vh * 0.6);
-                  return (
-                  <div className="native-popover composer-dropdown-panel is-thinking" style={{ maxHeight: maxH }}>
+                {thinkingDropdownOpen && (
+                  <div className="native-popover composer-dropdown-panel is-thinking">
                     <div className="composer-menu-scroll">
                     {selectableThinkingLevels(THINKING_LEVELS, availableThinkingLevels, thinkingLevelMap).map((lvl) => {
                       const isActive = (thinkingLevel ?? "auto") === lvl;
@@ -2363,8 +2360,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     })}
                     </div>
                   </div>
-                  );
-                })()}
+                )}
               </div>
             )}
             {!isStreaming && onToolPresetChange && (
@@ -2381,11 +2377,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   </svg>
                   {(!isCompact || controlsMenuOpen) && <span className="composer-nowrap">{toolPresetLabel}</span>}
                 </button>
-                {toolDropdownOpen && (() => {
-                  const vh = typeof window !== "undefined" ? window.visualViewport?.height ?? window.innerHeight : 800;
-                  const maxH = Math.max(120, vh * 0.6);
-                  return (
-                  <div className="native-popover composer-dropdown-panel is-tools" style={{ maxHeight: maxH }}>
+                {toolDropdownOpen && (
+                  <div className="native-popover composer-dropdown-panel is-tools">
                     <div className="composer-menu-scroll">
                     {TOOL_PRESETS.map((lvl) => {
                       const preset = TOOL_PRESET_MAP[lvl];
@@ -2407,8 +2400,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     })}
                     </div>
                   </div>
-                  );
-                })()}
+                )}
               </div>
             )}
 
