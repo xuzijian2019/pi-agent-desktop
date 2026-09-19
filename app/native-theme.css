@@ -2287,6 +2287,12 @@ pre, code {
   box-shadow: var(--shadow-composer), 0 0 0 3px var(--focus-ring) !important;
 }
 
+/* The shell above owns the ring for the whole composer, so the textarea
+   inside it must not stack a second, square one on top. */
+.chat-composer textarea:focus-visible {
+  box-shadow: none;
+}
+
 .chat-composer textarea {
   font-size: 15px !important;
   line-height: 1.55 !important;
