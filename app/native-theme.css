@@ -3122,6 +3122,55 @@ pre, code {
   box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
+/* Files panel body: the project tree reads first, the viewer sits beside it.
+   The JSX keeps the viewer block before the tree block so the upstream tree
+   subtree is not moved; `order` is what does the swap. */
+.file-panel-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.file-panel-tree {
+  order: 1;
+}
+
+.file-panel-split > .file-tree-resize-handle {
+  order: 2;
+}
+
+.file-panel-viewer {
+  order: 3;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* The tree is now the leftmost column, so its separator belongs on the right. */
+.file-panel-tree {
+  border-right: 1px solid var(--border);
+  border-left: 0;
+}
+
+.file-panel-viewer-body {
+  flex: 1;
+  overflow: hidden;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.file-panel-tree-scroll {
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* "No file open" centres on both axes inside the viewer column. */
+.file-panel-viewer-body > .file-panel-empty-state {
+  height: 100%;
+}
+
 .file-panel-empty-state {
   display: flex;
   padding: 28px;

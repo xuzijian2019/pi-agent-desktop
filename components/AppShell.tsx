@@ -223,7 +223,7 @@ export function AppShell() {
     cssVariable: "--file-tree-width",
     defaultWidth: FILE_TREE_DEFAULT_WIDTH,
     getMaxWidth: getFileTreeMaxWidth,
-    growthDirection: "left",
+    growthDirection: "right", // the tree renders left of its handle (CSS order)
     maxWidth: FILE_TREE_MAX_WIDTH,
     minWidth: FILE_TREE_MIN_WIDTH,
     storageKey: "pi-file-tree-width",
@@ -1801,11 +1801,11 @@ export function AppShell() {
           </div>
         <PinnedSection visible={rightPanelOpen && rightPanelMode === "files"} sessionId={selectedSession?.id ?? null} leafId={branchActiveLeafId} expanded={pinnedExpanded} onExpandedChange={setPinnedExpanded} refreshKey={refreshKey} onOpen={path => handleOpenFile(path, getFileName(path), { sourceSessionId: selectedSession?.id })} onMessage={(entryId, leafId) => { if (leafId !== branchActiveLeafId) handleBranchLeafChange(leafId); window.dispatchEvent(new CustomEvent("pi-reveal-entry", { detail: { sessionId: selectedSession?.id, entryId } })); }} />
         <ChangesSection visible={rightPanelOpen && rightPanelMode === "files"} cwd={activeCwdMissing ? null : activeCwd} expanded={changesExpanded} onExpandedChange={setChangesExpanded} selectedFilePath={reviewFilePath} refreshKey={explorerRefreshKey} />
-        {/* Local files: preview on the left, project tree on the right. */}
-        <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
-          {/* Preview column */}
-          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            <div style={{ flex: 1, overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
+        {/* Local files: project tree on the left, preview on the right (CSS order). */}
+        <div className="file-panel-split">
+          {/* Viewer column */}
+          <div className="file-panel-viewer">
+            <div className="file-panel-viewer-body">
               {activeFileTab?.filePath ? (
                 <FileViewer
                   filePath={activeFileTab.filePath}
@@ -1834,7 +1834,7 @@ export function AppShell() {
               )}
             </div>
           </div>
-          {/* Explorer column — always-on project file tree */}
+          {/* Tree column — always-on project file tree */}
           {activeCwd && !activeCwdMissing && fileTreeOpen && (
             <>
               <div
@@ -1847,7 +1847,7 @@ export function AppShell() {
               <div
                 ref={fileTreeResizer.panelRef}
                 id="file-tree-panel"
-                className="file-tree-panel"
+                className="file-tree-panel file-panel-tree"
                 style={{ "--file-tree-width": `${fileTreeResizer.width}px` } as React.CSSProperties}
               >
               <div className="context-panel-files-toolbar">
@@ -1903,7 +1903,7 @@ export function AppShell() {
                   </svg>
                 </button>
               </div>
-              <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
+              <div className="file-panel-tree-scroll">
                 <FileExplorer
                   ref={fileExplorerRef}
                   cwd={activeCwd}
