@@ -1,6 +1,6 @@
 # Web UI feature: right-panel Context preview
 
-Status: implementation specification requested by the user; this task writes notes only.
+Status: implemented; original acceptance specification retained below. See implementation update for final integration and user-directed polish.
 Source review: 2026-09-18, current working tree; depends on batch 1's completed draft/attachment persistence contract.
 
 ## Outcome and accuracy promise
@@ -56,3 +56,13 @@ Use the shared shell contract in [Activity](web-ui-feature-activity-view.md). Op
 ## Boundaries and validation
 
 No editing historical context/system instructions, provider wire dumps, exact token/cost promises, or automatic summarization calls. Test pure preparation, route range validation, and sandbox E2E; run unit suite, typecheck, lint, relevant E2E, and ownership checks. Never `next build` during dev.
+
+
+## Implementation update (2026-09-18)
+
+Implemented in ContextPanel and lib/prepare-outgoing.ts. Preview, send and queue preparation share reference, paste and image validation. Prepared snapshots are reused only for matching drafts/settings; source changes appear on explicit Refresh. Reference range metadata persists in drafts. Context remains an outgoing-message preview, not a provider wire dump or exact token estimate. It is opened from the right-panel selector, not a composer button.
+
+
+## Delivery validation and platform scope
+
+The product target is desktop web, per the user’s final clarification. No native shell feature or separate mobile design is introduced. Compact CSS only prevents overlap in a narrow browser window. Validation: all 542 unit tests and all 18 Chrome browser tests pass; TypeScript and lint pass. The final review also reran the transcript-search browser test after disabling historical-preview message mutations. Browser coverage includes server recovery, draft conflicts, navigation, saved tasks, context snapshots, output metadata, branch creation, inline diffs and exact transcript jumps. Tests use sandbox data without model calls. No packaged native-app validation was performed.

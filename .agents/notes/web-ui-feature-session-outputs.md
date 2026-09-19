@@ -1,6 +1,6 @@
 # Web UI feature: right-panel session Outputs shelf
 
-Status: implementation specification requested by the user; this task writes notes only.
+Status: implemented; original acceptance specification retained below. See implementation update for final integration and user-directed polish.
 Source review: 2026-09-18, current working tree; reconcile with final web-ui batches 1–3 before implementation.
 
 ## Outcome
@@ -52,3 +52,13 @@ Find and open a session's useful deliverables without searching the transcript o
 ## Boundaries and validation
 
 No cloud uploads, automatic publishing, filesystem cleanup, versioned artifact storage, or AI-generated artifact classification. Test with synthetic session files and sandbox files; run unit suite, typecheck, lint, relevant E2E, and ownership checks. No paid requests, real session mutation, or development `next build`.
+
+
+## Implementation update (2026-09-18)
+
+Implemented in OutputsPanel, lib/session-outputs.ts and /api/sessions/[id]/outputs. Successful document/media writes and local Markdown links generate canonical deduplicated candidates. Per-session revisions persist labels, pins and hidden state without deleting files. Current file availability/change indicators, preview/download and source-message navigation are connected. The file read gate accepts canonical paths within authorized roots, including macOS /var aliases, while retaining resolved-path checks. More actions contains metadata operations.
+
+
+## Delivery validation and platform scope
+
+The product target is desktop web, per the user’s final clarification. No native shell feature or separate mobile design is introduced. Compact CSS only prevents overlap in a narrow browser window. Validation: all 542 unit tests and all 18 Chrome browser tests pass; TypeScript and lint pass. The final review also reran the transcript-search browser test after disabling historical-preview message mutations. Browser coverage includes server recovery, draft conflicts, navigation, saved tasks, context snapshots, output metadata, branch creation, inline diffs and exact transcript jumps. Tests use sandbox data without model calls. No packaged native-app validation was performed.

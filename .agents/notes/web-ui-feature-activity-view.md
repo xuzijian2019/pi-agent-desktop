@@ -1,6 +1,6 @@
 # Web UI feature: right-panel Activity view
 
-Status: implementation specification requested by the user; this task writes notes only.
+Status: implemented; original acceptance specification retained below. See implementation update for final integration and user-directed polish.
 Source review: 2026-09-18, current working tree, with web-ui batches 1–3 being implemented concurrently. Re-read the final merged code before implementation.
 
 ## Outcome and shared right-panel contract
@@ -60,3 +60,18 @@ Related specifications: [Saved Tasks](web-ui-feature-saved-tasks.md), [Outputs](
 No scheduler, autonomous session creation, automatic retries of completed tasks, or subagent orchestration. Activity observes existing work and exposes explicit actions.
 
 Use behavior tests with synthetic lifecycle events and isolated browser fixtures, then unit suite, typecheck, lint, and relevant E2E. Follow `web-playwright-pilot.md`; no paid model requests, real session mutation, or `next build`. Update fork ownership declarations/sentinels where the integration changes ownership; never remove a sentinel merely to pass tests.
+
+## Implementation update (2026-09-18)
+
+Implemented in `components/workbench/ActivityPanel.tsx`, `lib/activity.ts`, the runtime lifecycle hooks, and `/api/agent/activity`. One visible SSE subscription receives sequenced snapshots; run history is bounded and persisted, with interrupted recovery after server restart. The stop endpoint compares the live run id under the checkout guard. Project/checkout details refresh when new runs arrive. State coverage includes Bash, prompt settlement, retry/compaction, queued input and extension requests.
+
+The shared panel now uses `lib/panel-modes.ts`, `PanelModeSelector`, and `app/workbench.css`. Browser hydration restores modes only after mount, even without file tabs. Following user review, Tasks and Context entry buttons were removed from the composer; Git shares the project/model metadata row. Visual direction is rounded, quiet surfaces, one header and secondary actions in dismissible overflow menus. Non-Git folders omit the branch control.
+
+
+## Delivery validation and platform scope
+
+The product target is desktop web, per the user’s final clarification. No native shell feature or separate mobile design is introduced. Compact CSS only prevents overlap in a narrow browser window. Validation: all 542 unit tests and all 18 Chrome browser tests pass; TypeScript and lint pass. The final review also reran the transcript-search browser test after disabling historical-preview message mutations. Browser coverage includes server recovery, draft conflicts, navigation, saved tasks, context snapshots, output metadata, branch creation, inline diffs and exact transcript jumps. Tests use sandbox data without model calls. No packaged native-app validation was performed.
+
+## Diff simplification (2026-09-18)
+
+Desktop-web Diff mode now presents one working-changes summary and expandable filename rows. Clicking a row loads its patch underneath; multiple files can stay expanded. Counts appear beside loaded files, and refresh updates open patches. The extra branch control, status-letter legend, file tabs and file-viewer metadata are absent from this review surface. File explorer diff actions and the file viewer's Diff button both route to the same inline review and select the requested file. Validated with real Git changes in the browser, including collapse and refresh; typecheck/lint and the unit suite passed.

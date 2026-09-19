@@ -32,9 +32,9 @@
     },
     "components/AppShell.tsx": {
       "risk": "high",
-      "drift": 596,
-      "reason": "Top-bar redesign (toolbar consolidated into a more-menu, inline styles to classNames) plus the mount point for desktop chrome. The desktop-only parts moved to components/desktop/; the remaining 376 structural lines are the fork's own interaction design, not desktop plumbing, so this file stays high risk by design rather than by neglect.",
-      "structuralDrift": 452,
+      "drift": 746,
+      "reason": "Top-bar redesign (toolbar consolidated into a more-menu, inline styles to classNames) plus the mount point for desktop chrome. The desktop-only parts moved to components/desktop/; the remaining 376 structural lines are the fork's own interaction design, not desktop plumbing, so this file stays high risk by design rather than by neglect. Workbench integration adds 138 structural lines relative to d0a8be2; totals conservatively add that delta because the v0.8.2 baseline is unavailable locally.",
+      "structuralDrift": 590,
       "disposition": "accepted"
     },
     "components/FileViewer.tsx": {
@@ -67,9 +67,9 @@
     },
     "components/ChatWindow.tsx": {
       "risk": "medium",
-      "drift": 89,
-      "reason": "Branding copy and a redesigned empty state. Part of the fork's interaction design. Kept deliberately.",
-      "structuralDrift": 35,
+      "drift": 202,
+      "reason": "Branding copy and a redesigned empty state. Part of the fork's interaction design. Kept deliberately. Workbench integration adds 32 structural lines relative to d0a8be2; totals conservatively add that delta because the v0.8.2 baseline is unavailable locally. Transcript search adds read-only historical rendering and exact-match expansion; the added drift is a conservative upper bound for this integration.",
+      "structuralDrift": 147,
       "disposition": "accepted"
     },
     "hooks/useTheme.ts": {
@@ -87,17 +87,17 @@
       "disposition": "accepted"
     },
     "components/ChatInput.tsx": {
-      "risk": "low",
-      "drift": 49,
-      "reason": "Composer chrome restyle. Upstream changed this file in v0.8.1, and components/ChatInput.test.mjs covers it.",
-      "structuralDrift": 7,
+      "risk": "medium",
+      "drift": 162,
+      "reason": "Composer chrome restyle. Upstream changed this file in v0.8.1, and components/ChatInput.test.mjs covers it. Workbench integration adds 111 structural lines relative to d0a8be2; totals conservatively add that delta because the v0.8.2 baseline is unavailable locally.",
+      "structuralDrift": 118,
       "disposition": "accepted"
     },
     "components/MessageView.tsx": {
       "risk": "low",
-      "drift": 48,
-      "reason": "Message bubble markup adjusted.",
-      "structuralDrift": 5,
+      "drift": 59,
+      "reason": "Message bubble markup adjusted. Transcript search adds read-only historical rendering and exact-match expansion; the added drift is a conservative upper bound for this integration.",
+      "structuralDrift": 16,
       "disposition": "accepted"
     },
     "components/SkillsConfig.tsx": {
@@ -122,9 +122,9 @@
     },
     "app/layout.tsx": {
       "risk": "low",
-      "drift": 10,
-      "reason": "native-theme.css import, branding title, dark-mode bootstrap script.",
-      "structuralDrift": 10,
+      "drift": 11,
+      "reason": "native-theme.css import, branding title, dark-mode bootstrap script. Workbench integration adds 1 structural lines relative to d0a8be2; totals conservatively add that delta because the v0.8.2 baseline is unavailable locally.",
+      "structuralDrift": 11,
       "disposition": "accepted"
     },
     "eslint.config.mjs": {
@@ -134,10 +134,10 @@
       "disposition": "accepted"
     },
     "lib/rpc-manager.ts": {
-      "risk": "low",
-      "drift": 5,
-      "reason": "Small fork edit in a file upstream changes often; watch it despite the low drift count.",
-      "structuralDrift": 5,
+      "risk": "medium",
+      "drift": 85,
+      "reason": "Small fork edit in a file upstream changes often; watch it despite the low drift count. Workbench integration adds 80 structural lines relative to d0a8be2; totals conservatively add that delta because the v0.8.2 baseline is unavailable locally.",
+      "structuralDrift": 85,
       "disposition": "accepted"
     },
     "components/FileIcons.tsx": {
@@ -240,7 +240,33 @@
     "lib/app-updates.test.mjs",
     "lib/desktop-updater.ts",
     "lib/desktop-window.ts",
-    "docs/ownership-boundaries.md"
+    "docs/ownership-boundaries.md",
+    "components/workbench/",
+    "app/workbench.css",
+    "app/api/agent/activity/",
+    "app/api/git/branches/",
+    "app/api/saved-tasks/",
+    "app/api/sessions/[id]/outputs/",
+    "lib/activity-types.ts",
+    "lib/activity.ts",
+    "lib/checkout-guard.ts",
+    "lib/git-branch-types.ts",
+    "lib/git-branches.ts",
+    "lib/i18n/messages/workbench.ts",
+    "lib/output-types.ts",
+    "lib/panel-modes.ts",
+    "lib/prepare-outgoing.ts",
+    "lib/saved-tasks.ts",
+    "lib/session-outputs.ts",
+    "lib/task-types.ts",
+    "lib/web-ui-client.ts",
+    "lib/web-ui-route.ts",
+    "lib/web-ui-store.ts",
+    "lib/workbench.test.mjs",
+    "lib/transcript-search.ts",
+    "lib/transcript-search.test.mjs",
+    "lib/transcript-types.ts",
+    "app/api/transcript-search/"
   ],
   "dispositions": {
     "accepted": "Reviewed and kept. The drift is either the fork's own interaction design or a generic improvement with no desktop coupling, so it cannot be extracted into components/desktop/. Removing it would mean deleting a feature. These files stay permanent review points; that is the running cost of a UI fork, not a backlog item. Do not reopen without new information.",

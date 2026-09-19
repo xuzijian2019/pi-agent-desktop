@@ -1,6 +1,6 @@
 # Web UI feature: right-panel Saved Tasks
 
-Status: implementation specification requested by the user; this task writes notes only.
+Status: implemented; original acceptance specification retained below. See implementation update for final integration and user-directed polish.
 Source review: 2026-09-18, current working tree. Build after web-ui batches 1–3 and recheck their final draft/navigation APIs.
 
 ## Outcome
@@ -57,3 +57,13 @@ Use the shared panel contract in [Activity](web-ui-feature-activity-view.md). Ad
 No recurring tasks, automatic submission, Git checkout on Use, custom tool-permission framework, or prompt-variable language. Branch choice remains explicit through [Git branches](web-ui-feature-git-branches.md).
 
 Test helpers/API behavior and sandbox browser flows; run unit suite, typecheck, lint, relevant E2E. No real credentials, paid requests, or development `next build`. Preserve ownership sentinels and update the ownership manifest for new integration boundaries.
+
+
+## Implementation update (2026-09-18)
+
+Implemented in SavedTasksPanel, lib/saved-tasks.ts and /api/saved-tasks. Global/project scope, optimistic revisions, create/edit/duplicate/delete, Pi prompt import, and draft-only Use/Replace/Append are connected. Setup overrides travel with the draft and suppress global startup preference writes. Capturing a template strips attached reference snapshots and images; pasted prompt text is retained. More actions contains capture/import and duplicate/delete.
+
+
+## Delivery validation and platform scope
+
+The product target is desktop web, per the user’s final clarification. No native shell feature or separate mobile design is introduced. Compact CSS only prevents overlap in a narrow browser window. Validation: all 542 unit tests and all 18 Chrome browser tests pass; TypeScript and lint pass. The final review also reran the transcript-search browser test after disabling historical-preview message mutations. Browser coverage includes server recovery, draft conflicts, navigation, saved tasks, context snapshots, output metadata, branch creation, inline diffs and exact transcript jumps. Tests use sandbox data without model calls. No packaged native-app validation was performed.

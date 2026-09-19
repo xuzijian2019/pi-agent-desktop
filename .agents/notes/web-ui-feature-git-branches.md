@@ -1,6 +1,6 @@
 # Web UI feature: select and add Git branches
 
-Status: implementation specification requested by the user; this task writes notes only.
+Status: implemented; original acceptance specification retained below. See implementation update for final integration and user-directed polish.
 Source review: 2026-09-18, current working tree. Coordinate with batch 2 navigation ownership and the new right-panel features.
 
 ## Outcome
@@ -62,3 +62,15 @@ If the name exists, do not reinterpret Create as Switch or overwrite the branch.
 ## Boundaries and validation
 
 No branch deletion, merging, rebasing, committing, pushing, automatic task launch, or conversation-branch changes. Use temporary Git repositories with local bare remotes and synthetic live-run fixtures, never this working checkout for mutation tests. Run focused Git tests, unit suite, typecheck, lint, relevant sandbox E2E, and ownership checks. Never development `next build`.
+
+
+## Implementation update (2026-09-18)
+
+Implemented in BranchControl, lib/git-branches.ts and /api/git/branches including preview tokens. Local/remote full refs, alternate local tracking names, base choice, existing-worktree navigation and current/new-worktree creation are connected. In-place mutations share checkout admission with wrapper-managed starts and validate HEAD, dirty bytes and selected refs. No stash/reset/force action is added. Git sits between project and model; non-Git folders omit it. Empty repositories show their current branch but require an initial commit for mutations.
+
+
+## Delivery validation and platform scope
+
+The product target is desktop web, per the user’s final clarification. No native shell feature or separate mobile design is introduced. Compact CSS only prevents overlap in a narrow browser window. Validation: all 542 unit tests and all 18 Chrome browser tests pass; TypeScript and lint pass. The final review also reran the transcript-search browser test after disabling historical-preview message mutations. Browser coverage includes server recovery, draft conflicts, navigation, saved tasks, context snapshots, output metadata, branch creation, inline diffs and exact transcript jumps. Tests use sandbox data without model calls. No packaged native-app validation was performed.
+
+The branch picker is now a compact anchored popover above the composer Git button, matching model-picker placement. It stays within the composer's horizontal bounds, scrolls when space above is limited, and follows window resize/scroll. The centered dialog position is removed. Browser checks verify its position and exercise branch creation; typecheck and lint pass.
