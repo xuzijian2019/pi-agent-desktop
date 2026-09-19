@@ -29,6 +29,38 @@ function section(page: Page, name: "Changes" | "Pinned") {
   return { region, toggle: region.getByRole("button", { name: new RegExp(`^${name}`) }) };
 }
 
+// Runs before anything saves a task, so the empty-library case is the real one.
+test("a new task shows the guidance line, then its recent saved tasks", async ({ page, request }) => {
+  const cwd = await project(page);
+  const guide = page.locator(".new-task-guide");
+  await expect(guide).toContainText("Describe a task, or start from a saved one.");
+  // An empty library is the line alone: no chips, no panel link, no empty box.
+  await expect(guide.getByRole("button")).toHaveCount(0);
+
+  await mode(page, "tasks");
+  const panel = page.getByRole("region", { name: "Saved Tasks", exact: true });
+  await panel.getByRole("button", { name: "New template", exact: true }).click();
+  await panel.getByLabel("Name", { exact: true }).fill("Audit deps");
+  await panel.getByLabel("Description", { exact: true }).fill("Check the lockfile");
+  await panel.getByLabel("Prompt", { exact: true }).fill("Audit the dependencies.");
+  await panel.getByRole("button", { name: "Save", exact: true }).click();
+
+  // The panel broadcasts the change; the guide picks it up without a poller.
+  const chip = guide.getByRole("button", { name: "Audit deps Check the lockfile", exact: true });
+  await expect(chip).toBeVisible();
+  await expect(guide.getByRole("button", { name: "All saved tasks", exact: true })).toBeVisible();
+  await chip.click();
+  const composer = page.getByPlaceholder("Message…", { exact: false });
+  await expect(composer).toHaveValue("Audit the dependencies.");
+  // The guidance goes away with the empty state once a message is sent.
+  await composer.fill("!printf guided"); await composer.press("Enter");
+  await expect(page).toHaveURL(/session=/);
+  await expect(guide).toHaveCount(0);
+  // The library is global and outlives this test; leave it as it was found.
+  const { tasks } = await (await request.get(`/api/saved-tasks?cwd=${encodeURIComponent(cwd)}`)).json();
+  for (const saved of tasks) await request.delete(`/api/saved-tasks/${saved.id}`, { data: { revision: saved.revision } });
+});
+
 test("saved task applies to a draft, preserves settings and restores the panel without file tabs", async ({ page }) => {
   await project(page);
   await mode(page, "tasks");
