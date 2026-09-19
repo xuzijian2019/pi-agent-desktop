@@ -156,7 +156,7 @@ html.dark {
   left: 4px;
   width: 10px;
   height: 2px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   transform: translateY(-50%);
   transition:
@@ -214,7 +214,7 @@ html.dark {
   padding: 12px 14px;
   border: 1px solid var(--separator);
   border-color: var(--separator);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--surface-elevated);
   box-shadow: var(--shadow-control), 0 10px 28px rgba(15, 23, 42, 0.1);
   transform: translateY(-50%);
@@ -390,7 +390,7 @@ html.dark .conversation-navigator-preview {
   padding: 0 7px 0 12px;
   gap: 8px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-muted);
   font-size: 13px;
@@ -428,7 +428,7 @@ html.dark .conversation-navigator-preview {
 .file-workbench-icon-button {
   width: 34px;
   height: 28px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
 }
 
 .file-workbench-icon-button > svg,
@@ -459,7 +459,7 @@ html.dark .conversation-navigator-preview {
 .file-actions-menu button {
   min-height: 40px;
   padding: 7px 10px;
-  border-radius: 8px !important;
+  border-radius: var(--radius-sm) !important;
   font-size: 13px;
 }
 
@@ -506,7 +506,7 @@ html.dark .conversation-navigator-preview {
   height: 34px;
   padding: 0 12px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text);
   font-size: 13px;
@@ -546,13 +546,13 @@ html.dark .conversation-navigator-preview {
 
 .file-viewer-mode-switch {
   height: 32px;
-  border-radius: 9px;
+  border-radius: var(--radius-md);
 }
 
 .file-viewer-mode-button {
   height: 26px;
   padding: 0 11px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   font-size: 12px;
 }
 
@@ -560,7 +560,7 @@ html.dark .conversation-navigator-preview {
   width: 30px;
   height: 30px;
   flex-basis: 30px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
 }
 
 .right-panel-toggle-button {
@@ -573,7 +573,7 @@ html.dark .conversation-navigator-preview {
   max-width: 34px !important;
   height: 28px;
   min-height: 28px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   border: 1px solid transparent;
   background: transparent;
 }
@@ -677,7 +677,7 @@ a:focus-visible {
   background: var(--scroll-thumb);
   background-clip: padding-box;
   border: 2px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 ::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--scroll-thumb) 78%, var(--text-muted));
@@ -720,7 +720,7 @@ pre, code {
 .sidebar-footer button {
   min-width: 0;
   height: var(--control-height-sm) !important;
-  border-radius: 7px !important;
+  border-radius: var(--radius-sm) !important;
   font-size: 12px !important;
   font-weight: 500;
   transition:
@@ -763,7 +763,7 @@ pre, code {
   padding: 0;
   flex-shrink: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -790,7 +790,7 @@ pre, code {
   padding: 0 8px;
   box-sizing: border-box;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text);
   font-size: 12.5px;
@@ -861,7 +861,7 @@ pre, code {
   height: 28px;
   padding: 0 26px 0 26px;
   border: 1px solid var(--separator);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface-muted);
   color: var(--text);
   font-size: 12px;
@@ -895,7 +895,7 @@ pre, code {
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-dim);
   cursor: pointer;
@@ -949,7 +949,7 @@ pre, code {
   padding: 0;
   background: transparent;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--text-dim);
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
@@ -1051,7 +1051,7 @@ pre, code {
   min-width: 16px;
   height: 16px;
   padding: 0 5px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font-size: 10px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -1079,7 +1079,7 @@ pre, code {
   padding: 0 12px 0 10px;
   border: 1px solid var(--border);
   border-left: 0;
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   background: var(--surface-elevated);
   box-shadow: var(--shadow-popover);
   color: var(--text-muted);
@@ -1157,7 +1157,7 @@ pre, code {
   max-height: min(640px, calc(100vh - 48px));
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.25);
   overflow: hidden;
   display: flex;
@@ -1183,7 +1183,7 @@ pre, code {
   margin: 2px 10px;
   padding-right: 7px !important;
   border-left: 0 !important;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
 }
 
 /* Border blends into the selected background — no darker accent ring */
@@ -1222,7 +1222,7 @@ pre, code {
   inset: 3px;
   z-index: 5;
   border: 1.5px dashed var(--accent-border);
-  border-radius: 9px;
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--accent) 4%, transparent);
   pointer-events: none;
 }
@@ -1238,7 +1238,7 @@ pre, code {
   margin: 4px 6px 2px;
   padding: 6px 8px;
   border: 1px solid var(--accent-border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--surface) 88%, var(--accent));
   color: var(--text);
   font-size: 11px;
@@ -1265,7 +1265,7 @@ pre, code {
   padding-right: 7px;
   align-items: center;
   gap: 5px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   cursor: default;
@@ -1374,7 +1374,7 @@ pre, code {
   justify-content: center;
   gap: 4px;
   border: 1px solid var(--separator);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   box-shadow: var(--shadow-control);
   color: var(--text-muted);
@@ -1439,7 +1439,7 @@ pre, code {
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-dim);
   cursor: pointer;
@@ -1460,7 +1460,7 @@ pre, code {
 .file-tree-loading > span {
   width: var(--skeleton-width);
   height: 21px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: linear-gradient(
     90deg,
     var(--bg-subtle) 20%,
@@ -1493,7 +1493,7 @@ pre, code {
   height: 27px;
   padding: 0 9px;
   border: 1px solid var(--separator);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   box-shadow: var(--shadow-control);
   color: var(--text);
@@ -1588,7 +1588,7 @@ pre, code {
   padding: 0 !important;
   align-items: center;
   justify-content: center;
-  border-radius: 7px !important;
+  border-radius: var(--radius-sm) !important;
   background: transparent !important;
 }
 
@@ -1663,7 +1663,7 @@ pre, code {
   height: 28px !important;
   padding: 0 9px !important;
   border: 0 !important;
-  border-radius: 7px !important;
+  border-radius: var(--radius-sm) !important;
   font-size: 11.5px !important;
   font-weight: 500;
 }
@@ -1710,7 +1710,7 @@ pre, code {
   height: 24px;
   align-items: center;
   justify-content: center;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: var(--bg-subtle);
 }
 
@@ -1744,7 +1744,7 @@ pre, code {
 .native-popover {
   background: var(--surface-elevated) !important;
   border: 1px solid var(--border) !important;
-  border-radius: var(--radius-lg) !important;
+  border-radius: var(--radius-md) !important;
   box-shadow: var(--shadow-popover) !important;
   -webkit-backdrop-filter: blur(20px) saturate(130%);
   backdrop-filter: blur(20px) saturate(130%);
@@ -1768,7 +1768,7 @@ pre, code {
 
 .native-popover button {
   min-height: 30px;
-  border-radius: 7px !important;
+  border-radius: var(--radius-sm) !important;
   transition:
     color 110ms ease,
     background 110ms ease;
@@ -1787,7 +1787,7 @@ pre, code {
 
 .native-popover input:not([type="checkbox"]):not([type="radio"]) {
   border-color: var(--separator) !important;
-  border-radius: 7px !important;
+  border-radius: var(--radius-sm) !important;
   background: var(--surface-muted) !important;
 }
 
@@ -1837,7 +1837,7 @@ pre, code {
 
 .native-modal {
   border: 1px solid var(--border) !important;
-  border-radius: 14px !important;
+  border-radius: var(--radius-lg) !important;
   background: var(--surface-elevated) !important;
   box-shadow: var(--shadow-dialog) !important;
   animation: native-modal-in 180ms var(--ease-native) both;
@@ -1866,7 +1866,7 @@ pre, code {
   align-items: center;
   justify-content: center;
   border: 0 !important;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: transparent !important;
   color: var(--text-muted) !important;
   cursor: pointer;
@@ -1883,7 +1883,7 @@ pre, code {
 
 .native-settings-card {
   border-color: var(--separator) !important;
-  border-radius: 10px !important;
+  border-radius: var(--radius-md) !important;
   background: color-mix(in srgb, var(--surface) 60%, transparent) !important;
 }
 
@@ -1910,7 +1910,7 @@ pre, code {
   min-height: var(--control-height);
   padding: 6px 10px !important;
   border: 1px solid var(--border) !important;
-  border-radius: var(--radius-md) !important;
+  border-radius: var(--radius-sm) !important;
   background: var(--surface-muted) !important;
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--surface) 50%, transparent);
   color: var(--text) !important;
@@ -1998,7 +1998,7 @@ pre, code {
   justify-content: center;
   gap: 6px;
   border: 1px solid var(--border) !important;
-  border-radius: var(--radius-md) !important;
+  border-radius: var(--radius-sm) !important;
   background: var(--surface-muted) !important;
   box-shadow: var(--shadow-control);
   color: var(--text-muted) !important;
@@ -2031,7 +2031,7 @@ pre, code {
 .native-button-compact {
   min-height: 26px;
   padding: 0 9px !important;
-  border-radius: 7px !important;
+  border-radius: var(--radius-sm) !important;
   font-size: 11px !important;
 }
 
@@ -2106,7 +2106,7 @@ pre, code {
   margin: 1px 0;
   padding: 7px 9px !important;
   border: 1px solid transparent;
-  border-radius: var(--radius-md) !important;
+  border-radius: var(--radius-sm) !important;
   background: transparent !important;
   cursor: pointer;
   transition:
@@ -2208,7 +2208,7 @@ pre, code {
 
 .provider-picker-card {
   border-color: var(--separator) !important;
-  border-radius: 10px !important;
+  border-radius: var(--radius-md) !important;
   background: var(--surface-muted) !important;
   box-shadow: var(--shadow-control);
 }
@@ -2222,7 +2222,7 @@ pre, code {
   min-height: var(--control-height);
   padding: 0 13px;
   border: 0;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--accent);
   box-shadow: 0 1px 2px color-mix(in srgb, var(--accent) 28%, transparent);
   color: var(--accent-contrast);
@@ -2314,7 +2314,7 @@ pre, code {
   height: 32px;
   padding: 0 8px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   font-size: 12px;
@@ -2344,14 +2344,14 @@ pre, code {
 }
 
 .chat-composer-controls .native-popover button {
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
 }
 
 .composer-send-button {
   min-width: 72px;
   height: 32px;
   justify-content: center;
-  border-radius: 9px !important;
+  border-radius: var(--radius-sm) !important;
 }
 
 .chat-input-shell {
@@ -2382,7 +2382,7 @@ pre, code {
   max-width: none;
   padding: 7px 12px;
   border: none;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--user-bg);
   color: var(--text);
   font-size: 15px;
@@ -2416,7 +2416,7 @@ pre, code {
   min-height: 28px !important;
   padding: 4px 9px !important;
   border: 1px solid var(--separator) !important;
-  border-radius: 8px !important;
+  border-radius: var(--radius-sm) !important;
   background: var(--bg-subtle) !important;
   color: var(--text-muted) !important;
   font-size: 11.5px !important;
@@ -2436,7 +2436,7 @@ pre, code {
 .process-details-content {
   padding: 10px 11px 1px;
   border: 1px solid var(--separator);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--surface) 34%, transparent);
 }
 
@@ -2519,7 +2519,7 @@ pre, code {
 .markdown-body a:hover { text-decoration-color: var(--accent); }
 .markdown-body .markdown-inline-code {
   background: var(--bg-subtle);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 1px 5px 2px;
   color: var(--text);
   font-family: var(--font-mono);
@@ -2546,6 +2546,8 @@ pre, code {
   height: 14px;
   margin: 0;
   border: 1px solid var(--border);
+  /* Off the radius scale on purpose: --radius-sm on a 14px box reads as a
+     radio button, not a checkbox. */
   border-radius: 4px;
   background: var(--bg);
   display: inline-grid;
@@ -2569,7 +2571,7 @@ pre, code {
   margin: 8px 0;
   padding: 8px 12px;
   border-left: 2px solid color-mix(in srgb, var(--accent) 34%, var(--border));
-  border-radius: 2px 8px 8px 2px;
+  border-radius: 2px var(--radius-sm) var(--radius-sm) 2px;
   background: color-mix(in srgb, var(--surface) 48%, transparent);
   color: color-mix(in srgb, var(--text) 82%, var(--text-muted));
 }
@@ -2579,7 +2581,7 @@ pre, code {
   overflow-x: auto;
   overflow-y: hidden;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
 }
 .markdown-body table {
   border-collapse: separate;
@@ -2702,7 +2704,7 @@ pre, code {
   padding: 7px 8px;
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-panel);
   font-family: var(--font-mono);
   font-size: 11px;
@@ -2720,7 +2722,7 @@ pre, code {
   position: relative;
   margin: 6px 0;
   border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--bg);
   box-shadow: none;
@@ -2748,7 +2750,7 @@ pre, code {
 }
 .markdown-code-action {
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   padding: 2px 7px;
   background: var(--bg);
   color: var(--text-muted);
@@ -2899,7 +2901,7 @@ pre, code {
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   background: var(--bg-hover);
   color: var(--text-muted);
   cursor: pointer;
@@ -2925,7 +2927,7 @@ pre, code {
   align-items: center;
   justify-content: center;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -2960,7 +2962,7 @@ pre, code {
   align-items: center;
   gap: 7px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-muted);
   cursor: default;
@@ -3024,7 +3026,7 @@ pre, code {
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: transparent;
   cursor: pointer;
@@ -3061,7 +3063,7 @@ pre, code {
   padding: 0;
   flex-shrink: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -3089,7 +3091,7 @@ pre, code {
   height: 26px;
   padding: 0 9px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   outline: none;
   background: var(--bg-panel);
   color: var(--text);
@@ -3128,7 +3130,7 @@ pre, code {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--separator);
-  border-radius: 13px;
+  border-radius: var(--radius-md);
   background: var(--surface-muted);
   color: var(--text-muted);
   box-shadow: var(--shadow-control);
@@ -3216,7 +3218,7 @@ pre, code {
   align-items: center;
   gap: 5px;
   border: 1px solid var(--separator);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-muted);
   color: var(--text-dim);
   font-size: 10.5px;
@@ -3263,7 +3265,7 @@ pre, code {
   overflow: hidden;
   gap: 1px;
   border: 1px solid var(--separator);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--bg-subtle);
 }
 
@@ -3271,7 +3273,7 @@ pre, code {
   height: 22px;
   padding: 0 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -3311,7 +3313,7 @@ pre, code {
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -3374,7 +3376,7 @@ pre, code {
 }
 
 .file-viewer-image-stage img {
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   box-shadow: 0 10px 34px rgba(0, 0, 0, 0.18) !important;
 }
 
@@ -3415,7 +3417,7 @@ pre, code {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--separator);
-  border-radius: 13px;
+  border-radius: var(--radius-md);
   background: var(--surface-muted);
   color: var(--text-muted);
 }
@@ -3446,7 +3448,7 @@ pre, code {
   margin-top: 5px;
   padding: 0 10px;
   border: 1px solid var(--separator);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   box-shadow: var(--shadow-control);
   color: var(--text);
@@ -3505,7 +3507,7 @@ pre, code {
 .markdown-file-preview pre {
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 12px 16px;
   overflow-x: auto;
   font-family: var(--font-mono);
@@ -3517,7 +3519,7 @@ pre, code {
   font-size: 0.9em;
   background: var(--bg-panel);
   padding: 1px 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 .markdown-file-preview pre code {
   background: none;
@@ -3601,7 +3603,7 @@ span.linenumber {
 
 .native-update-reminder {
   border-color: var(--separator) !important;
-  border-radius: 14px !important;
+  border-radius: var(--radius-md) !important;
   background: color-mix(in srgb, var(--surface-elevated) 94%, transparent) !important;
   box-shadow: var(--shadow-popover) !important;
   -webkit-backdrop-filter: blur(22px) saturate(130%);
@@ -3638,7 +3640,7 @@ span.linenumber {
   height: 24px;
   align-items: center;
   justify-content: center;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: var(--accent-soft);
   color: var(--accent);
   font-size: 14px !important;
@@ -3653,7 +3655,7 @@ span.linenumber {
 .native-update-reminder-row {
   padding: 10px 11px !important;
   border-color: var(--separator) !important;
-  border-radius: 9px !important;
+  border-radius: var(--radius-sm) !important;
   background: var(--surface-muted) !important;
 }
 
@@ -3789,7 +3791,7 @@ span.linenumber {
     width: calc(100vw - 16px) !important;
     height: calc(100dvh - 16px) !important;
     max-height: calc(100dvh - 16px) !important;
-    border-radius: 12px !important;
+    border-radius: var(--radius-lg) !important;
   }
 
   .settings-modal .native-modal-header {
@@ -3920,7 +3922,7 @@ span.linenumber {
   padding: 0 7px 0 12px;
   gap: 8px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: transparent;
   font-size: 13px;
 }
@@ -3949,7 +3951,7 @@ span.linenumber {
 .file-workbench-icon-button {
   width: 34px;
   height: 28px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
 }
 
 .file-workbench-icon-button > svg,
@@ -3990,7 +3992,7 @@ span.linenumber {
   height: 28px;
   padding: 0 10px;
   border: 1px solid var(--separator);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface-muted);
   outline: none !important;
   font-size: 13px;
@@ -4033,13 +4035,13 @@ span.linenumber {
 
 .file-viewer-mode-switch {
   height: 32px;
-  border-radius: 9px;
+  border-radius: var(--radius-md);
 }
 
 .file-viewer-mode-button {
   height: 26px;
   padding: 0 11px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   font-size: 12px;
 }
 
@@ -4047,7 +4049,7 @@ span.linenumber {
   width: 30px;
   height: 30px;
   flex-basis: 30px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
 }
 
 .right-panel-toggle-button {
@@ -4060,7 +4062,7 @@ span.linenumber {
   min-height: 28px;
   position: fixed;
   z-index: 120;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   border: 1px solid transparent;
   background: transparent;
 }
@@ -4111,7 +4113,7 @@ span.linenumber {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--separator);
-  border-radius: 13px;
+  border-radius: var(--radius-md);
   background: var(--surface-muted);
   color: var(--text-muted);
   box-shadow: var(--shadow-control);
@@ -4143,7 +4145,7 @@ span.linenumber {
   height: 30px;
   padding: 0 14px;
   border: 1px solid var(--separator);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text);
   font-size: 12.5px;
