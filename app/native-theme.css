@@ -23,7 +23,6 @@
   --border: rgba(60, 60, 67, 0.16);
   --separator: rgba(60, 60, 67, 0.12);
   --surface: #ffffff;
-  --surface-muted: rgba(255, 255, 255, 0.64);
   --surface-elevated: #ffffff;
   --text: #1d1d1f;
   --text-muted: #68686d;
@@ -32,7 +31,6 @@
      ~2.8:1 contrast against --bg — under the 3:1 floor for UI text. This
      hits ~4:1 while staying visibly de-emphasized next to --text-muted. */
   --text-dim: #7a7a7a;
-  --text-meta: #85858b;
   --accent: #1d1d1f;
   --accent-hover: #3a3a3c;
   --accent-contrast: #ffffff;
@@ -98,14 +96,12 @@ html.dark {
   --border: rgba(235, 235, 245, 0.15);
   --separator: rgba(235, 235, 245, 0.1);
   --surface: #252527;
-  --surface-muted: rgba(44, 44, 46, 0.72);
   --surface-elevated: #2c2c2e;
   --text: #f5f5f7;
   --text-muted: rgba(235, 235, 245, 0.64);
   /* 0.46 rather than 0.38: matches the light-theme text-dim bump above so
      both themes land at roughly the same ~4:1 contrast against --bg. */
   --text-dim: rgba(235, 235, 245, 0.46);
-  --text-meta: rgba(235, 235, 245, 0.44);
   --accent: #f5f5f7;
   --accent-hover: #ffffff;
   --accent-contrast: #1d1d1f;
@@ -868,7 +864,7 @@ pre, code {
   padding: 0 26px 0 26px;
   border: 1px solid var(--separator);
   border-radius: var(--radius-sm);
-  background: var(--surface-muted);
+  background: var(--bg-panel);
   color: var(--text);
   font-size: 12px;
   outline: none;
@@ -1213,7 +1209,7 @@ pre, code {
 
 .message-meta,
 .message-assistant-model {
-  color: var(--text-meta) !important;
+  color: var(--text-dim) !important;
 }
 
 .file-tree {
@@ -1435,7 +1431,7 @@ pre, code {
 .file-tree-feedback {
   padding: 8px;
   border-bottom: 1px solid var(--separator);
-  background: var(--surface-muted);
+  background: var(--bg-panel);
 }
 
 .file-tree-dismiss-button {
@@ -1741,7 +1737,7 @@ pre, code {
 
 .app-topbar-more-copy > small {
   overflow: hidden;
-  color: var(--text-meta);
+  color: var(--text-dim);
   font-size: 10.5px;
   font-weight: 450;
   line-height: 1.25;
@@ -1796,7 +1792,7 @@ pre, code {
 .native-popover input:not([type="checkbox"]):not([type="radio"]) {
   border-color: var(--separator) !important;
   border-radius: var(--radius-sm) !important;
-  background: var(--surface-muted) !important;
+  background: var(--bg-panel) !important;
 }
 
 .native-inline-alert {
@@ -1919,7 +1915,7 @@ pre, code {
   padding: 6px 10px !important;
   border: 1px solid var(--border) !important;
   border-radius: var(--radius-sm) !important;
-  background: var(--surface-muted) !important;
+  background: var(--bg-panel) !important;
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--surface) 50%, transparent);
   color: var(--text) !important;
   font-size: 12px !important;
@@ -2008,7 +2004,7 @@ pre, code {
   gap: 6px;
   border: 1px solid var(--border) !important;
   border-radius: var(--radius-sm) !important;
-  background: var(--surface-muted) !important;
+  background: var(--bg-panel) !important;
   box-shadow: var(--shadow-control);
   color: var(--text-muted) !important;
   font-size: 12px !important;
@@ -2218,7 +2214,7 @@ pre, code {
 .provider-picker-card {
   border-color: var(--separator) !important;
   border-radius: var(--radius-md) !important;
-  background: var(--surface-muted) !important;
+  background: var(--bg-panel) !important;
   box-shadow: var(--shadow-control);
 }
 
@@ -3143,7 +3139,7 @@ pre, code {
   justify-content: center;
   border: 1px solid var(--separator);
   border-radius: var(--radius-md);
-  background: var(--surface-muted);
+  background: var(--bg-panel);
   color: var(--text-muted);
   box-shadow: var(--shadow-control);
 }
@@ -3231,7 +3227,7 @@ pre, code {
   gap: 5px;
   border: 1px solid var(--separator);
   border-radius: var(--radius-pill);
-  background: var(--surface-muted);
+  background: var(--bg-panel);
   color: var(--text-dim);
   font-size: 10.5px;
   font-weight: 500;
@@ -3435,7 +3431,7 @@ pre, code {
   justify-content: center;
   border: 1px solid var(--separator);
   border-radius: var(--radius-md);
-  background: var(--surface-muted);
+  background: var(--bg-panel);
   color: var(--text-muted);
 }
 
@@ -3673,7 +3669,7 @@ span.linenumber {
   padding: 10px 11px !important;
   border-color: var(--separator) !important;
   border-radius: var(--radius-sm) !important;
-  background: var(--surface-muted) !important;
+  background: var(--bg-panel) !important;
 }
 
 .native-update-reminder-link {
@@ -4010,7 +4006,7 @@ span.linenumber {
   padding: 0 10px;
   border: 1px solid var(--separator);
   border-radius: var(--radius-sm);
-  background: var(--surface-muted);
+  background: var(--bg-panel);
   outline: none !important;
   font-size: 13px;
   transition: border-color var(--dur-fast) var(--ease-native), background var(--dur-fast) var(--ease-native), box-shadow var(--dur-fast) var(--ease-native);
@@ -4131,7 +4127,7 @@ span.linenumber {
   justify-content: center;
   border: 1px solid var(--separator);
   border-radius: var(--radius-md);
-  background: var(--surface-muted);
+  background: var(--bg-panel);
   color: var(--text-muted);
   box-shadow: var(--shadow-control);
 }
