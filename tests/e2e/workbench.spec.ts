@@ -158,6 +158,8 @@ test("branch creation and real Bash activity work without a model", async ({ pag
   await page.getByRole("button", { name: "⑂ main", exact: true }).first().click();
   const dialog = page.getByRole("dialog", { name: "Git branch", exact: true });
   await expect(dialog).toBeVisible();
+  // The popover slides in over 140 ms; measure its resting position, not a mid-animation frame.
+  await dialog.evaluate(el => Promise.all(el.getAnimations({ subtree: true }).map(a => a.finished)));
   const triggerBox = (await page.getByRole("button", { name: "⑂ main", exact: true }).first().boundingBox())!;
   const dialogBox = (await dialog.boundingBox())!;
   const composerBox = (await page.locator(".chat-composer").boundingBox())!;
