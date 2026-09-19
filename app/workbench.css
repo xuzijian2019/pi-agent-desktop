@@ -84,6 +84,13 @@
 .workbench-branch-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workbench-branch-row > small { flex-shrink: 0; font-size: 11px; }
 .chat-composer-controls .workbench-branch-control { flex: 0 0 auto; max-width: 130px; }
+.workbench-send-preview { position: relative; flex: 0 0 auto; }
+.chat-composer-controls .workbench-send-preview > button { height: 32px; padding: 5px 9px; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-muted); font-size: 12px; white-space: nowrap; cursor: pointer; transition: background 120ms var(--ease-native), color 120ms var(--ease-native); }
+.chat-composer-controls .workbench-send-preview > button:hover, .chat-composer-controls .workbench-send-preview > button[aria-expanded="true"] { background: var(--bg-hover); color: var(--text); }
+.workbench-send-preview-popover { position: fixed; z-index: 100; padding: 12px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+.workbench-send-preview-popover > .workbench-toolbar { margin-top: 0; }
+.workbench-send-preview-popover > .workbench-toolbar > strong { font-size: 12px; font-weight: 600; }
+.workbench-send-preview-popover > .workbench-toolbar > button { margin-left: auto; width: 26px; height: 26px; min-height: 0; padding: 0; justify-content: center; background: transparent; color: var(--text-muted); font-size: 16px; }
 .chat-composer-controls .workbench-branch-control > button { display: block; max-width: 100%; height: 32px; padding: 5px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--text-muted); font-size: 12px; transition: background 120ms ease, color 120ms ease; }
 .chat-composer-controls .workbench-branch-control > button:hover, .chat-composer-controls .workbench-branch-control > button[aria-expanded="true"] { background: var(--bg-hover); color: var(--text); }
 
@@ -102,6 +109,7 @@
 @media (max-width: 600px) {
   .chat-composer-controls .workbench-branch-control { max-width: 68px; }
   .chat-composer-controls .workbench-branch-control > button { padding-inline: 5px; }
+  .chat-composer-controls .workbench-send-preview > button { padding-inline: 6px; }
   .chat-composer-controls .chat-project-context { max-width: 94px !important; }
   .workbench-content { padding: 14px 16px 16px; }
 }

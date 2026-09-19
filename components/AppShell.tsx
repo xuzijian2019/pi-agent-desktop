@@ -6,7 +6,7 @@ import { PanelModeSelector } from "./workbench/PanelModeSelector";
 import { ActivityPanel } from "./workbench/ActivityPanel";
 import { SavedTasksPanel, type TaskSeed } from "./workbench/SavedTasksPanel";
 import { PinnedSection } from "./workbench/PinnedSection";
-import { ContextPanel } from "./workbench/ContextPanel";
+import { SendPreview } from "./workbench/SendPreview";
 import { ChangesSection } from "./workbench/ChangesSection";
 import { panelMode, type PanelMode } from "@/lib/panel-modes";
 import { loadDraft, setDraft, getDraftStatus, type ChatDraft } from "@/lib/draft-store";
@@ -1709,7 +1709,7 @@ export function AppShell() {
               onCloseTranscript={closeTranscriptPreview}
               key={sessionKey}
               onDraftChange={handleDraftChange}
-              onOpenContext={() => openMode("context")}
+              sendPreview={<SendPreview inputRef={chatInputRef} revision={draftRevision} identity={selectedSession?.id ?? `new:${effectiveNewSessionCwd}`} systemPrompt={systemPrompt} />}
               onOpenTasks={() => openMode("tasks")}
               onBranchNavigate={branchNavigate}
               session={selectedSession}
@@ -1827,7 +1827,6 @@ export function AppShell() {
           {taskConflict && <div className="workbench-card" role="dialog" aria-label={translate("wb.existingDraft")}><p>{translate("wb.existingDraft")}</p><button onClick={() => setTaskConflict(undefined)}>{translate("wb.keepDraft")}</button><button onClick={() => applySavedTask(taskConflict.task, taskConflict.cwd, taskConflict.draft, false, taskConflict.generation)}>{translate("wb.replaceDraft")}</button><button onClick={() => applySavedTask(taskConflict.task, taskConflict.cwd, taskConflict.draft, true, taskConflict.generation)}>{translate("wb.appendPrompt")}</button></div>}
           <SavedTasksPanel visible={rightPanelOpen && rightPanelMode === "tasks"} cwd={activeCwd} seed={taskSeed} onUse={useSavedTask} onCapture={captureTask} />
         </div>
-        <div hidden={rightPanelMode !== "context"} className="workbench-mode-body"><ContextPanel visible={rightPanelOpen && rightPanelMode === "context"} inputRef={chatInputRef} revision={draftRevision} identity={selectedSession?.id ?? `new:${effectiveNewSessionCwd}`} systemPrompt={systemPrompt} /></div>
         <div hidden={rightPanelMode !== "files"} className="workbench-files-body">
         <div className="right-panel-tab-strip">
           <div className="file-tab-bar-slot">
