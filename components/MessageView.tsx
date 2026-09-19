@@ -557,7 +557,6 @@ function AssistantMessageView({
   return (
     <div
       className="message-assistant"
-      style={{ marginBottom: 16 }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -565,14 +564,6 @@ function AssistantMessageView({
       {(!isProcessOnly || providerError) && (
       <div
         className="message-assistant-model"
-        style={{
-          fontSize: 11,
-          color: "var(--text-dim)",
-          marginBottom: 4,
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-        }}
       >
         {message.provider && (
           <span>{modelNames?.[`${message.provider}:${message.model}`] ?? modelNames?.[message.model] ?? message.model}</span>
@@ -589,8 +580,8 @@ function AssistantMessageView({
             <>
 
               {est > 0 && (
-                <span style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--text)" }} title={t("i18n.estimatedTokens")}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 2, fontSize: 11, fontWeight: 400 }}>
+                <span className="msg-token-estimate" title={t("i18n.estimatedTokens")}>
+                  <span className="msg-token-count">
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="5" y1="1.5" x2="5" y2="8.5" /><polyline points="2 6 5 8.5 8 6" />
                     </svg>
@@ -599,7 +590,7 @@ function AssistantMessageView({
                   {tps !== null && (() => {
                     const bg = tps >= 50 ? "#53b3cb" : tps >= 30 ? "#9bc53d" : tps >= 15 ? "#f9c22e" : "#e01a4f";
                     return (
-                      <span style={{ marginLeft: 6, padding: "1px 6px", borderRadius: 4, background: bg, color: "#fff", fontSize: 11, fontWeight: 400 }}>
+                      <span className="msg-tps" style={{ background: bg }}>
                         {tps.toFixed(1)} t/s
                       </span>
                     );
@@ -612,7 +603,7 @@ function AssistantMessageView({
       </div>
       )}
 
-      <div className="message-assistant-content" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="message-assistant-content">
         {blockItems.map(({ block, originalIndex }) => (
           <BlockView key={`${entryId ?? "stream"}-${originalIndex}`} block={block} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(originalIndex) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} cwd={cwd} onOpenFile={onOpenFile} sessionId={sessionId} entryId={entryId} blockIndex={originalIndex} />
         ))}
@@ -621,29 +612,15 @@ function AssistantMessageView({
       {providerError && (
         <div
           role="alert"
-          style={{
-            marginTop: blocks.length > 0 ? 8 : 0,
-            padding: "7px 10px",
-            border: "1px solid rgba(239,68,68,0.3)",
-            borderRadius: 6,
-            background: "rgba(239,68,68,0.07)",
-            color: "#ef4444",
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            lineHeight: 1.5,
-            whiteSpace: "pre-wrap",
-            overflowWrap: "anywhere",
-          }}
+          className={blocks.length > 0 ? "msg-error is-stacked" : "msg-error"}
         >
           Error: {providerError}
         </div>
       )}
 
-      <div className="message-assistant-footer" style={{
-        display: "flex", alignItems: "center", gap: 8, marginTop: 4,
-      }}>
+      <div className="message-assistant-footer">
         {message.usage && !isStreaming && (
-          <div className="message-meta" style={{ fontSize: 11, color: "var(--text-dim)" }}>
+          <div className="message-meta msg-usage">
             {formatUsage(message.usage)}
           </div>
         )}
@@ -651,21 +628,7 @@ function AssistantMessageView({
           <button
             onClick={copyContent}
              title={t("i18n.copyMessage")}
-            style={{
-              display: "flex", alignItems: "center", gap: 4,
-              padding: "3px 8px", height: 22,
-              background: "none", border: "none",
-              borderRadius: 5,
-              color: copied ? "var(--accent)" : "var(--text-dim)",
-              cursor: "pointer",
-              fontSize: 11, fontWeight: 400,
-              whiteSpace: "nowrap",
-              opacity: hovered ? 1 : 0,
-              pointerEvents: hovered ? "auto" : "none",
-              transition: "opacity 0.12s, color 0.12s",
-            }}
-            onMouseEnter={(e) => { if (!copied) e.currentTarget.style.color = "var(--accent)"; }}
-            onMouseLeave={(e) => { if (!copied) e.currentTarget.style.color = "var(--text-dim)"; }}
+            className={copied ? "msg-action is-hover-only is-active" : "msg-action is-hover-only"} data-visible={hovered}
           >
             {copied ? (
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -681,7 +644,7 @@ function AssistantMessageView({
           </button>
         )}
         {time && !isStreaming && (
-          <span className="message-meta" style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: "auto" }}>{time}</span>
+          <span className="message-meta msg-time msg-timestamp">{time}</span>
         )}
       </div>
     </div>
@@ -743,45 +706,20 @@ function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
 
   return (
     <div
-      style={{
-        border: "1px solid var(--border)",
-        borderRadius: 6,
-        overflow: "hidden",
-        fontSize: 13,
-      }}
+      className="msg-thinking"
     >
       <button
         onClick={() => void toggle()}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          width: "100%",
-          padding: "6px 10px",
-          background: "var(--bg-panel)",
-          border: "none",
-          color: "var(--text-muted)",
-          cursor: "pointer",
-          fontSize: 12,
-          textAlign: "left",
-        }}
+        className="msg-thinking-toggle"
       >
          <span>{t("i18n.thinking")}</span>
         {duration !== undefined && (
-          <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
+          <span className="msg-duration">{duration}s</span>
         )}
       </button>
       {expanded && (
         <div
-          style={{
-            padding: "8px 10px",
-            color: error ? "var(--danger)" : "var(--text-muted)",
-            fontSize: 12,
-            lineHeight: 1.6,
-            whiteSpace: "pre-wrap",
-            background: "var(--bg-panel)",
-            borderTop: "1px solid var(--border)",
-          }}
+          className={error ? "msg-thinking-body is-error" : "msg-thinking-body"}
         >
            {loading ? t("i18n.loadingThinking") : error ?? (block.deferred ? content : block.thinking)}
         </div>
@@ -807,42 +745,23 @@ function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; re
 
   return (
     <div
-      style={{
-        borderRadius: 7,
-        overflow: "hidden",
-        fontSize: 12,
-        border: isError ? "1px solid rgba(248,113,113,0.45)" : "1px solid rgba(34,197,94,0.25)",
-        background: isError ? "rgba(248,113,113,0.05)" : "rgba(34,197,94,0.04)",
-      }}
+      className="msg-tool" data-status={isError ? "error" : "ok"}
     >
       {/* ── Tool call header ── */}
       <button
         onClick={() => setExpanded((v) => !v)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 7,
-          width: "100%",
-          padding: "6px 10px",
-          background: "none",
-          border: "none",
-          color: "var(--text-muted)",
-          cursor: "pointer",
-          fontSize: 12,
-          textAlign: "left",
-          minWidth: 0,
-        }}
+        className="msg-tool-header"
       >
-        <span style={{ color: isError ? "var(--danger)" : "var(--success)", fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: 11, flexShrink: 0 }}>
+        <span className="msg-tool-name">
           {block.toolName}
         </span>
-        <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
+        <span className="msg-tool-preview">
           {getToolPreview(block)}
         </span>
         {duration !== undefined && (
-          <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
+          <span className="msg-tool-duration">{duration}s</span>
         )}
-        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="msg-chevron" data-expanded={expanded}>
           <polyline points="2 3.5 5 6.5 8 3.5" />
         </svg>
       </button>
@@ -852,22 +771,7 @@ function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; re
         writtenFile ? (
           <WrittenFileView file={writtenFile} isError={isError} />
         ) : (
-          <pre
-            style={{
-              margin: 0,
-              padding: "8px 10px",
-              color: "var(--text-muted)",
-              fontSize: 12,
-              lineHeight: 1.5,
-              overflow: "auto",
-              background: "var(--bg-subtle)",
-              borderTop: isError ? "1px solid rgba(248,113,113,0.25)" : "1px solid rgba(34,197,94,0.2)",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-all",
-            }}
-          >
-            {inputStr}
-          </pre>
+          <pre className="msg-pane msg-tool-input">{inputStr}</pre>
         )
       )}
 
@@ -892,24 +796,9 @@ function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; re
 function WrittenFileView({ file, isError }: { file: WrittenFile; isError: boolean }) {
   const { isDark } = useTheme();
   return (
-    <div style={{ borderTop: isError ? "1px solid rgba(248,113,113,0.25)" : "1px solid rgba(34,197,94,0.2)", background: "var(--bg)", minWidth: 0 }}>
-      <div
-        title={file.path}
-        style={{
-          padding: "6px 10px",
-          borderBottom: "1px solid var(--border)",
-          background: "var(--bg-panel)",
-          color: "var(--text-muted)",
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {file.path}
-      </div>
-      <div style={{ maxHeight: 560, overflow: "auto" }}>
+    <div className={isError ? "msg-pane msg-file is-error" : "msg-pane msg-file"}>
+      <div title={file.path} className="msg-file-path">{file.path}</div>
+      <div className="msg-file-body">
         <SyntaxHighlighter
           language={sourceLanguageFromPath(file.path)}
           style={isDark ? vscDarkPlus : vs}
@@ -953,10 +842,7 @@ function PairedDiffResult({ diff }: {
 }) {
   return (
     <div
-      style={{
-        borderTop: "1px solid rgba(34,197,94,0.15)",
-        background: "var(--bg)",
-      }}
+      className="msg-pane msg-diff-wrap"
     >
       <SplitPatchView text={diff.text} />
     </div>
@@ -972,43 +858,19 @@ function SplitPatchView({ text }: { text: string }) {
   const unified = mode === "unified";
 
   return (
-    <div style={{ maxHeight: 560, overflowY: "auto", overflowX: "hidden", background: "var(--bg)" }}>
+    <div className="msg-diff">
       {files.map((file, fileIndex) => (
         <div
           key={fileIndex}
-          style={{
-            minWidth: 0,
-            borderTop: fileIndex === 0 ? "none" : "1px solid var(--border)",
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            lineHeight: 1.55,
-          }}
+          className="msg-diff-file"
         >
           {showFileHeaders && (
             unified ? (
-              <div
-                style={{
-                  position: "sticky",
-                  top: 0,
-                  zIndex: 1,
-                  background: "var(--bg-panel)",
-                  borderBottom: "1px solid var(--border)",
-                }}
-              >
+              <div className="msg-diff-header">
                 <SplitDiffHeader title={file.newPath || file.oldPath || t("i18n.after")} side="right" />
               </div>
             ) : (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-                  position: "sticky",
-                  top: 0,
-                  zIndex: 1,
-                  background: "var(--bg-panel)",
-                  borderBottom: "1px solid var(--border)",
-                }}
-              >
+              <div className="msg-diff-header is-split">
                  <SplitDiffHeader title={file.oldPath || t("i18n.before")} side="left" />
                  <SplitDiffHeader title={file.newPath || t("i18n.after")} side="right" />
               </div>
@@ -1034,14 +896,14 @@ function SplitPatchView({ text }: { text: string }) {
               })}
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)" }}>
+            <div className="msg-diff-grid">
               {file.rows.map((row, rowIndex) => {
                 if (row.type === "hunk") {
                   return null;
                 }
 
                 return (
-                  <div key={rowIndex} style={{ display: "contents" }}>
+                  <div key={rowIndex} className="msg-diff-row">
                     <SplitDiffCellView cell={row.left} side="left" />
                     <SplitDiffCellView cell={row.right} side="right" />
                   </div>
@@ -1068,45 +930,10 @@ function UnifiedDiffLine({ cell }: { cell: SplitDiffCell }) {
     cell.type === "added" ? "var(--success)" : cell.type === "removed" ? "var(--danger)" : "var(--text-dim)";
 
   return (
-    <div style={{ display: "flex", minWidth: 0, background: bg }}>
-      <span
-        style={{
-          width: 42,
-          padding: "0 6px",
-          textAlign: "right",
-          color: "var(--text-dim)",
-          userSelect: "none",
-          background: "var(--bg-panel)",
-          borderRight: "1px solid var(--border)",
-          flexShrink: 0,
-        }}
-      >
-        {cell.lineNo ?? ""}
-      </span>
-      <span
-        style={{
-          width: 18,
-          padding: "0 5px",
-          color: markerColor,
-          userSelect: "none",
-          fontWeight: cell.type === "context" ? 400 : 700,
-          flexShrink: 0,
-        }}
-      >
-        {marker}
-      </span>
-      <span
-        style={{
-          flex: 1,
-          minWidth: 0,
-          padding: "0 10px 0 0",
-          color: "var(--text)",
-          whiteSpace: "pre-wrap",
-          overflowWrap: "anywhere",
-        }}
-      >
-        {cell.text || " "}
-      </span>
+    <div className="msg-diff-line" data-kind={cell.type} style={{ background: bg }}>
+      <span className="msg-diff-no">{cell.lineNo ?? ""}</span>
+      <span className="msg-diff-marker" style={{ color: markerColor }}>{marker}</span>
+      <span className="msg-diff-text">{cell.text || " "}</span>
     </div>
   );
 }
@@ -1115,14 +942,7 @@ function SplitDiffHeader({ title, side }: { title: string; side: "left" | "right
   return (
     <div
       title={title}
-      style={{
-        padding: "5px 10px",
-        color: "var(--text-dim)",
-        borderRight: side === "left" ? "1px solid var(--border)" : "none",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-      }}
+      className="msg-diff-title" data-side={side}
     >
       {title}
     </div>
@@ -1145,48 +965,22 @@ function SplitDiffCellView({ cell, side }: { cell: SplitDiffCell; side: "left" |
 
   return (
     <div
-      style={{
-        display: "flex",
-        minWidth: 0,
-        background: bg,
-        borderRight: side === "left" ? "1px solid var(--border)" : "none",
-      }}
+      className="msg-diff-line" data-kind={cell.type} data-side={side}
+      style={{ background: bg }}
     >
       <span
-        style={{
-          width: 42,
-          padding: "0 6px",
-          textAlign: "right",
-          color: "var(--text-dim)",
-          userSelect: "none",
-          background: "var(--bg-panel)",
-          borderRight: "1px solid var(--border)",
-          flexShrink: 0,
-        }}
+        className="msg-diff-no"
       >
         {cell.lineNo ?? ""}
       </span>
       <span
-        style={{
-          width: 18,
-          padding: "0 5px",
-          color: markerColor,
-          userSelect: "none",
-          fontWeight: cell.type === "context" || cell.type === "empty" ? 400 : 700,
-          flexShrink: 0,
-        }}
+        className="msg-diff-marker"
+        style={{ color: markerColor }}
       >
         {marker}
       </span>
       <span
-        style={{
-          flex: 1,
-          minWidth: 0,
-          padding: "0 10px 0 0",
-          color: cell.type === "empty" ? "var(--text-dim)" : "var(--text)",
-          whiteSpace: "pre-wrap",
-          overflowWrap: "anywhere",
-        }}
+        className="msg-diff-text"
       >
         {cell.text || "\u00a0"}
       </span>
@@ -1198,7 +992,7 @@ function PatchTextView({ text }: { text: string }) {
   const lines = text.split(/\r?\n/);
 
   return (
-    <div style={{ maxHeight: 520, overflowY: "auto", overflowX: "hidden", fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.55, minWidth: 0 }}>
+    <div className="msg-patch">
       {lines.map((line, i) => {
         const kind =
           line.startsWith("@@") ? "hunk" :
@@ -1219,8 +1013,8 @@ function PatchTextView({ text }: { text: string }) {
         return (
           <div
             key={i}
+            className="msg-patch-line"
             style={{
-              display: "flex",
               background: bg,
               borderLeft: kind === "added"
                 ? "3px solid var(--success)"
@@ -1232,20 +1026,11 @@ function PatchTextView({ text }: { text: string }) {
             }}
           >
             <span
-              style={{
-                width: 48,
-                padding: "0 8px",
-                color: "var(--text-dim)",
-                background: "var(--bg-panel)",
-                borderRight: "1px solid var(--border)",
-                textAlign: "right",
-                userSelect: "none",
-                flexShrink: 0,
-              }}
+              className="msg-patch-no"
             >
               {i + 1}
             </span>
-            <span style={{ padding: "0 10px", whiteSpace: "pre-wrap", overflowWrap: "anywhere", color }}>
+            <span className="msg-patch-text" style={{ color }}>
               {line || "\u00a0"}
             </span>
           </div>
@@ -1290,26 +1075,10 @@ function PairedResult({ text, isEmpty, isError }: {
   const { t } = useI18n();
   return (
     <div
-      style={{
-        borderTop: `1px solid ${isError ? "rgba(248,113,113,0.3)" : "rgba(34,197,94,0.15)"}`,
-        background: isError ? "rgba(248,113,113,0.04)" : "var(--bg-subtle)",
-      }}
+      className={isError ? "msg-pane msg-tool-result is-error" : "msg-pane msg-tool-result"}
     >
       <pre
-        style={{
-          margin: 0,
-          padding: "8px 10px",
-          color: isError ? "var(--danger)" : (isEmpty ? "var(--text-dim)" : "var(--text-muted)"),
-          fontSize: 12,
-          lineHeight: 1.5,
-          overflow: "auto",
-          maxHeight: 400,
-          background: "var(--bg)",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-all",
-          fontStyle: isEmpty ? "italic" : "normal",
-          opacity: isEmpty ? 0.6 : 1,
-        }}
+        className={isEmpty ? "msg-tool-output is-empty" : "msg-tool-output"}
       >
          {isEmpty ? t("i18n.noOutput") : text}
       </pre>
