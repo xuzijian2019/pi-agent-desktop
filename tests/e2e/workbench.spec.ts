@@ -156,6 +156,45 @@ test("loading a remotely saved draft restores references and setup atomically", 
   await expect.poll(readSavedDraft).toEqual({ ...plainDraft, references: {} });
 });
 
+test("recent task chips reveal draft choices from closed and different panels", async ({ page, request }) => {
+  const created = await request.post("/api/saved-tasks", { data: {
+    name: "Recent conflict task", description: "Visible conflict choices", prompt: "TASK TEXT",
+    projectRoot: null, model: null, effort: "inherit", tools: "inherit",
+  } });
+  expect(created.ok()).toBe(true);
+  const task = await created.json();
+  const cwd = path.join(WORK_ROOT, `task-chip-${randomUUID()}`);
+  await mkdir(cwd, { recursive: true });
+  await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);
+  const composer = page.getByPlaceholder("Message…", { exact: false });
+  await expect(composer).toBeEditable();
+  await composer.fill("KEEP THIS DRAFT");
+  const chip = page.getByRole("button", { name: "Recent conflict task Visible conflict choices", exact: true });
+  await expect(chip).toBeVisible();
+
+  // The panel starts closed. A conflict opens Tasks and moves keyboard focus to
+  // the least destructive choice.
+  await chip.click();
+  const dialog = page.getByRole("dialog", { name: "A draft already exists in this project. Choose how to apply the template.", exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Keep current draft" })).toBeFocused();
+  await dialog.getByRole("button", { name: "Keep current draft" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(composer).toHaveValue("KEEP THIS DRAFT");
+
+  // The same affordance works when Files is the currently selected mode, and
+  // issue 1's late-edit guarantee applies to this chip path too.
+  await mode(page, "files");
+  await chip.click();
+  await expect(dialog).toBeVisible();
+  await composer.fill("KEEP THIS DRAFT PLUS LATE EDIT");
+  await dialog.getByRole("button", { name: "Append task prompt" }).click();
+  await expect(composer).toHaveValue("KEEP THIS DRAFT PLUS LATE EDIT\n\nTASK TEXT");
+
+  const removed = await request.delete(`/api/saved-tasks/${task.id}`, { data: { revision: task.revision } });
+  expect(removed.ok()).toBe(true);
+});
+
 test("the composer send preview keeps the reference snapshot and goes stale after edits", async ({ page, request }) => {
   await project(page);
   const input = page.getByPlaceholder("Message…", { exact: false });

@@ -32,9 +32,9 @@
     },
     "components/AppShell.tsx": {
       "risk": "high",
-      "drift": 1827,
-      "reason": "Top-bar redesign (toolbar consolidated into a more-menu, inline styles to classNames) plus the mount point for desktop chrome. The desktop-only parts moved to components/desktop/; the rest is the fork's own interaction design, not desktop plumbing, so this file stays high risk by design rather than by neglect. Header/More cleanup (ui-refresh decisions 7 and 8) DELETES upstream UI rather than adding fork UI — the Full history toolbar button, the Session stats more-item and the session top panel — which raises structural drift by 37 lines, because upstream still ships all of it. Numbers are the measured values from `npm run drift` against the recorded baseline. Phase 4 adds an import, one local element and one prop to fill ChatWindow's empty-state slot: 3 structural lines.",
-      "structuralDrift": 1395,
+      "drift": 1843,
+      "reason": "Top-bar redesign (toolbar consolidated into a more-menu, inline styles to classNames) plus the mount point for desktop chrome. The desktop-only parts moved to components/desktop/; the rest is the fork's own interaction design, not desktop plumbing, so this file stays high risk by design rather than by neglect. Header/More cleanup (ui-refresh decisions 7 and 8) DELETES upstream UI rather than adding fork UI — the Full history toolbar button, the Session stats more-item and the session top panel — which raises structural drift by 37 lines, because upstream still ships all of it. Numbers are the measured values from `npm run drift` against the recorded baseline. Saved-task append and chip conflict fixes bring measured structural drift to 1411. Phase 4 adds an import, one local element and one prop to fill ChatWindow's empty-state slot: 3 structural lines.",
+      "structuralDrift": 1411,
       "disposition": "accepted"
     },
     "components/FileViewer.tsx": {
