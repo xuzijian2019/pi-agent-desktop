@@ -125,6 +125,29 @@ const FORK_FEATURES = [
   },
 ];
 
+/**
+ * Upstream UI this fork deliberately deleted. Unlike a fork *addition*, a
+ * deletion is invisible to the other sentinels: upstream still ships the code,
+ * so a merge that reintroduces it is textually clean and the app silently grows
+ * a second entry point back. See docs/ui-refresh-plan.md decisions 7 and 8.
+ */
+const REMOVED_UPSTREAM_UI = [
+  {
+    name: "Full history toolbar button",
+    file: "components/AppShell.tsx",
+    // The HTML export lives in the More menu now (handleExportHtml).
+    markers: ["handleViewFullHistory", "history.full", "history.label"],
+    required: ["handleExportHtml", "appshell.exportHtml"],
+  },
+  {
+    name: "Session stats top panel",
+    file: "components/AppShell.tsx",
+    // The composer context ring (ContextUsageRing) is the only indicator left.
+    markers: ["SessionStatsPanel", "openSessionStatsPanel", "appshell.sessionStats", "session-info-popover"],
+    required: [],
+  },
+];
+
 for (const extraction of EXTRACTIONS) {
   test(`${extraction.name}: extracted code does not reappear at its origin`, async () => {
     const origin = await read(extraction.origin);
@@ -190,6 +213,27 @@ for (const feature of FORK_FEATURES) {
         source.includes(marker),
         `${feature.file} lost "${marker}" — an upstream merge likely reverted this file toward ` +
           `its upstream form. Re-apply the fork change rather than deleting this assertion.`,
+      );
+    }
+  });
+}
+
+for (const removal of REMOVED_UPSTREAM_UI) {
+  test(`${removal.name}: removed upstream UI does not come back`, async () => {
+    const source = await read(removal.file);
+
+    for (const marker of removal.markers) {
+      assert.ok(
+        !source.includes(marker),
+        `${removal.file} contains "${marker}" again — an upstream merge probably restored UI ` +
+          `this fork removed on purpose. Delete it again rather than deleting this assertion.`,
+      );
+    }
+
+    for (const marker of removal.required) {
+      assert.ok(
+        source.includes(marker),
+        `${removal.file} lost "${marker}" — the replacement for the removed UI is gone.`,
       );
     }
   });

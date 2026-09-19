@@ -36,7 +36,6 @@ const ModelsConfig = dynamic(() => import("./ModelsConfig").then((m) => m.Models
 const SkillsConfig = dynamic(() => import("./SkillsConfig").then((m) => m.SkillsConfig), { ssr: false });
 const PluginsConfig = dynamic(() => import("./PluginsConfig").then((m) => m.PluginsConfig), { ssr: false });
 const AppSettings = dynamic(() => import("./AppSettings").then((m) => m.AppSettings), { ssr: false });
-import { SessionStatsPanel } from "./SessionStatsPanel";
 import { ProjectTrustDialog } from "./ProjectTrustDialog";
 import { BranchNavigator } from "./BranchNavigator";
 import { UpdateReminder } from "./UpdateReminder";
@@ -285,7 +284,7 @@ export function AppShell() {
     setSystemPrompt(prompt);
   }, []);
 
-  // Session stats (tokens + cost) — populated by ChatWindow, used by the stats panel and ring hover summary
+  // Session stats (tokens + cost) — populated by ChatWindow, read by the composer context ring
   const [sessionStats, setSessionStats] = useState<SessionStatsInfo | null>(null);
   const [autoNameStatus, setAutoNameStatus] = useState<AutoNameStatus>({ kind: "idle" });
   const autoNameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -301,27 +300,16 @@ export function AppShell() {
     }
   }, [desktopMode]);
 
-  // Context usage — populated by ChatWindow, used by the stats panel and ring
-  const [contextUsage, setContextUsage] = useState<{ percent: number | null; contextWindow: number; tokens: number | null } | null>(null);
-  const handleContextUsageChange = useCallback((usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => {
-    setContextUsage(usage);
-  }, []);
-
   // Single active panel — only one dropdown open at a time
-  const [activeTopPanel, setActiveTopPanel] = useState<"branches" | "system" | "session" | null>(null);
+  const [activeTopPanel, setActiveTopPanel] = useState<"branches" | "system" | null>(null);
   const [topMoreOpen, setTopMoreOpen] = useState(false);
   const topMoreRef = useRef<HTMLDivElement>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
-  const toggleTopPanel = useCallback((panel: "branches" | "system" | "session") => {
+  const toggleTopPanel = useCallback((panel: "branches" | "system") => {
     if (isMobile) setSidebarOpen(false);
     setTopMoreOpen(false);
     setActiveTopPanel((cur) => cur === panel ? null : panel);
-  }, [isMobile]);
-
-  const openSessionStatsPanel = useCallback(() => {
-    if (isMobile) setSidebarOpen(false);
-    setActiveTopPanel("session");
   }, [isMobile]);
 
   const handleSidebarToggle = useCallback(() => {
@@ -549,7 +537,6 @@ export function AppShell() {
     branchLeafChangeFnRef.current = null;
     setSystemPrompt(null);
     setSessionStats(null);
-    setContextUsage(null);
     setActiveTopPanel(null);
     setTopMoreOpen(false);
     setInitialSessionRestored(true);
@@ -581,7 +568,6 @@ export function AppShell() {
     branchLeafChangeFnRef.current = null;
     setSystemPrompt(null);
     setSessionStats(null);
-    setContextUsage(null);
     setActiveTopPanel(null);
     if (isMobile) setSidebarOpen(false);
     window.history.pushState({ ...window.history.state, piSession: null, piCwd: cwd }, "", `?cwd=${encodeURIComponent(cwd)}`);
@@ -1193,32 +1179,6 @@ export function AppShell() {
   return (
     <>
     <style>{`
-      @keyframes session-info-pop {
-        from {
-          opacity: 0;
-          transform: translateY(-4px) scale(0.99);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0) scale(1);
-        }
-      }
-      .session-info-popover {
-        position: relative;
-        overflow: hidden;
-        transform-origin: top right;
-        animation: session-info-pop 160ms var(--ease-native) both;
-        will-change: transform, opacity;
-      }
-      .session-info-popover::after {
-        display: none;
-      }
-      @media (prefers-reduced-motion: reduce) {
-        .session-info-popover,
-        .session-info-popover::after {
-          animation: none;
-        }
-      }
       @media (max-width: 640px) {
         .sidebar-overlay-backdrop.sidebar-mobile-pending {
           opacity: 0 !important;
@@ -1563,43 +1523,6 @@ export function AppShell() {
                             <small>{selectedSession ? translate("appshell.exportHtmlHint") : translate("appshell.exportHtmlUnsaved")}</small>
                           </span>
                         </button>
-                        {(() => {
-                          const fmt = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n);
-                          const t = sessionStats?.tokens;
-                          const c = sessionStats?.cost ?? 0;
-                          const parts: string[] = [];
-                          if (t && t.input > 0) parts.push(`↑${fmt(t.input)}`);
-                          if (t && t.output > 0) parts.push(`↓${fmt(t.output)}`);
-                          if (c > 0) parts.push(c >= 0.01 ? `$${c.toFixed(2)}` : "<$0.01");
-                          if (contextUsage?.contextWindow && contextUsage.percent !== null) {
-                            parts.push(`${contextUsage.percent.toFixed(1)}% ctx`);
-                          }
-                          const summary = parts.length > 0 ? parts.join(" · ") : translate("appshell.statsHint");
-                          return (
-                            <button
-                              className="app-topbar-more-item"
-                              type="button"
-                              role="menuitem"
-                              disabled={!sessionStats && !contextUsage}
-                              onClick={() => toggleTopPanel("session")}
-                            >
-                              <span
-                                className="app-topbar-more-icon"
-                                style={{ color: activeTopPanel === "session" ? "var(--accent)" : "var(--text-muted)" }}
-                              >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                  <line x1="18" y1="20" x2="18" y2="10" />
-                                  <line x1="12" y1="20" x2="12" y2="4" />
-                                  <line x1="6" y1="20" x2="6" y2="14" />
-                                </svg>
-                              </span>
-                              <span className="app-topbar-more-copy">
-                                <span>{translate("appshell.sessionStats")}</span>
-                                <small>{summary}</small>
-                              </span>
-                            </button>
-                          );
-                        })()}
                       </div>
                     )}
                   </div>
@@ -1647,13 +1570,6 @@ export function AppShell() {
                   )}
                 </div>
               )}
-              {activeTopPanel === "session" && (
-                <SessionStatsPanel
-                  sessionStats={sessionStats}
-                  contextUsage={contextUsage}
-                  isMobile={isMobile}
-                />
-              )}
             </div>
           )}
 
@@ -1694,8 +1610,6 @@ export function AppShell() {
               onBranchDataChange={handleBranchDataChange}
               onSystemPromptChange={handleSystemPromptChange}
               onSessionStatsChange={handleSessionStatsChange}
-              onSessionStatsPanelOpen={openSessionStatsPanel}
-              onContextUsageChange={handleContextUsageChange}
               onSelectProject={desktopMode ? () => void handleSelectProjectFromComposer() : undefined}
               projectOptions={selectedSession ? [] : availableProjectRoots}
               onProjectChange={selectedSession ? undefined : handleProjectChangeFromComposer}
