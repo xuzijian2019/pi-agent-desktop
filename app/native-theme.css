@@ -4629,6 +4629,131 @@ span.linenumber {
   font-size: 11px;
 }
 
+/* Composer bottom bar ----------------------------------------------------- */
+.chat-composer-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chat-composer-controls.is-narrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.composer-controls-left {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.composer-controls-spacer {
+  flex: 1;
+}
+
+.composer-controls-right {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.composer-controls-right.is-narrow {
+  margin-left: 0;
+}
+
+/* Model / effort / tools trigger chips. `is-open` has to outrank the inline
+   background the pointer handlers still write while a menu is open. */
+.composer-toolbar-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 32px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.composer-toolbar-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.composer-toolbar-chip.is-open {
+  background: var(--bg-hover) !important;
+  color: var(--text) !important;
+}
+
+.composer-toolbar-chip.is-icon-only {
+  width: 32px;
+  padding: 0 6px;
+}
+
+/* The model chip is the one control allowed to absorb (and give up) the
+   leftover width of the composer row. */
+.composer-model-anchor {
+  min-width: 0;
+}
+
+.composer-model-anchor.is-narrow {
+  flex: 1 1 auto;
+}
+
+/* The folder chip gives up width first when the composer row gets tight. */
+.chat-project-context.is-compact {
+  max-width: 120px;
+}
+
+.composer-model-trigger {
+  max-width: 220px;
+  overflow: hidden;
+  justify-content: flex-start;
+}
+
+.composer-model-trigger.is-compact {
+  max-width: 140px;
+}
+
+.composer-model-trigger.is-narrow {
+  width: 100%;
+  max-width: 100%;
+  padding: 8px 10px;
+}
+
+.composer-compact-error {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 50;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-popover);
+  color: var(--danger);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.composer-bash-note {
+  margin-top: 4px;
+  color: var(--accent);
+}
+
+.composer-bash-note.is-muted {
+  color: var(--text-muted);
+}
+
 /* Pasted-text chips and image attachments --------------------------------- */
 .composer-paste-row {
   display: flex;
@@ -4708,6 +4833,76 @@ span.linenumber {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   object-fit: cover;
+}
+
+/* Send / stop ------------------------------------------------------------- */
+.composer-send-row {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  align-self: flex-end;
+  gap: 6px;
+}
+
+.composer-send-button {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  align-self: flex-end;
+  gap: 6px;
+  padding: 0 14px;
+  letter-spacing: -0.01em;
+}
+
+.composer-stop-button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background 120ms var(--ease-native);
+}
+
+.composer-stop-button:hover {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+/* Context-usage ring (components/ContextUsageRing.tsx) -------------------- */
+.context-usage-ring {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+  transition:
+    background 120ms var(--ease-native),
+    opacity 120ms var(--ease-native);
+}
+
+/* Dimmed and inert until the agent reports a context window. */
+.context-usage-ring:not(.is-dim):hover {
+  background: var(--bg-hover);
+}
+
+.context-usage-ring.is-dim {
+  opacity: 0.5;
+}
+
+.context-usage-ring.is-inert {
+  cursor: default;
 }
 
 /* -- H3: message view (MessageView.tsx) ----------------------------------- */

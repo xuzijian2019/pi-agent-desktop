@@ -1668,7 +1668,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         padding: "0 16px 8px",
       }}
     >
-      <div className="chat-composer-wrap" style={{ maxWidth: 820, margin: "0 auto" }}>
+      <div className="chat-composer-wrap">
         <ModelErrorBanner error={modelError} />
         <ModelScopeWarningBanner
           warnings={modelScopeWarnings}
@@ -1752,11 +1752,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             borderRadius: "var(--radius-sm)", fontSize: 12, color: "rgba(180,130,0,0.9)",
             display: "flex", alignItems: "center", gap: 6,
           }}>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon">
               <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
               <path d="M3 3v5h5" />
             </svg>
-             {t("chat.retrying", { attempt: retryInfo.attempt, max: retryInfo.maxAttempts })}{retryInfo.errorMessage && <span style={{ opacity: 0.7, marginLeft: 4 }}>— {retryInfo.errorMessage}</span>}
+             {t("chat.retrying", { attempt: retryInfo.attempt, max: retryInfo.maxAttempts })}{retryInfo.errorMessage && <span className="composer-status-detail">— {retryInfo.errorMessage}</span>}
           </div>
         )}
         {compactResultText && (
@@ -1766,7 +1766,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             borderRadius: "var(--radius-sm)", fontSize: 12, color: "rgba(5,150,105,0.95)",
             display: "flex", alignItems: "center", gap: 6,
           }}>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon">
               <polyline points="20 6 9 17 4 12" />
             </svg>
             {compactResultText}
@@ -2151,7 +2151,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               border: `1px solid ${bashMode ? "var(--tool-bg)" : isStreaming && (onSteer || onFollowUp)
                 ? "rgba(234,179,8,0.4)"
                 : "color-mix(in srgb, var(--border) 70%, transparent)"}`,
-              borderRadius: 14,
+              borderRadius: "var(--radius-lg)",
               padding: "10px 10px 10px 14px",
               boxShadow: "0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -12px rgba(15,23,42,0.10)",
               transition: "border-color 0.15s, background 0.15s, box-shadow 0.15s",
@@ -2213,25 +2213,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           />
 
           {isStreaming ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, alignSelf: "flex-end" }}>
+            <div className="composer-send-row">
               {onAbort && (
                 <button
                   onClick={onAbort}
                   title={t("chat.stopAgent")}
                   aria-label={t("chat.stopAgent")}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 5,
-                    padding: "7px 12px",
-                    background: "color-mix(in srgb, var(--danger) 8%, transparent)",
-                    border: "1px solid color-mix(in srgb, var(--danger) 30%, transparent)",
-                    borderRadius: 8,
-                    color: "var(--danger)",
-                    cursor: "pointer",
-                    fontSize: 13, fontWeight: 600, letterSpacing: "-0.01em",
-                    transition: "background 0.12s",
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "color-mix(in srgb, var(--danger) 16%, transparent)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "color-mix(in srgb, var(--danger) 8%, transparent)"; }}
+                  className="composer-stop-button"
                 >
                   <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
                     <rect x="1.5" y="1.5" width="7" height="7" rx="1.5" fill="currentColor" />
@@ -2247,21 +2235,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 }}
                 disabled={isStreaming ? !canQueueStreamingMessage : (!value.trim() && !attachedImages.length)}
                 title={isStreaming && onFollowUp ? (attachedImages.length ? t("chat.imagesCannotQueue") : t("chat.followUpTitle")) : undefined}
-                style={{
-                  flexShrink: 0,
-                  display: "flex", alignItems: "center", gap: 6,
-                  padding: "7px 14px",
-                  background: (isStreaming ? canQueueStreamingMessage : (value.trim() || attachedImages.length)) ? "var(--accent)" : "var(--bg-panel)",
-                  border: "none",
-                  borderRadius: 8,
-                  color: (isStreaming ? canQueueStreamingMessage : (value.trim() || attachedImages.length)) ? "var(--accent-contrast)" : "var(--text-dim)",
-                  cursor: (isStreaming ? canQueueStreamingMessage : (value.trim() || attachedImages.length)) ? "pointer" : "not-allowed",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  letterSpacing: "-0.01em",
-                  boxShadow: (isStreaming ? canQueueStreamingMessage : (value.trim() || attachedImages.length)) ? "0 1px 3px var(--focus-ring)" : "none",
-                  transition: "background 0.15s, box-shadow 0.15s",
-                }}
               >
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="2" y1="7" x2="11" y2="7" />
@@ -2275,22 +2248,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               className="native-primary-button composer-send-button"
               onClick={handleSend}
               disabled={!value.trim() && !attachedImages.length}
-              style={{
-                flexShrink: 0,
-                alignSelf: "flex-end",
-                display: "flex", alignItems: "center", gap: 6,
-                padding: "7px 14px",
-                background: (value.trim() || attachedImages.length) ? "var(--accent)" : "var(--bg-panel)",
-                border: "none",
-                borderRadius: 8,
-                color: (value.trim() || attachedImages.length) ? "var(--accent-contrast)" : "var(--text-dim)",
-                cursor: (value.trim() || attachedImages.length) ? "pointer" : "not-allowed",
-                fontSize: 13,
-                fontWeight: 600,
-                letterSpacing: "-0.01em",
-                boxShadow: (value.trim() || attachedImages.length) ? "0 1px 3px var(--focus-ring)" : "none",
-                transition: "background 0.15s, box-shadow 0.15s",
-              }}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="2" y1="7" x2="11" y2="7" />
@@ -2303,29 +2260,22 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
         {/* Bash mode status label */}
         {bashMode && (
-          <div className="text-xs px-2 py-1" style={{ color: bashExcluded ? "var(--text-muted)" : "var(--accent)", marginTop: 4 }}>
+          <div className={`text-xs px-2 py-1 composer-bash-note${bashExcluded ? " is-muted" : ""}`}>
              {t("chat.shell")} · {bashExcluded ? t("chat.outputLocal") : t("chat.outputModel")}
           </div>
         )}
 
         {preparationError && <div role="alert">{preparationError}</div>}
         {/* Bottom bar: left | center (context) | right */}
-        <div className="chat-composer-controls" style={{
-          marginTop: 8,
-          display: isNarrow ? "grid" : "flex",
-          gridTemplateColumns: isNarrow ? "minmax(0, 1fr) auto" : undefined,
-          alignItems: "center",
-          gap: 6,
-        }}>
+        <div className={`chat-composer-controls${isNarrow ? " is-narrow" : ""}`}>
 
           {/* LEFT: project context + model selector (idle) or steer/followup toggle (streaming) */}
-          <div style={{ flex: "1 1 auto", minWidth: 0, display: "flex", alignItems: "center", gap: 2 }}>
+          <div className="composer-controls-left">
             {projectLabel && (
-              <div ref={projectDropdownRef} style={{ position: "relative", flexShrink: 0 }}>
+              <div ref={projectDropdownRef} className="composer-anchor is-static">
                 <button
                   type="button"
-                  className="chat-project-context"
-                  style={{ maxWidth: isCompact ? 120 : 170 }}
+                  className={`chat-project-context${isCompact ? " is-compact" : ""}`}
                   title={`${t("chat.switchProject")} · ${t("chat.currentProject", { path: projectPath ?? projectLabel })}`}
                   aria-label={t("chat.currentProject", { path: projectPath ?? projectLabel })}
                   aria-haspopup={projectOptions.length > 0 && onProjectChange ? "menu" : undefined}
@@ -2408,9 +2358,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {cwd && onBranchNavigate && <BranchControl key={draftKey} cwd={cwd} onNavigate={onBranchNavigate} />}{sendPreview}
             {/* Model selector — visible always, disabled during streaming */}
             {(modelOptions.length > 0 || currentName || modelError) && onModelChange && (
-                <div ref={dropdownRef} style={{ position: "relative", flex: isNarrow ? "1 1 auto" : undefined, minWidth: 0 }}>
+                <div ref={dropdownRef} className={`composer-anchor composer-model-anchor${isNarrow ? " is-narrow" : ""}`}>
                   <button
-                    className="native-toolbar-button"
+                    className={`native-toolbar-button composer-toolbar-chip composer-model-trigger${isNarrow ? " is-narrow" : isCompact ? " is-compact" : ""}${modelDropdownOpen ? " is-open" : ""}`}
                     onClick={(e) => {
                       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                       setModelDropdownRect({ top: rect.top, left: rect.left, width: rect.width });
@@ -2420,23 +2370,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       });
                     }}
                     disabled={isStreaming}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 6,
-                      justifyContent: isNarrow ? "flex-start" : undefined,
-                      padding: isNarrow ? "8px 10px" : "8px 12px",
-                      height: 32,
-                      width: isNarrow ? "100%" : undefined,
-                      maxWidth: isNarrow ? "100%" : isCompact ? 140 : 220,
-                      overflow: "hidden",
-                      background: modelDropdownOpen ? "var(--bg-hover)" : "none",
-                      border: "none",
-                      borderRadius: 9,
-                      color: "var(--text-muted)",
-                      cursor: isStreaming ? "not-allowed" : "pointer",
-                      fontSize: 12,
-                      opacity: isStreaming ? 0.5 : 1,
-                      transition: "background 0.12s, color 0.12s",
-                    }}
                     onMouseEnter={(e) => {
                       if (isStreaming) return;
                       e.currentTarget.style.background = "var(--bg-hover)";
@@ -2456,7 +2389,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       <line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" />
                       <line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" />
                     </svg>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+                    <span className="composer-ellipsis">
                       {currentName ?? (modelOptions.length > 0 ? "Select model" : "No models")}
                     </span>
                   </button>
@@ -2561,17 +2494,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           </div>
 
           {/* spacer */}
-          {!isNarrow && <div style={{ flex: 1 }} />}
+          {!isNarrow && <div className="composer-controls-spacer" />}
 
           {/* RIGHT: thinking + tools preset + compact (idle) */}
-          <div ref={controlsMenuRef} style={{
-            flex: "0 0 auto",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "flex-end",
-            position: "relative",
-            marginLeft: isNarrow ? 0 : "auto",
-          }}>
+          <div ref={controlsMenuRef} className={`composer-controls-right${isNarrow ? " is-narrow" : ""}`}>
             {isNarrow && (
               <button
                 type="button"
@@ -2594,7 +2520,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   padding: "8px 10px",
                   background: "none",
                   border: "none",
-                  borderRadius: 9,
+                  borderRadius: "var(--radius-sm)",
                   color: "var(--text-muted)",
                   cursor: controlsMenuOpen ? "default" : "pointer",
                   fontSize: 12,
@@ -2632,34 +2558,20 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 flexWrap: "nowrap",
                 justifyContent: "flex-end",
                 border: "1px solid color-mix(in srgb, var(--border) 72%, transparent)",
-                borderRadius: 10,
+                borderRadius: "var(--radius-md)",
                 background: "color-mix(in srgb, var(--bg-panel) 92%, var(--bg))",
                 boxShadow: "0 8px 24px rgba(0,0,0,0.14)",
                 backdropFilter: "blur(10px)",
               } : null),
             }}>
             {!isStreaming && onThinkingLevelChange && (
-              <div ref={thinkingDropdownRef} style={{ position: "relative" }}>
+              <div ref={thinkingDropdownRef} className="composer-anchor">
                 <button
-                  className="native-toolbar-button"
+                  className={`native-toolbar-button composer-toolbar-chip${isCompact && !controlsMenuOpen ? " is-icon-only" : ""}${thinkingDropdownOpen ? " is-open" : ""}`}
                   onClick={() => !isStreaming && setThinkingDropdownOpen((v) => !v)}
                   disabled={isStreaming}
                    title={t("chat.changeReasoning", { level: thinkingDisplayLabel })}
                    aria-label={t("chat.changeReasoningLabel")}
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                    padding: (isCompact && !controlsMenuOpen) ? "0 6px" : "8px 12px",
-                    width: (isCompact && !controlsMenuOpen) ? 32 : undefined,
-                    height: 32,
-                    background: thinkingDropdownOpen ? "var(--bg-hover)" : "none",
-                    border: "none",
-                    borderRadius: 9,
-                    color: "var(--text-muted)",
-                    cursor: isStreaming ? "not-allowed" : "pointer",
-                    fontSize: 12,
-                    opacity: isStreaming ? 0.5 : 1,
-                    transition: "background 0.12s, color 0.12s",
-                  }}
                   onMouseEnter={(e) => {
                     if (isStreaming) return;
                     e.currentTarget.style.background = "var(--bg-hover)";
@@ -2675,7 +2587,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     <line x1="7" y1="18" x2="12" y2="18" />
                     <line x1="8" y1="21" x2="11" y2="21" />
                   </svg>
-                  {(!isCompact || controlsMenuOpen) && <span style={{ whiteSpace: "nowrap" }}>{thinkingDisplayLabel}</span>}
+                  {(!isCompact || controlsMenuOpen) && <span className="composer-nowrap">{thinkingDisplayLabel}</span>}
                 </button>
                 {thinkingDropdownOpen && (() => {
                   const vh = typeof window !== "undefined" ? window.visualViewport?.height ?? window.innerHeight : 800;
@@ -2721,27 +2633,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </div>
             )}
             {!isStreaming && onToolPresetChange && (
-              <div ref={toolDropdownRef} style={{ position: "relative" }}>
+              <div ref={toolDropdownRef} className="composer-anchor">
                 <button
-                  className="native-toolbar-button"
+                  className={`native-toolbar-button composer-toolbar-chip${isCompact && !controlsMenuOpen ? " is-icon-only" : ""}${toolDropdownOpen ? " is-open" : ""}`}
                   onClick={() => !isStreaming && setToolDropdownOpen((v) => !v)}
                   disabled={isStreaming}
                    title={t("chat.changeToolPreset") + `: ${toolPresetLabel}`}
                    aria-label={t("chat.changeToolPreset")}
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                    padding: (isCompact && !controlsMenuOpen) ? "0 6px" : "8px 12px",
-                    width: (isCompact && !controlsMenuOpen) ? 32 : undefined,
-                    height: 32,
-                    background: toolDropdownOpen ? "var(--bg-hover)" : "none",
-                    border: "none",
-                    borderRadius: 9,
-                    color: "var(--text-muted)",
-                    cursor: isStreaming ? "not-allowed" : "pointer",
-                    fontSize: 12,
-                    opacity: isStreaming ? 0.5 : 1,
-                    transition: "background 0.12s, color 0.12s",
-                  }}
                   onMouseEnter={(e) => {
                     if (isStreaming) return;
                     e.currentTarget.style.background = "var(--bg-hover)";
@@ -2755,7 +2653,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
                   </svg>
-                  {(!isCompact || controlsMenuOpen) && <span style={{ whiteSpace: "nowrap" }}>{toolPresetLabel}</span>}
+                  {(!isCompact || controlsMenuOpen) && <span className="composer-nowrap">{toolPresetLabel}</span>}
                 </button>
                 {toolDropdownOpen && (() => {
                   const vh = typeof window !== "undefined" ? window.visualViewport?.height ?? window.innerHeight : 800;
@@ -2797,15 +2695,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             )}
 
             {!isStreaming && onCompact && hasTranscript && (
-              <div style={{ position: "relative" }}>
+              <div className="composer-anchor">
                 {compactError && (
-                  <div style={{
-                    position: "absolute", bottom: "calc(100% + 6px)", right: 0,
-                    background: "#1f2937", color: "var(--danger)",
-                    fontSize: 11, padding: "4px 8px", borderRadius: 5,
-                    whiteSpace: "nowrap", pointerEvents: "none",
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.2)", zIndex: 50,
-                  }}>
+                  <div className="composer-compact-error">
                     {compactError}
                   </div>
                 )}
@@ -2820,7 +2712,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     height: 32,
                     background: isCompacting ? "color-mix(in srgb, var(--danger) 8%, transparent)" : "none",
                     border: "none",
-                    borderRadius: 9,
+                    borderRadius: "var(--radius-sm)",
                     color: isCompacting ? "var(--danger)" : "var(--text-muted)",
                     cursor: (isStreaming && !isCompacting) ? "not-allowed" : "pointer",
                     fontSize: 12, opacity: (isStreaming && !isCompacting) ? 0.5 : 1,
@@ -2839,12 +2731,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                    aria-label={isCompacting ? t("chat.stopCompaction") : t("chat.compactContext")}
                 >
                   {isCompacting ? (
-                    <><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="2" y="2" width="6" height="6" rx="1" fill="currentColor" /></svg>{(!isCompact || controlsMenuOpen) && <span style={{ whiteSpace: "nowrap" }}>{t("chat.compacting")}</span>}</>
+                    <><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="2" y="2" width="6" height="6" rx="1" fill="currentColor" /></svg>{(!isCompact || controlsMenuOpen) && <span className="composer-nowrap">{t("chat.compacting")}</span>}</>
                   ) : (
                     <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" />
                       <line x1="10" y1="14" x2="3" y2="21" /><line x1="21" y1="3" x2="14" y2="10" />
-                    </svg>{(!isCompact || controlsMenuOpen) && <span style={{ whiteSpace: "nowrap" }}>{t("chat.compact")}</span>}</>
+                    </svg>{(!isCompact || controlsMenuOpen) && <span className="composer-nowrap">{t("chat.compact")}</span>}</>
                   )}
                 </button>
               </div>
@@ -2872,7 +2764,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   background: "var(--bg-hover)",
                   border: "none",
                   borderLeft: "1px solid color-mix(in srgb, var(--border) 72%, transparent)",
-                  borderRadius: "0 9px 9px 0",
+                  borderRadius: "0 var(--radius-sm) var(--radius-sm) 0",
                   color: "var(--text)",
                   cursor: "pointer",
                   transition: "background 0.12s, color 0.12s",

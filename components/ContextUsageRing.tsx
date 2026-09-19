@@ -72,21 +72,7 @@ export function ContextUsageRing({ contextUsage, sessionStats, onOpenStats }: Co
       onClick={() => {
         if (hasUsage) onOpenStats?.();
       }}
-      style={{
-        display: "flex", alignItems: "center", justifyContent: "center",
-        width: 28, height: 28, padding: 0, flexShrink: 0,
-        background: "none", border: "none", borderRadius: 9,
-        cursor: hasUsage && onOpenStats ? "pointer" : "default",
-        transition: "background 0.12s, opacity 0.12s",
-        opacity: hasUsage ? 1 : 0.5,
-      }}
-      onMouseEnter={(e) => {
-        if (!hasUsage) return;
-        e.currentTarget.style.background = "var(--bg-hover)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.background = "none";
-      }}
+      className={`context-usage-ring${hasUsage ? "" : " is-dim"}${hasUsage && onOpenStats ? "" : " is-inert"}`}
     >
       <svg width={RING_SIZE} height={RING_SIZE} viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`} aria-hidden="true">
         <circle cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={RING_RADIUS} fill="none" stroke="var(--border)" strokeWidth={RING_STROKE} />
