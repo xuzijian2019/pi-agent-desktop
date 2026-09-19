@@ -33,7 +33,7 @@ export const workbenchEn = {
   "wb.changes": "Changes",
   "wb.activity": "Activity",
   "wb.tasks": "Saved Tasks",
-  "wb.outputs": "Outputs",
+  "wb.pinned": "Pinned",
   "wb.context": "Context",
   "wb.closePanel": "Close panel",
   "wb.filter": "Filter",
@@ -121,7 +121,7 @@ export const workbenchEn = {
   "wb.searchOutputs": "Search outputs",
   "wb.showHidden": "Show hidden",
   "wb.loading": "Loading…",
-  "wb.noOutputs": "No outputs yet. Pin a file or link a deliverable in a response.",
+  "wb.noPins": "No pinned files match this filter.",
   "wb.currentFile": "Current file",
   "wb.changed": "Changed since added",
   "wb.otherBranch": "Other branch",
@@ -168,7 +168,7 @@ export const workbenchEn = {
   "wb.replaceDraft": "Replace draft",
   "wb.appendPrompt": "Append task prompt",
   "wb.backOutputs": "Back to outputs",
-  "wb.pinOutputs": "Pin to outputs",
+  "wb.pinOutputs": "Pin",
   "wb.saveAsTask": "Save as task"
 };
 export const workbenchZh = {
@@ -206,7 +206,7 @@ export const workbenchZh = {
   "wb.changes": "更改",
   "wb.activity": "活动",
   "wb.tasks": "任务模板",
-  "wb.outputs": "产出",
+  "wb.pinned": "已固定",
   "wb.context": "上下文",
   "wb.closePanel": "关闭面板",
   "wb.filter": "筛选",
@@ -294,7 +294,7 @@ export const workbenchZh = {
   "wb.searchOutputs": "搜索产出",
   "wb.showHidden": "显示隐藏项",
   "wb.loading": "加载中…",
-  "wb.noOutputs": "暂无产出。可固定文件或在回答中链接交付文件。",
+  "wb.noPins": "没有符合筛选条件的固定文件。",
   "wb.currentFile": "当前文件",
   "wb.changed": "添加后已更改",
   "wb.otherBranch": "其他对话分支",
@@ -341,6 +341,6 @@ export const workbenchZh = {
   "wb.replaceDraft": "替换草稿",
   "wb.appendPrompt": "追加任务提示词",
   "wb.backOutputs": "返回产出",
-  "wb.pinOutputs": "固定到产出",
+  "wb.pinOutputs": "固定",
   "wb.saveAsTask": "保存为任务模板"
 };

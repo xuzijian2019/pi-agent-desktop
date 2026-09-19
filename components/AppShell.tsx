@@ -5,7 +5,7 @@ import type { TranscriptPreview } from "@/lib/transcript-types";
 import { PanelModeSelector } from "./workbench/PanelModeSelector";
 import { ActivityPanel } from "./workbench/ActivityPanel";
 import { SavedTasksPanel, type TaskSeed } from "./workbench/SavedTasksPanel";
-import { OutputsPanel } from "./workbench/OutputsPanel";
+import { PinnedSection } from "./workbench/PinnedSection";
 import { ContextPanel } from "./workbench/ContextPanel";
 import { ChangesSection } from "./workbench/ChangesSection";
 import { panelMode, type PanelMode } from "@/lib/panel-modes";
@@ -134,9 +134,11 @@ export function AppShell() {
   const [taskConflict, setTaskConflict] = useState<{ task: SavedTask; cwd: string; draft: ChatDraft; generation: number }>();
   const [workbenchError, setWorkbenchError] = useState("");
   const openMode = useCallback((mode: PanelMode) => { setRightPanelMode(mode); setRightPanelOpen(true); }, []);
+  // Pinning no longer switches panels: it opens Files with the Pinned section out.
+  const revealPins = useCallback(() => { setPinnedExpanded(true); openMode("files"); }, [openMode]);
   const [reviewFilePath, setReviewFilePath] = useState<string | null>(null);
   const [changesExpanded, setChangesExpanded] = useState(false);
-  const [fromOutputs, setFromOutputs] = useState(false);
+  const [pinnedExpanded, setPinnedExpanded] = useState(false);
 
   const [mobileSidebarReady, setMobileSidebarReady] = useState(false);
   // The desktop window has no native title bar. macOS keeps its traffic lights
@@ -863,10 +865,10 @@ export function AppShell() {
   }, [openMode, translate]);
   useEffect(() => {
     const save = (event: Event) => { const text = (event as CustomEvent).detail.text; const setup = chatInputRef.current?.currentSetup() ?? { model: null, effort: "inherit" as const, tools: "inherit" as const }; setTaskSeed({ nonce: Date.now(), prompt: taskPromptFromDraft({ value: text, images: [] }), ...setup }); openMode("tasks"); };
-    const pin = async (event: Event) => { if (!selectedSession) { setWorkbenchError(translate("wb.selectSession")); return; } try { await uiFetch(`/api/sessions/${selectedSession.id}/outputs`, { path: (event as CustomEvent).detail.path, pinned: true, leafId: branchActiveLeafId }); window.dispatchEvent(new Event("pi-output-changed")); openMode("outputs"); } catch (e) { setWorkbenchError(String(e)); } };
+    const pin = async (event: Event) => { if (!selectedSession) { setWorkbenchError(translate("wb.selectSession")); return; } try { await uiFetch(`/api/sessions/${selectedSession.id}/outputs`, { path: (event as CustomEvent).detail.path, pinned: true, leafId: branchActiveLeafId }); window.dispatchEvent(new Event("pi-output-changed")); revealPins(); } catch (e) { setWorkbenchError(String(e)); } };
     window.addEventListener("pi-save-task-message", save); window.addEventListener("pi-pin-output", pin);
     return () => { window.removeEventListener("pi-save-task-message", save); window.removeEventListener("pi-pin-output", pin); };
-  }, [openMode, selectedSession, branchActiveLeafId, translate]);
+  }, [openMode, revealPins, selectedSession, branchActiveLeafId, translate]);
   const openActivitySession = useCallback(async (id: string, focus = false) => {
     const generation = ++navigationGeneration.current;
     try { const data = await uiFetch<{ sessions: SessionInfo[] }>("/api/sessions"); const session = data.sessions.find(s => s.id === id); if (generation !== navigationGeneration.current) return; if (!session) throw new Error(translate("wb.sessionMissing")); handleSelectSession(session); if (focus) requestAnimationFrame(() => chatInputRef.current?.focus()); }
@@ -875,9 +877,9 @@ export function AppShell() {
   const pinActiveOutput = useCallback(async () => {
     const file = fileTabs.find(tab => tab.id === activeFileTabId);
     if (!selectedSession || !file) return;
-    try { await uiFetch(`/api/sessions/${selectedSession.id}/outputs`, { path: file.filePath, pinned: true, leafId: branchActiveLeafId }); window.dispatchEvent(new Event("pi-output-changed")); openMode("outputs"); }
+    try { await uiFetch(`/api/sessions/${selectedSession.id}/outputs`, { path: file.filePath, pinned: true, leafId: branchActiveLeafId }); window.dispatchEvent(new Event("pi-output-changed")); revealPins(); }
     catch (e) { setWorkbenchError(String(e)); }
-  }, [selectedSession, fileTabs, activeFileTabId, branchActiveLeafId, openMode]);
+  }, [selectedSession, fileTabs, activeFileTabId, branchActiveLeafId, revealPins]);
   useEffect(() => {
     const refresh = () => setExplorerRefreshKey(k => k + 1);
     window.addEventListener("pi-git-changed", refresh); return () => window.removeEventListener("pi-git-changed", refresh);
@@ -1825,10 +1827,8 @@ export function AppShell() {
           {taskConflict && <div className="workbench-card" role="dialog" aria-label={translate("wb.existingDraft")}><p>{translate("wb.existingDraft")}</p><button onClick={() => setTaskConflict(undefined)}>{translate("wb.keepDraft")}</button><button onClick={() => applySavedTask(taskConflict.task, taskConflict.cwd, taskConflict.draft, false, taskConflict.generation)}>{translate("wb.replaceDraft")}</button><button onClick={() => applySavedTask(taskConflict.task, taskConflict.cwd, taskConflict.draft, true, taskConflict.generation)}>{translate("wb.appendPrompt")}</button></div>}
           <SavedTasksPanel visible={rightPanelOpen && rightPanelMode === "tasks"} cwd={activeCwd} seed={taskSeed} onUse={useSavedTask} onCapture={captureTask} />
         </div>
-        <div hidden={rightPanelMode !== "outputs"} className="workbench-mode-body"><OutputsPanel visible={rightPanelOpen && rightPanelMode === "outputs"} sessionId={selectedSession?.id ?? null} title={selectedSession?.name || selectedSession?.firstMessage} leafId={branchActiveLeafId} refreshKey={refreshKey} onOpen={path => { setFromOutputs(true); handleOpenFile(path, getFileName(path), { sourceSessionId: selectedSession?.id }); }} onMessage={(entryId, leafId) => { if (leafId !== branchActiveLeafId) handleBranchLeafChange(leafId); window.dispatchEvent(new CustomEvent("pi-reveal-entry", { detail: { sessionId: selectedSession?.id, entryId } })); }} /></div>
         <div hidden={rightPanelMode !== "context"} className="workbench-mode-body"><ContextPanel visible={rightPanelOpen && rightPanelMode === "context"} inputRef={chatInputRef} revision={draftRevision} identity={selectedSession?.id ?? `new:${effectiveNewSessionCwd}`} systemPrompt={systemPrompt} /></div>
         <div hidden={rightPanelMode !== "files"} className="workbench-files-body">
-        {fromOutputs && <button onClick={() => openMode("outputs")}>{translate("wb.backOutputs")}</button>}
         <div className="right-panel-tab-strip">
           <div className="file-tab-bar-slot">
             <TabBar
@@ -1907,6 +1907,7 @@ export function AppShell() {
               </button>
             </div>
           </div>
+        <PinnedSection visible={rightPanelOpen && rightPanelMode === "files"} sessionId={selectedSession?.id ?? null} leafId={branchActiveLeafId} expanded={pinnedExpanded} onExpandedChange={setPinnedExpanded} refreshKey={refreshKey} onOpen={path => handleOpenFile(path, getFileName(path), { sourceSessionId: selectedSession?.id })} onMessage={(entryId, leafId) => { if (leafId !== branchActiveLeafId) handleBranchLeafChange(leafId); window.dispatchEvent(new CustomEvent("pi-reveal-entry", { detail: { sessionId: selectedSession?.id, entryId } })); }} />
         <ChangesSection visible={rightPanelOpen && rightPanelMode === "files"} cwd={activeCwdMissing ? null : activeCwd} expanded={changesExpanded} onExpandedChange={setChangesExpanded} selectedFilePath={reviewFilePath} refreshKey={explorerRefreshKey} />
         {/* Local files: preview on the left, project tree on the right. */}
         <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
