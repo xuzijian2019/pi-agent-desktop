@@ -469,6 +469,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // agent end) stay silent for them, so the transient "checking worktrees"
   // header row doesn't flash and shove the session list down and back up.
   const checkedWorktreeCwdsRef = useRef<Set<string>>(new Set());
+  // A cwd whose folder is gone answers 403 every time; stop the background poll
+  // for it (focus and an explicit refresh still retry).
+  const worktreeCwdUnreachableRef = useRef(false);
   useLayoutEffect(() => {
     if (!selectedCwd) {
       setWorktreeState(null);
@@ -485,6 +488,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         if (cancelled) return;
         checkedWorktreeCwdsRef.current.add(selectedCwd);
         setWorktreeLoadingCwd(null);
+        worktreeCwdUnreachableRef.current = Boolean(d.error) || !d.projectRoot;
         if (d.error || !d.projectRoot) {
           setWorktreeState(null);
           return;
@@ -499,6 +503,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       })
       .catch(() => {
         if (!cancelled) {
+          worktreeCwdUnreachableRef.current = true;
           setWorktreeLoadingCwd(null);
           setWorktreeState(null);
         }
@@ -514,7 +519,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const onVisible = () => {
       if (document.visibilityState === "visible") bump();
     };
-    const id = setInterval(onVisible, 10_000);
+    const id = setInterval(() => { if (!worktreeCwdUnreachableRef.current) onVisible(); }, 10_000);
     window.addEventListener("focus", bump);
     document.addEventListener("visibilitychange", onVisible);
     return () => {

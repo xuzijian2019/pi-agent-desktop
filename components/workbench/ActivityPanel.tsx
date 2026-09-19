@@ -3,12 +3,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { activeRun, type ActivityRun, type ActivitySnapshot } from "@/lib/activity-types";
 import { uiFetch } from "@/lib/web-ui-client";
+import { useGitInventory, WORKTREES } from "@/lib/git-inventory";
 
 type Row = ActivityRun & { checkout?: string };
 export function ActivityPanel({ visible, cwd, onOpen }: { visible: boolean; cwd: string | null; onOpen: (id: string, focus?: boolean) => void }) {
   const { t } = useI18n(); const [runs, setRuns] = useState<Row[]>([]);
   const [filter, setFilter] = useState("all"); const [projectOnly, setProjectOnly] = useState(false);
-  const [project, setProject] = useState<string>(); const [count, setCount] = useState(20);
+  // Only the "this project" filter needs it, and only while the panel is shown.
+  const project = useGitInventory(visible ? cwd : null, WORKTREES).projectRoot; const [count, setCount] = useState(20);
   const [error, setError] = useState(""); const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState<string>(); const [now, setNow] = useState(Date.now());
   const version = useRef({ epoch: "", version: -1 });
@@ -32,12 +34,6 @@ export function ActivityPanel({ visible, cwd, onOpen }: { visible: boolean; cwd:
     load();
     return () => { controller.abort(); source.close(); clearInterval(timer); window.removeEventListener("pi-git-changed", load); };
   }, [visible, accept, t]);
-  useEffect(() => {
-    const controller = new AbortController();
-    if (cwd) void uiFetch<{ projectRoot: string }>(`/api/worktrees?cwd=${encodeURIComponent(cwd)}`, undefined, undefined, controller.signal).then(d => setProject(d.projectRoot)).catch(() => {});
-    else setProject(undefined);
-    return () => controller.abort();
-  }, [cwd]);
   async function stop(run: Row) { setBusy(run.runId); setError(""); try { await uiFetch("/api/agent/activity/stop", { sessionId: run.sessionId, runId: run.runId }); } catch (e) { setError(String(e)); } finally { setBusy(undefined); } }
   const filtered = runs.filter(r => (!projectOnly || !!project && (r.projectRoot === project || r.cwd === project)) && (filter === "all" || filter === "running" && activeRun(r) || filter === "attention" && ["waiting", "failed", "interrupted"].includes(r.status) || filter === "recent" && !activeRun(r)));
   return <section className="workbench-content" aria-label={t("wb.activity")}>

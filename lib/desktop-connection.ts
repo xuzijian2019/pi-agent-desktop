@@ -8,6 +8,15 @@ import { relaunchAppNative } from "@/lib/desktop-native";
 export type DesktopConnectionState = "online" | "offline" | "checking";
 
 const PING_INTERVAL_MS = 8_000;
+// The browser build has no relaunch to offer and no packaged server to babysit,
+// so a healthy tab idles an order of magnitude slower than the desktop shell —
+// this probe was the single largest source of idle `/api/` traffic. It cannot
+// be switched off entirely: outside Tauri the banner is still the only way a
+// tab learns its server died (tests/e2e/server-recovery.spec.ts). A suspected
+// outage is confirmed on the short interval in either build, so detection and
+// recovery stay as fast as they were.
+const WEB_PING_INTERVAL_MS = 20_000;
+const RECHECK_INTERVAL_MS = 2_000;
 const OFFLINE_THRESHOLD = 2;
 
 /**
@@ -67,10 +76,11 @@ export function useDesktopConnection(enabled = true): {
   const schedule = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (!enabled || stoppedRef.current) return;
+    const healthy = failuresRef.current === 0;
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
       void probe().finally(() => schedule());
-    }, PING_INTERVAL_MS);
+    }, healthy ? (isTauriDesktop() ? PING_INTERVAL_MS : WEB_PING_INTERVAL_MS) : failuresRef.current < OFFLINE_THRESHOLD ? RECHECK_INTERVAL_MS : PING_INTERVAL_MS);
   }, [enabled, probe]);
 
   const retry = useCallback(() => {
