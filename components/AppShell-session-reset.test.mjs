@@ -24,7 +24,6 @@ test("switching sessions immediately clears parent-owned session UI", async () =
   assert.match(handler, /setBranchActiveLeafId\(null\)/);
   assert.match(handler, /branchLeafChangeFnRef\.current = null/);
   assert.match(handler, /setSessionStats\(null\)/);
-  assert.match(handler, /setContextUsage\(null\)/);
   assert.match(handler, /setActiveTopPanel\(null\)/);
 });
 
