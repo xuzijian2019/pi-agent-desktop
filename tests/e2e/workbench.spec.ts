@@ -258,6 +258,18 @@ test("pinned outputs use real files, open in place, and persist shelf metadata",
   // Unpinning empties the shelf, and the section disappears with it.
   await pinned.region.getByRole("button", { name: "Unpin", exact: true }).click();
   await expect(page.getByRole("region", { name: "Pinned", exact: true })).toHaveCount(0);
+
+  // Transcript/file pin actions intentionally have no shelf revision. They
+  // must still atomically repin metadata retained by the unpin operation.
+  await page.getByRole("button", { name: "Pin", exact: true }).click();
+  await expect(pinned.region.getByText("Final report", { exact: true })).toBeVisible();
+  const repinned = (await (await request.get(`/api/sessions/${id}/outputs`)).json()).items[0];
+  expect(repinned.pinned).toBe(true);
+  expect(repinned.revision).toBeGreaterThan(item.revision);
+  for (const edit of [{ label: "stale rename" }, { hidden: false }, { pinned: false }]) {
+    const rejected = await request.patch(`/api/sessions/${id}/outputs`, { data: { path: output, revision: item.revision, ...edit } });
+    expect(rejected.status()).toBe(409);
+  }
 });
 
 test("branch creation and real Bash activity work without a model", async ({ page, request }) => {
