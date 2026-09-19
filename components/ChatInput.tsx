@@ -57,7 +57,7 @@ interface Props {
   onSend: (message: string, images?: AttachedImage[]) => void;
   onDraftChange?: () => void;
   onSetupChange?: (setup: TaskSetup) => void;
-  onOpenContext?: () => void;
+  sendPreview?: React.ReactNode;
   onOpenTasks?: () => void;
   onBranchNavigate?: (cwd: string) => void;
   onAbort: () => void;
@@ -550,7 +550,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   extensionStatuses = [],
   contextUsage,
   sessionStats,
-  onSessionStatsPanelOpen, onDraftChange, onSetupChange, onBranchNavigate,
+  onSessionStatsPanelOpen, onDraftChange, onSetupChange, onBranchNavigate, sendPreview,
 }: Props, ref) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
@@ -2641,7 +2641,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 )}
               </div>
             )}
-            {cwd && onBranchNavigate && <BranchControl key={draftKey} cwd={cwd} onNavigate={onBranchNavigate} />}
+            {cwd && onBranchNavigate && <BranchControl key={draftKey} cwd={cwd} onNavigate={onBranchNavigate} />}{sendPreview}
             {/* Model selector — visible always, disabled during streaming */}
             {(modelOptions.length > 0 || currentName || modelError) && onModelChange && (
                 <div ref={dropdownRef} style={{ position: "relative", flex: isNarrow ? "1 1 auto" : undefined, minWidth: 0 }}>

@@ -3525,93 +3525,6 @@ html.dark .sidebar-view-switcher-thumb {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
-.context-browser-panel {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-  background: var(--bg);
-}
-
-.context-browser-toolbar {
-  display: flex;
-  min-width: 0;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 5px;
-  padding: 7px 9px;
-  border-bottom: 1px solid var(--separator);
-  background: color-mix(in srgb, var(--bg) 88%, var(--surface));
-}
-
-.context-browser-icon-button,
-.context-browser-go-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 28px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  font: inherit;
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.context-browser-icon-button {
-  width: 28px;
-  padding: 0;
-  flex: 0 0 28px;
-}
-
-.context-browser-go-button {
-  padding: 0 10px;
-  background: var(--bg-panel);
-}
-
-.context-browser-icon-button:hover:not(:disabled),
-.context-browser-go-button:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
-.context-browser-icon-button:disabled {
-  color: var(--text-dim);
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.context-browser-address {
-  min-width: 0;
-  height: 28px;
-  flex: 1;
-  padding: 0 10px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  outline: none;
-  background: var(--bg-panel);
-  color: var(--text);
-  font: inherit;
-  font-size: 11px;
-}
-
-.context-browser-address:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
-}
-
-.context-browser-frame {
-  width: 100%;
-  min-height: 0;
-  flex: 1;
-  border: 0;
-  background: #fff;
-}
-
-.context-browser-empty,
 .context-diff-status {
   display: flex;
   min-height: 0;
@@ -3625,23 +3538,6 @@ html.dark .sidebar-view-switcher-thumb {
   font-size: 12px;
   line-height: 1.5;
   text-align: center;
-}
-
-.context-browser-empty strong {
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.context-browser-empty-icon {
-  display: flex;
-  width: 52px;
-  height: 52px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--separator);
-  border-radius: 14px;
-  background: var(--surface-muted);
-  color: var(--text-muted);
 }
 
 .context-diff-workspace {

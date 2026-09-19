@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
-import { getFileIcon } from "./FileIcons";
+import { getFileIcon } from "../FileIcons";
 import { getRelativeFilePath } from "@/lib/file-paths";
 import { parseUnifiedPatch } from "@/lib/patch";
 import { invalidateUiCache, uiFetch } from "@/lib/web-ui-client";
@@ -52,27 +52,55 @@ function FileDiff({ cwd, file, selected, refreshKey }: {
   </article>;
 }
 
-export function DiffPanel({ cwd, selectedFilePath, refreshKey = 0 }: {
-  cwd: string; selectedFilePath?: string | null; refreshKey?: number;
+/**
+ * Working-tree changes, collapsed by default, inside the Files panel. Replaces
+ * the standalone Diff panel mode: one place to look at a project's files,
+ * whether they changed or not.
+ */
+export function ChangesSection({ visible, cwd, expanded, onExpandedChange, selectedFilePath, refreshKey = 0 }: {
+  visible: boolean;
+  cwd: string | null;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
+  selectedFilePath?: string | null;
+  refreshKey?: number;
 }) {
   const { t } = useI18n();
+  const id = useId();
   const [status, setStatus] = useState<GitStatusResponse>();
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
+  // The count badge has to be right while the section is collapsed, so the
+  // status request follows panel visibility rather than the expanded state.
+  // Individual patches are still only fetched when a file row is opened.
   useEffect(() => {
+    if (!visible || !cwd) return;
     const controller = new AbortController();
     setError("");
     void uiFetch<GitStatusResponse>(`/api/git/status?cwd=${encodeURIComponent(cwd)}`, undefined, undefined, controller.signal)
       .then(setStatus).catch(e => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
-  }, [cwd, refreshKey, revision]);
-  return <section className="review-panel" aria-label={t("contextPanel.tabDiff")}>
-    <div className="review-summary">
-      <span>{t("wb.workingChanges")}</span>
-      {status && <span className="review-counts"><span className="review-added">+{status.additions}</span><span className="review-removed">−{status.deletions}</span></span>}
-      <button onClick={() => { invalidateUiCache("/api/git/"); setRevision(value => value + 1); }} aria-label={t("contextPanel.diffRefresh")} title={t("contextPanel.diffRefresh")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M20 11a8 8 0 1 0 2 5.3M20 4v7h-7" /></svg></button>
+  }, [visible, cwd, refreshKey, revision]);
+  useEffect(() => { setStatus(undefined); }, [cwd]);
+
+  if (!cwd) return null;
+  const files = status?.files ?? [];
+  const count = files.length;
+  return <section className="workbench-section" aria-label={t("wb.changes")}>
+    <div className="workbench-section-header">
+      <button type="button" className="workbench-section-toggle" aria-expanded={expanded} aria-controls={id} onClick={() => onExpandedChange(!expanded)}>
+        <svg className={expanded ? "is-expanded" : ""} width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" aria-hidden="true"><path d="m4 2 4 4-4 4" /></svg>
+        <span>{t("wb.changes")}</span>
+        {count > 0 && <span className="workbench-section-badge">{count}</span>}
+      </button>
+      {status && count > 0 && <span className="review-counts"><span className="review-added">+{status.additions}</span><span className="review-removed">−{status.deletions}</span></span>}
+      <button type="button" className="workbench-section-action" onClick={() => { invalidateUiCache("/api/git/"); setRevision(value => value + 1); }} aria-label={t("contextPanel.diffRefresh")} title={t("contextPanel.diffRefresh")}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M20 11a8 8 0 1 0 2 5.3M20 4v7h-7" /></svg>
+      </button>
     </div>
-    {error ? <p className="review-message" role="alert">{error}</p> : !status ? <p className="review-message">{t("files.loading")}</p> : !status.files.length ? <p className="review-message">{t("contextPanel.diffEmpty")}</p> :
-      status.files.map(file => <FileDiff key={file.filePath} cwd={cwd} file={file} selected={file.filePath === selectedFilePath} refreshKey={refreshKey + revision} />)}
+    {expanded && <div id={id} className="workbench-section-body">
+      {error ? <p className="review-message" role="alert">{error}</p> : !status ? <p className="review-message">{t("files.loading")}</p> : !count ? <p className="review-message">{t("contextPanel.diffEmpty")}</p> :
+        files.map(file => <FileDiff key={file.filePath} cwd={cwd} file={file} selected={file.filePath === selectedFilePath} refreshKey={refreshKey + revision} />)}
+    </div>}
   </section>;
 }

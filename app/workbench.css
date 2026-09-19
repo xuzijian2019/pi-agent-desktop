@@ -19,7 +19,6 @@
 .workbench-mode-body, .workbench-files-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
 .workbench-mode-body[hidden], .workbench-files-body[hidden] { display: none; }
 .workbench-files-body .right-panel-tab-strip { padding-right: 10px !important; background: var(--bg) !important; }
-.workbench-files-body > button { align-self: flex-start; margin: 8px 10px 0; }
 
 /* Content */
 .workbench-content { padding: 16px 20px 20px; overflow: auto; font-size: 13px; color: var(--text); }
@@ -84,6 +83,13 @@
 .workbench-branch-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workbench-branch-row > small { flex-shrink: 0; font-size: 11px; }
 .chat-composer-controls .workbench-branch-control { flex: 0 0 auto; max-width: 130px; }
+.workbench-send-preview { position: relative; flex: 0 0 auto; }
+.chat-composer-controls .workbench-send-preview > button { height: 32px; padding: 5px 9px; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-muted); font-size: 12px; white-space: nowrap; cursor: pointer; transition: background 120ms var(--ease-native), color 120ms var(--ease-native); }
+.chat-composer-controls .workbench-send-preview > button:hover, .chat-composer-controls .workbench-send-preview > button[aria-expanded="true"] { background: var(--bg-hover); color: var(--text); }
+.workbench-send-preview-popover { position: fixed; z-index: 100; padding: 12px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+.workbench-send-preview-popover > .workbench-toolbar { margin-top: 0; }
+.workbench-send-preview-popover > .workbench-toolbar > strong { font-size: 12px; font-weight: 600; }
+.workbench-send-preview-popover > .workbench-toolbar > button { margin-left: auto; width: 26px; height: 26px; min-height: 0; padding: 0; justify-content: center; background: transparent; color: var(--text-muted); font-size: 16px; }
 .chat-composer-controls .workbench-branch-control > button { display: block; max-width: 100%; height: 32px; padding: 5px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--text-muted); font-size: 12px; transition: background 120ms ease, color 120ms ease; }
 .chat-composer-controls .workbench-branch-control > button:hover, .chat-composer-controls .workbench-branch-control > button[aria-expanded="true"] { background: var(--bg-hover); color: var(--text); }
 
@@ -102,15 +108,30 @@
 @media (max-width: 600px) {
   .chat-composer-controls .workbench-branch-control { max-width: 68px; }
   .chat-composer-controls .workbench-branch-control > button { padding-inline: 5px; }
+  .chat-composer-controls .workbench-send-preview > button { padding-inline: 6px; }
   .chat-composer-controls .chat-project-context { max-width: 94px !important; }
   .workbench-content { padding: 14px 16px 16px; }
 }
 
-/* Review expands in place: one summary, then filenames and their patches. */
-.review-panel { padding: 0 0 20px; font-size: 13px; }
-.review-summary { display: flex; align-items: center; gap: 12px; padding: 12px 20px; color: var(--text-muted); font-size: 12px; font-weight: 550; }
-.review-summary > button { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin-left: auto; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--text-muted); cursor: pointer; transition: background 120ms ease, color 120ms ease; }
-.review-summary > button:hover, .review-file-heading:hover { background: var(--bg-hover); color: var(--text); }
+/* Collapsible sections inside Files: Changes and Pinned. Quiet by default —
+   a header row that reads as a label until it is opened. */
+.workbench-section { flex: 0 0 auto; border-bottom: 1px solid var(--separator); font-size: 13px; }
+.workbench-section-header { display: flex; align-items: center; gap: 8px; padding: 0 10px 0 4px; }
+.workbench-section-toggle { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; padding: 9px 8px; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-muted); font-size: 12px; font-weight: 550; text-align: left; cursor: pointer; transition: color 120ms var(--ease-native), background 120ms var(--ease-native); }
+.workbench-section-toggle:hover { background: var(--bg-hover); color: var(--text); }
+.workbench-section-toggle > svg { flex-shrink: 0; color: var(--text-dim); transition: transform 150ms var(--ease-native); }
+.workbench-section-toggle > svg.is-expanded { transform: rotate(90deg); }
+.workbench-section-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 6px; border-radius: var(--radius-sm); background: var(--bg-selected); color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.workbench-section-action { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 26px; height: 26px; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-dim); cursor: pointer; transition: color 120ms var(--ease-native), background 120ms var(--ease-native); }
+.workbench-section-action:hover { background: var(--bg-hover); color: var(--text); }
+.workbench-section-body { max-height: 46vh; overflow: auto; padding-bottom: 10px; scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+.workbench-section-body > .review-message, .workbench-section-body > .workbench-empty { padding: 20px 16px; color: var(--text-dim); font-size: 12px; text-align: center; }
+.workbench-section-body.workbench-content { padding-top: 4px; }
+.workbench-section-filter { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; color: var(--text-dim); font-size: 11.5px; white-space: nowrap; cursor: pointer; }
+.workbench-section-toggle:focus-visible, .workbench-section-action:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: -3px; }
+
+/* Review expands in place: filenames and their patches. */
+.review-file-heading:hover { background: var(--bg-hover); color: var(--text); }
 .review-counts { display: inline-flex; gap: 5px; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .review-added { color: var(--success); }
 .review-removed { color: var(--danger); }
@@ -131,9 +152,8 @@
 .review-line code { padding-right: 16px; font: inherit; }
 .review-hunk { padding: 6px 16px; color: var(--text-dim); font-size: 11px; white-space: pre; }
 .review-message { padding: 12px 20px; color: var(--text-muted); font-size: 12px; }
-.review-panel > .review-message { padding: 28px 16px; color: var(--text-dim); text-align: center; }
 .review-message[role="alert"] { color: var(--danger); }
-.review-file-heading:focus-visible, .review-summary button:focus-visible, .review-patch:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: -3px; }
+.review-file-heading:focus-visible, .review-patch:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: -3px; }
 
 /* Transcript search: result cards in the panel, a floating banner and an inline match in the chat. */
 .transcript-filters { display: flex; gap: 6px; margin-bottom: 14px; }
