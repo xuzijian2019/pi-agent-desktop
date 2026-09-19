@@ -84,6 +84,78 @@ test("saved task applies to a draft, preserves settings and restores the panel w
   await expect(composer).toHaveValue("Keep this draft plus a late edit\n\nReview this project carefully.");
 });
 
+test("loading a remotely saved draft restores references and setup atomically", async ({ page }) => {
+  const cwd = await project(page);
+  const composer = page.getByPlaceholder("Message…", { exact: false });
+  await composer.fill('stale #"Source A"');
+  await expect(page.getByText("Saving draft…", { exact: true })).toHaveCount(0);
+
+  const savedDraft = {
+    value: 'saved #"Source B"',
+    images: [],
+    texts: [],
+    references: { "Source B": { id: "source-b", leafId: "branch-b" } },
+    setup: { model: null, effort: "high", tools: "full" },
+  };
+  const publishSavedDraft = (draft: Record<string, unknown>) => page.evaluate(async ({ key, savedDraft }) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("pi-chat-drafts", 1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const revision = await new Promise<number>((resolve, reject) => {
+      const transaction = database.transaction("drafts", "readwrite");
+      const store = transaction.objectStore("drafts");
+      const get = store.get(key);
+      let nextRevision = 1;
+      get.onsuccess = () => {
+        nextRevision = (get.result?.revision ?? 0) + 1;
+        store.put({ revision: nextRevision, draft: savedDraft }, key);
+      };
+      transaction.oncomplete = () => resolve(nextRevision);
+      transaction.onerror = () => reject(transaction.error);
+    });
+    database.close();
+    const channel = new BroadcastChannel("pi-chat-drafts");
+    channel.postMessage({ key, revision });
+    channel.close();
+  }, { key: `new:${cwd}`, savedDraft: draft });
+  await publishSavedDraft(savedDraft);
+
+  const conflict = page.getByRole("status").filter({ hasText: "Draft changed in another tab" });
+  await expect(conflict).toBeVisible();
+  await conflict.getByRole("button", { name: "Load saved version" }).click();
+  await expect(composer).toHaveValue(savedDraft.value);
+  await expect(page.getByRole("button", { name: "Change reasoning level", exact: true })).toHaveAttribute("title", /high/);
+  await expect(page.getByRole("button", { name: "Change tool preset", exact: true })).toHaveAttribute("title", /full/);
+  await expect(conflict).toHaveCount(0);
+
+  const readSavedDraft = () => page.evaluate(async (key) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("pi-chat-drafts", 1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      return await new Promise((resolve, reject) => {
+        const request = database.transaction("drafts").objectStore("drafts").get(key);
+        request.onsuccess = () => resolve(request.result?.draft);
+        request.onerror = () => reject(request.error);
+      });
+    } finally { database.close(); }
+  }, `new:${cwd}`);
+  await expect.poll(readSavedDraft).toEqual(savedDraft);
+
+  const plainDraft = { value: "No saved overrides", images: [], texts: [] };
+  await publishSavedDraft(plainDraft);
+  await expect(conflict).toBeVisible();
+  await conflict.getByRole("button", { name: "Load saved version" }).click();
+  await expect(composer).toHaveValue(plainDraft.value);
+  await expect(page.getByRole("button", { name: "Change reasoning level", exact: true })).toHaveAttribute("title", /auto/i);
+  await expect(page.getByRole("button", { name: "Change tool preset", exact: true })).toHaveAttribute("title", /default/);
+  await expect.poll(readSavedDraft).toEqual({ ...plainDraft, references: {} });
+});
+
 test("the composer send preview keeps the reference snapshot and goes stale after edits", async ({ page, request }) => {
   await project(page);
   const input = page.getByPlaceholder("Message…", { exact: false });

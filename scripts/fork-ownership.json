@@ -88,9 +88,9 @@
     },
     "components/ChatInput.tsx": {
       "risk": "high",
-      "drift": 1840,
-      "reason": "Composer chrome restyle. Phase 3 stream H2 and Phase 4 part C together replaced 134 of the 136 inline style objects with classes in app/native-theme.css; the 2 that remain carry a measured popover position. Structural drift is 1044 against 1002 on main: +5 from the part C checkpoint (the per-tone banner colour constant and the queued-message recall button's pointer handlers), +3 from diff realignment across the remaining conversions, and +34 from dropping the onMouseEnter/onMouseLeave colour hacks on the composer controls, which the classifier scores as structural because it deletes upstream lines. That last 34 is isolated in a single commit. Upstream changed this file in v0.8.1, and components/ChatInput*.test.mjs plus tests/e2e/workbench.spec.ts cover it.",
-      "structuralDrift": 1011,
+      "drift": 1844,
+      "reason": "Composer chrome restyle. Phase 3 stream H2 and Phase 4 part C together replaced 134 of the 136 inline style objects with classes in app/native-theme.css; the 2 that remain carry a measured popover position. Structural drift is 1044 against 1002 on main: +5 from the part C checkpoint (the per-tone banner colour constant and the queued-message recall button's pointer handlers), +3 from diff realignment across the remaining conversions, and +34 from dropping the onMouseEnter/onMouseLeave colour hacks on the composer controls, which the classifier scores as structural because it deletes upstream lines. That last 34 is isolated in a single commit. Saved-draft restoration adds 4 structural lines, bringing the current measured structural drift to 1015. Upstream changed this file in v0.8.1, and components/ChatInput*.test.mjs plus tests/e2e/workbench.spec.ts cover it.",
+      "structuralDrift": 1015,
       "disposition": "accepted"
     },
     "components/MessageView.tsx": {
