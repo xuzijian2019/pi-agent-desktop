@@ -43,7 +43,7 @@ export function ActivityPanel({ visible, cwd, onOpen }: { visible: boolean; cwd:
   return <section className="workbench-content" aria-label={t("wb.activity")}>
     <h2 className="workbench-sr-only">{t("wb.activity")}</h2><div className="workbench-toolbar"><select aria-label={t("wb.filter")} value={filter} onChange={e => setFilter(e.target.value)}>{["all", "running", "attention", "recent"].map(v => <option key={v} value={v}>{t(`wb.${v}`)} ({runs.filter(r => v === "all" || v === "running" && activeRun(r) || v === "attention" && ["waiting", "failed", "interrupted"].includes(r.status) || v === "recent" && !activeRun(r)).length})</option>)}</select><label><input type="checkbox" checked={projectOnly} onChange={e => setProjectOnly(e.target.checked)} />{t("wb.thisProject")}</label></div>
     {!connected && <p role="status">{t("wb.reconnecting")}</p>}{error && <p role="alert">{error}</p>}
-    {!filtered.length && <p>{t("wb.noActivity")}</p>}
+    {!filtered.length && <p className="workbench-empty">{t("wb.noActivity")}</p>}
     {filtered.slice(0, count).map(run => {
       const shared = activeRun(run) ? runs.filter(r => r.sessionId !== run.sessionId && activeRun(r) && (r.checkout ?? r.cwd) === (run.checkout ?? run.cwd)) : [];
       return <article className="workbench-card" key={run.sessionId}>

@@ -123,6 +123,8 @@ export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelMode, setRightPanelMode] = useState<PanelMode>("files");
+  // Read by the project-switch effect: only the Files view empties on a project change.
+  const rightPanelModeRef = useRef(rightPanelMode); rightPanelModeRef.current = rightPanelMode;
   const [transcriptPreview, setTranscriptPreview] = useState<TranscriptPreview>();
   const closeTranscriptPreview = useCallback(() => setTranscriptPreview(undefined), []);
   const [draftRevision, setDraftRevision] = useState(0);
@@ -500,7 +502,7 @@ export function AppShell() {
     if (selectedSession && (selectedSession.projectRoot ?? selectedSession.cwd) === newProject) {
       setFileTabs([]);
       setActiveFileTabId(null);
-      setRightPanelOpen(false);
+      if (rightPanelModeRef.current === "files") setRightPanelOpen(false);
       return;
     }
     // Close any session that belongs to a different project — it no longer
@@ -521,7 +523,7 @@ export function AppShell() {
     // now-empty right panel.
     setFileTabs([]);
     setActiveFileTabId(null);
-    setRightPanelOpen(false);
+    if (rightPanelModeRef.current === "files") setRightPanelOpen(false);
     router.replace("/", { scroll: false });
   }, [router, selectedSession]);
 

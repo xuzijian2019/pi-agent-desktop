@@ -15,5 +15,5 @@ export function PanelActions({ children }: { children: ReactNode }) {
       event.preventDefault(); event.stopPropagation(); ref.current.open = false;
       ref.current.querySelector("summary")?.focus();
     }
-  }}><summary aria-label={t("wb.actions")}>···</summary><div>{children}</div></details>;
+  }}><summary aria-label={t("wb.actions")} title={t("wb.actions")}>···</summary><div className="native-popover">{children}</div></details>;
 }

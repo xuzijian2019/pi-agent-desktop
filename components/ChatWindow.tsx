@@ -351,7 +351,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
     };
     // Install this browser-native selector directly; the bundled CSS parser predates it.
     const style = document.createElement("style");
-    style.textContent = "::highlight(transcript-search-match) { background: #e0bd4870; color: inherit; }";
+    style.textContent = "::highlight(transcript-search-match) { background: color-mix(in srgb, var(--warning) 35%, transparent); color: inherit; }";
     document.head.appendChild(style);
     const observer = new MutationObserver(highlight); observer.observe(container, { childList: true, subtree: true }); highlight();
     return () => { observer.disconnect(); cancelAnimationFrame(frame); clearTranscriptHighlight(); style.remove(); };

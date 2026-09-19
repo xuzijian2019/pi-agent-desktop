@@ -47,7 +47,7 @@ export function BranchControl({ cwd, onNavigate }: { cwd: string; onNavigate: (c
   if (inventory?.isGit === false) return null;
   return <div className="workbench-branch-control" ref={anchor} onKeyDown={e => { if (e.key === "Escape" && open) { e.preventDefault(); e.stopPropagation(); setOpen(false); } }}>
     <button type="button" aria-haspopup="dialog" aria-expanded={open} onClick={() => { setOpen(v => !v); if (!open) void load().catch(e => setError(e.message)); }} title={cwd}>⑂ {inventory?.current || (inventory?.head ? `${t("wb.detached")} ${inventory.head.slice(0, 7)}` : t("wb.branch"))}</button>
-    {open && position && <div className="workbench-branch-popover workbench-content" style={position} role="dialog" aria-label={t("wb.branch")}>
+    {open && position && <div className="workbench-branch-popover workbench-content native-popover" style={position} role="dialog" aria-label={t("wb.branch")}>
       <div className="workbench-toolbar"><strong>{t("wb.branch")}</strong><button onClick={() => setOpen(false)} aria-label={t("wb.close")}>×</button></div>
       {error && <p role="alert">{error}</p>}
       {inventory?.isGit && <><small>{inventory.root}</small>

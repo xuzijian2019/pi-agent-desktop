@@ -47,7 +47,7 @@ export function TranscriptSearchPanel({ visible, onOpen }: { visible: boolean; o
     </form>
     {error && <p role="alert">{error}</p>}{busy && <p role="status">{t("wb.searching")}</p>}
     {result && <><small>{result.results.length} {t("wb.matches")} · {result.scanned}/{result.totalSessions} {t("wb.sessionsScanned")}</small>{result.skipped.length > 0 && <p role="status">{t("wb.searchSkipped", { count: result.skipped.length })}</p>}
-      {!result.results.length && !result.nextCursor && <p>{t("wb.noMatches")}</p>}
+      {!result.results.length && !result.nextCursor && <p className="workbench-empty">{t("wb.noMatches")}</p>}
       {result.results.map((hit, index) => <button className="transcript-hit" key={`${hit.sessionId}:${hit.entryId}:${hit.field}:${index}`} disabled={busy} onClick={async () => { request.current?.abort(); const controller = new AbortController(); request.current = controller; const current = ++generation.current; setError(""); setBusy(true); try { await onOpen(hit, submitted, controller.signal); } catch (e) { if (!controller.signal.aborted) setError(String(e)); } finally { if (current === generation.current) setBusy(false); } }}><strong>{hit.title}</strong><small>{hit.project.split(/[\\/]/).pop()} · {t(`wb.search_${hit.kind}`)}</small><span><HighlightedSnippet text={hit.snippet} query={submitted} /></span></button>)}
       {result.nextCursor && <button disabled={busy} onClick={() => void search(true)}>{t("wb.searchMore")}</button>}
     </>}
