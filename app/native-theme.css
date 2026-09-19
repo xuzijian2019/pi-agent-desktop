@@ -4170,10 +4170,12 @@ span.linenumber {
 /* -- H1: sidebar menus and popovers (SessionSidebar.tsx) ------------------ */
 
 /* Everything below replaces an inline style={{…}} object that used to live in
-   components/SessionSidebar.tsx. Declarations marked !important are there to
-   out-rank the blanket .native-popover button / input rules above, which
-   already won over the inline styles they replace — so the rendered result is
-   unchanged. Only positions computed at runtime stay inline. */
+   components/SessionSidebar.tsx. Radius and min-height are deliberately absent
+   from the controls inside the worktree popover: the blanket
+   `.native-popover button` rule above is more specific and already won over
+   the inline styles these classes replace, so restating them here would change
+   the rendering rather than preserve it. Only positions computed at runtime
+   stay inline. */
 
 /* Leading glyphs inside sidebar rows and menu items. */
 .sidebar-glyph,
@@ -4324,7 +4326,6 @@ span.linenumber {
   padding: 8px 10px;
   background: var(--bg);
   border: none;
-  border-radius: 0 !important;
   color: var(--text-muted);
   cursor: pointer;
   text-align: left;
@@ -4355,12 +4356,10 @@ span.linenumber {
   justify-content: center;
   width: 28px;
   height: 28px;
-  min-height: 0 !important;
   padding: 0;
   margin-right: 2px;
   background: none;
   border: none;
-  border-radius: var(--radius-sm) !important;
   color: var(--text-dim);
   cursor: pointer;
   transition:
@@ -4397,7 +4396,6 @@ span.linenumber {
 .sidebar-worktree-confirm-cancel {
   flex-shrink: 0;
   padding: 3px 9px;
-  border-radius: var(--radius-sm) !important;
   font-size: 11px;
   cursor: pointer;
 }
@@ -4425,7 +4423,6 @@ span.linenumber {
   padding: 8px 10px;
   background: none;
   border: none;
-  border-radius: 0 !important;
   color: var(--text-muted);
   cursor: pointer;
   text-align: left;
@@ -4461,8 +4458,6 @@ span.linenumber {
 .sidebar-form-branch {
   padding: 3px 6px;
   border: none;
-  border-radius: var(--radius-sm) !important;
-  min-height: 0 !important;
   background: transparent;
   color: var(--text-muted);
   font-family: var(--font-mono);
@@ -4485,7 +4480,6 @@ span.linenumber {
 .sidebar-form-cancel {
   flex: 1;
   padding: 4px 0;
-  border-radius: var(--radius-sm) !important;
   font-size: 11px;
   cursor: pointer;
 }
@@ -4712,7 +4706,6 @@ span.linenumber {
   padding: 0 8px;
   background: transparent;
   border: 0;
-  border-radius: var(--radius-md) !important;
   color: var(--text);
   cursor: pointer;
   font-size: 12.5px;
