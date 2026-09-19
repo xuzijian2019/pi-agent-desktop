@@ -5,6 +5,7 @@ import type { TranscriptPreview } from "@/lib/transcript-types";
 import { PanelModeSelector } from "./workbench/PanelModeSelector";
 import { ActivityPanel } from "./workbench/ActivityPanel";
 import { SavedTasksPanel, type TaskSeed } from "./workbench/SavedTasksPanel";
+import { NewTaskGuide } from "./workbench/NewTaskGuide";
 import { PinnedSection } from "./workbench/PinnedSection";
 import { SendPreview } from "./workbench/SendPreview";
 import { ChangesSection } from "./workbench/ChangesSection";
@@ -1007,6 +1008,7 @@ export function AppShell() {
   // The composer chip that replaced the Context panel mode; kept out of the
   // ChatWindow call so that element stays one flat attribute list.
   const sendPreview = <SendPreview inputRef={chatInputRef} revision={draftRevision} identity={selectedSession?.id ?? `new:${effectiveNewSessionCwd}`} systemPrompt={systemPrompt} />;
+  const newTaskGuide = selectedSession ? undefined : <NewTaskGuide cwd={effectiveNewSessionCwd} onUseTask={useSavedTask} onOpenTasks={() => openMode("tasks")} />;
 
   const copyActiveFilePath = useCallback(async () => {
     if (!activeFileTab?.filePath) return;
@@ -1606,6 +1608,7 @@ export function AppShell() {
               onDraftChange={handleDraftChange}
               sendPreview={sendPreview}
               onOpenTasks={() => openMode("tasks")}
+              emptyStateSlot={newTaskGuide}
               onBranchNavigate={branchNavigate}
               session={selectedSession}
               newSessionCwd={effectiveNewSessionCwd}

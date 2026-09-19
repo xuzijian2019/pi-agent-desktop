@@ -29,6 +29,8 @@ interface Props {
   onCloseTranscript?: () => void;
   onDraftChange?: () => void;
   sendPreview?: ReactNode;
+  /** Fork slot: rendered above the composer on the empty new-task screen. */
+  emptyStateSlot?: ReactNode;
   onOpenTasks?: () => void;
   onBranchNavigate?: (cwd: string) => void;
   session: SessionInfo | null;
@@ -229,7 +231,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t, entryId
   );
 }
 
-export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onSelectProject, projectOptions, onProjectChange, onOpenFile, onProjectFilesImported, onOpenModelsConfig, onDraftChange, sendPreview, onOpenTasks, onBranchNavigate }: Props) {
+export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onSelectProject, projectOptions, onProjectChange, onOpenFile, onProjectFilesImported, onOpenModelsConfig, onDraftChange, sendPreview, emptyStateSlot, onOpenTasks, onBranchNavigate }: Props) {
   const { t } = useI18n();
   // Wrap onAgentEnd to play the completion sound. This is more reliable than
   // wrapping handleAgentEventRef because useAgentSession overwrites that ref
@@ -941,6 +943,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
         >
           <div className="chat-empty-state w-full max-w-[820px]">
             <NoticeShelf notices={notices} align="right" />
+            {emptyStateSlot}
             <div inert={!!searchPreview}>{chatInputElement}</div>
           </div>
         </div>
