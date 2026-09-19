@@ -7,7 +7,6 @@ import { ActivityPanel } from "./workbench/ActivityPanel";
 import { SavedTasksPanel, type TaskSeed } from "./workbench/SavedTasksPanel";
 import { OutputsPanel } from "./workbench/OutputsPanel";
 import { ContextPanel } from "./workbench/ContextPanel";
-import { BrowserPanel } from "./BrowserPanel";
 import { DiffPanel } from "./DiffPanel";
 import { panelMode, type PanelMode } from "@/lib/panel-modes";
 import { loadDraft, setDraft, getDraftStatus, type ChatDraft } from "@/lib/draft-store";
@@ -1827,7 +1826,6 @@ export function AppShell() {
         </div>
         <div hidden={rightPanelMode !== "outputs"} className="workbench-mode-body"><OutputsPanel visible={rightPanelOpen && rightPanelMode === "outputs"} sessionId={selectedSession?.id ?? null} title={selectedSession?.name || selectedSession?.firstMessage} leafId={branchActiveLeafId} refreshKey={refreshKey} onOpen={path => { setFromOutputs(true); handleOpenFile(path, getFileName(path), { sourceSessionId: selectedSession?.id }); }} onMessage={(entryId, leafId) => { if (leafId !== branchActiveLeafId) handleBranchLeafChange(leafId); window.dispatchEvent(new CustomEvent("pi-reveal-entry", { detail: { sessionId: selectedSession?.id, entryId } })); }} /></div>
         <div hidden={rightPanelMode !== "context"} className="workbench-mode-body"><ContextPanel visible={rightPanelOpen && rightPanelMode === "context"} inputRef={chatInputRef} revision={draftRevision} identity={selectedSession?.id ?? `new:${effectiveNewSessionCwd}`} systemPrompt={systemPrompt} /></div>
-        <div hidden={rightPanelMode !== "browser"} className="workbench-mode-body"><BrowserPanel /></div>
         <div hidden={rightPanelMode !== "diff"} className="workbench-mode-body">{activeCwd && rightPanelOpen && rightPanelMode === "diff" && <DiffPanel key={activeCwd} cwd={activeCwd} selectedFilePath={reviewFilePath} refreshKey={explorerRefreshKey} />}</div>
         <div hidden={rightPanelMode !== "files"} className="workbench-files-body">
         {fromOutputs && <button onClick={() => openMode("outputs")}>{translate("wb.backOutputs")}</button>}
