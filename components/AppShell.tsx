@@ -21,6 +21,7 @@ import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar } from "./SessionSidebar";
+import type { AppSlashCommand } from "@/lib/web-slash-commands";
 import { ChatWindow } from "./ChatWindow";
 import { selectProjectDirectoryNative } from "./ProjectPicker";
 import { MissingFolderNotice } from "./MissingFolderNotice";
@@ -808,6 +809,32 @@ export function AppShell() {
     });
   }, [selectedSession]);
 
+  const handleAppCommand = (command: AppSlashCommand): string | void => {
+    switch (command) {
+      case "new": {
+        const cwd = selectedSession?.cwd ?? newSessionCwd ?? activeCwd;
+        if (!cwd) return translate("chat.commandUnavailable");
+        handleNewSession("", cwd); return;
+      }
+      case "resume":
+        setSidebarOpen(true);
+        requestAnimationFrame(() => sidebarResizer.panelRef.current?.querySelector<HTMLInputElement>('input[type="search"]')?.focus());
+        return;
+      case "tree":
+        if (!selectedSession) return translate("chat.commandNeedsSession");
+        setActiveTopPanel("branches"); return;
+      case "export":
+        if (!selectedSession) return translate("chat.commandNeedsSession");
+        handleExportHtml(); return;
+      case "settings": setAppSettingsOpen(true); return;
+      case "login":
+      case "logout": setModelsConfigOpen(true); return;
+      case "trust":
+        if (!projectTrustCwd) return translate("chat.commandUnavailable");
+        setProjectTrustDialogOpen(true); return;
+    }
+  };
+
   // Show chat area if a session is selected, or if we have a cwd to start a new session in
   const effectiveNewSessionCwd = newSessionCwd ?? (selectedSession === null && activeCwd ? activeCwd : null);
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
@@ -1390,7 +1417,7 @@ export function AppShell() {
           )}
           {showChat && (
             <div className="app-topbar-actions" style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
-              {hasForks(branchTree) && (
+              {(hasForks(branchTree) || activeTopPanel === "branches") && (
                 <BranchNavigator
                   tree={branchTree}
                   activeLeafId={branchActiveLeafId}
@@ -1642,6 +1669,7 @@ export function AppShell() {
               onProjectChange={selectedSession ? undefined : handleProjectChangeFromComposer}
               onOpenFile={(filePath) => handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id })}
               onOpenModelsConfig={() => setModelsConfigOpen(true)}
+              onAppCommand={handleAppCommand}
             />
           ) : initialCwdStatus === "validating" ? (
             <div

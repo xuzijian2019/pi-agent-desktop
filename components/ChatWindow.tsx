@@ -9,7 +9,9 @@ import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import { countToolCallBlocks, getDisplayableAssistantBlocks, splitFinalAssistantBlocks } from "@/lib/message-display";
 import { MessageView } from "./MessageView";
 import { ConversationNavigator, type ConversationTurnLocation } from "./ConversationNavigator";
-import { ChatInput, type ChatInputHandle } from "./ChatInput";
+import { ChatCommandDialog } from "./ChatCommandDialog";
+import type { AppSlashCommand, ViewSlashCommand } from "@/lib/web-slash-commands";
+import { ChatInput, getUserMessageText, type ChatInputHandle } from "./ChatInput";
 import { useI18n } from "@/hooks/useI18n";
 import { useAgentSession, type AgentPhase, type NoticeItem } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
@@ -31,6 +33,7 @@ interface Props {
   sendPreview?: ReactNode;
   /** Fork slot: rendered above the composer on the empty new-task screen. */
   emptyStateSlot?: ReactNode;
+  onAppCommand?: (command: AppSlashCommand) => string | void;
   onOpenTasks?: () => void;
   onBranchNavigate?: (cwd: string) => void;
   session: SessionInfo | null;
@@ -231,8 +234,10 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t, entryId
   );
 }
 
-export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onSelectProject, projectOptions, onProjectChange, onOpenFile, onProjectFilesImported, onOpenModelsConfig, onDraftChange, sendPreview, emptyStateSlot, onOpenTasks, onBranchNavigate }: Props) {
+export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onSelectProject, projectOptions, onProjectChange, onOpenFile, onProjectFilesImported, onOpenModelsConfig, onDraftChange, sendPreview, emptyStateSlot, onOpenTasks, onBranchNavigate, onAppCommand }: Props) {
   const { t } = useI18n();
+  const [commandDialog, setCommandDialog] = useState<"fork" | "hotkeys" | "session" | null>(null);
+  const openStats = useCallback(() => { onSessionStatsPanelOpen?.(); setCommandDialog("session"); }, [onSessionStatsPanelOpen]);
   // Wrap onAgentEnd to play the completion sound. This is more reliable than
   // wrapping handleAgentEventRef because useAgentSession overwrites that ref
   // on every render (it syncs the latest callback), which would blow away an
@@ -271,12 +276,25 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
     handleToolPresetChange, handleThinkingLevelChange, loadSlashCommands, scrollToBottom,
   } = useAgentSession({
     session, newSessionCwd, onAgentEnd: wrappedOnAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed,
-    modelsRefreshKey, chatInputRef, onBranchDataChange: publishBranchData, onSystemPromptChange, onSessionStatsPanelOpen,
+    modelsRefreshKey, chatInputRef, onBranchDataChange: publishBranchData, onSystemPromptChange, onSessionStatsPanelOpen: openStats,
   });
   const messages = searchPreview?.context.messages ?? liveMessages;
   const entryIds = searchPreview?.context.entryIds ?? liveEntryIds;
   const streamState = searchPreview ? { ...liveStreamState, isStreaming: false } : liveStreamState;
   const sessionBusy = !searchPreview && (agentRunning || bashRunning);
+
+  useEffect(() => setCommandDialog(null), [session?.id, newSessionCwd]);
+  const forkChoices = useMemo(() => liveMessages.flatMap((message, index) => message.role === "user" && liveEntryIds[index]
+    ? [{ id: liveEntryIds[index], text: getUserMessageText(message).replace(/\s+/g, " ").slice(0, 200) || t("chat.imageMessage") }] : []), [liveMessages, liveEntryIds, t]);
+  const handleViewCommand = (command: ViewSlashCommand) => {
+    if (command === "fork" || command === "hotkeys") {
+      if (command === "fork" && (!session || !forkChoices.length)) return t("chat.noForkMessages");
+      setCommandDialog(command);
+    } else {
+      if (!onAppCommand) return t("chat.commandUnavailable");
+      return onAppCommand(command);
+    }
+  };
 
   const conversationTurns = useMemo<ConversationTurnLocation[]>(() => {
     const turns: ConversationTurnLocation[] = [];
@@ -853,6 +871,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
       slashCommands={slashCommands}
       slashCommandsLoading={slashCommandsLoading}
       onLoadSlashCommands={loadSlashCommands}
+      onViewCommand={handleViewCommand}
       onBuiltinCommand={handleBuiltinSlashCommand}
       draftKey={session?.id ?? (newSessionCwd ? `new:${newSessionCwd}` : undefined)}
       cwd={session?.cwd ?? newSessionCwd}
@@ -1068,6 +1087,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
       </div>
       </>
       )}
+      {commandDialog && <ChatCommandDialog kind={commandDialog} stats={sessionStats} choices={forkChoices} onClose={() => setCommandDialog(null)} onFork={id => { setCommandDialog(null); void handleFork(id); }} />}
     </div>
   );
 }

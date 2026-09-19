@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
+import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useImperativeHandle, forwardRef, KeyboardEvent, useId } from "react";
+import { WEB_SLASH_COMMANDS, parseWebSlashCommand, type ViewSlashCommand } from "@/lib/web-slash-commands";
 import { createPortal } from "react-dom";
 import type { BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
 import type { SkillsResponse } from "@/lib/api-types";
@@ -95,6 +96,7 @@ interface Props {
   slashCommands?: SlashCommandInfo[];
   slashCommandsLoading?: boolean;
   onLoadSlashCommands?: () => Promise<SlashCommandInfo[]> | SlashCommandInfo[];
+  onViewCommand?: (command: ViewSlashCommand) => string | void;
   onBuiltinCommand?: (message: string) => Promise<BuiltinSlashCommandResult>;
   draftKey?: string;
   /** Session working directory — enables the @ file autocomplete menu */
@@ -184,13 +186,7 @@ type SlashCommandPaletteItem = SlashCommandInfo | {
 
 type SlashCommandSource = SlashCommandPaletteItem["source"];
 
-const BUILTIN_SLASH_COMMANDS: SlashCommandPaletteItem[] = [
-  { name: "compact", description: "chat.commandCompact", source: "builtin" },
-  { name: "reload", description: "chat.commandReload", source: "builtin" },
-  { name: "name", description: "chat.commandName", source: "builtin" },
-  { name: "session", description: "chat.commandSession", source: "builtin" },
-  { name: "copy", description: "chat.commandCopy", source: "builtin" },
-];
+const BUILTIN_SLASH_COMMANDS: SlashCommandPaletteItem[] = WEB_SLASH_COMMANDS;
 
 const SLASH_SOURCES: SlashCommandSource[] = ["builtin", "extension", "prompt", "skill"];
 
@@ -477,7 +473,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo, queuedMessages, inputHistory = [], onRecallQueue,
   slashCommands, slashCommandsLoading, onLoadSlashCommands,
-  onBuiltinCommand,
+  onBuiltinCommand, onViewCommand,
   onPromptWithStreamingBehavior,
   draftKey,
   cwd,
@@ -493,6 +489,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 }: Props, ref) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
+  const slashListId = useId();
+  const [slashMaxHeight, setSlashMaxHeight] = useState(300);
+  const modelButtonRef = useRef<HTMLButtonElement>(null);
   const composerRef = useRef<HTMLDivElement | null>(null);
   const [composerTier, setComposerTier] = useState<ComposerTier>(() => (isMobile ? "narrow" : "normal"));
 
@@ -905,10 +904,59 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     };
   }, []);
 
+  const dispatchBuiltin = useCallback(async (msg: string): Promise<boolean> => {
+    const command = parseWebSlashCommand(msg);
+    if (!command) return false;
+    const original = JSON.stringify(snapshotRef.current());
+    const key = draftKeyRef.current;
+    setPreparationError("");
+    try {
+      if (attachedImages.length) throw new Error(t("chat.commandTextOnly"));
+      if (command.idle && isStreaming) throw new Error(t("chat.commandWait"));
+      if (command.argument && !command.args) throw new Error(t("chat.commandNoArgs", { command: command.name }));
+      if (command.name === "model") {
+        if (!onModelChange) throw new Error(t("chat.commandUnavailable"));
+        if (command.argument) {
+          const matches = (modelList ?? []).filter(item => `${item.provider}/${item.id}` === command.argument || item.id === command.argument);
+          if (matches.length !== 1) throw new Error(t("chat.commandModelUsage"));
+          setDraftSetup(previous => previous ? { ...previous, model: { provider: matches[0].provider, modelId: matches[0].id } } : previous);
+          onModelChange(matches[0].provider, matches[0].id);
+        } else {
+          const rect = modelButtonRef.current?.getBoundingClientRect();
+          if (!rect) throw new Error(t("chat.commandUnavailable"));
+          setModelDropdownRect({ top: rect.top, left: rect.left, width: rect.width });
+          setModelFilter(""); setModelDropdownOpen(true); setThinkingDropdownOpen(false);
+        }
+      } else if (command.name === "thinking") {
+        if (!onThinkingLevelChange) throw new Error(t("chat.commandUnavailable"));
+        if (command.argument) {
+          const level = selectableThinkingLevels(["auto", "off", "minimal", "low", "medium", "high", "xhigh", "max"] as const, availableThinkingLevels, thinkingLevelMap).find(item => item === command.argument);
+          if (!level) throw new Error(t("chat.commandThinkingUsage"));
+          setDraftSetup(previous => previous ? { ...previous, effort: level } : previous);
+          onThinkingLevelChange(level);
+        } else { setThinkingDropdownOpen(true); setControlsMenuOpen(true); setModelDropdownOpen(false); }
+      } else if (["compact", "reload", "name", "session", "copy"].includes(command.name)) {
+        const result = await onBuiltinCommand?.(`/${command.name}${command.argument ? ` ${command.argument}` : ""}`);
+        if (!result?.handled) throw new Error(t("chat.commandUnavailable"));
+        if (result.error) throw new Error(result.error);
+      } else {
+        if (!onViewCommand) throw new Error(t("chat.commandUnavailable"));
+        const error = onViewCommand(command.name as ViewSlashCommand);
+        if (error) throw new Error(error);
+      }
+      // A command may navigate or await an RPC while a new draft is being typed.
+      if (draftKeyRef.current === key && JSON.stringify(snapshotRef.current()) === original) clearInput();
+    } catch (error) {
+      if (draftKeyRef.current === key) setPreparationError(error instanceof Error ? error.message : String(error));
+    }
+    return true;
+  }, [attachedImages.length, isStreaming, onModelChange, modelList, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap, onBuiltinCommand, onViewCommand, clearInput, t]);
+
   const handleSend = useCallback(async () => {
     if (invalidDraftImages || orphanedPaste || (draftKey && hydratedDraftKey !== draftKey) || persistenceStatus === "conflict") return;
     const msg = splicePastedTexts(value, pastedTexts).trim();
     if (!msg && !attachedImages.length) return;
+    if (await dispatchBuiltin(msg)) return;
     if (isStreaming) return;
     if (!attachedImages.length && msg.startsWith("/") && onBuiltinCommand) {
       const result = await onBuiltinCommand(msg);
@@ -927,7 +975,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       onSend(prepared.text, prepared.images.length ? attachedImages : undefined);
       if (JSON.stringify(snapshotRef.current()) === original) clearInput();
     } catch (e) { setPreparationError(String(e)); } finally { preparingRef.current = false; }
-  }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, isStreaming, onBuiltinCommand, onSend, clearInput, prepare]);
+  }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, isStreaming, onBuiltinCommand, onSend, clearInput, prepare, dispatchBuiltin]);
 
   const slashQuery = value.startsWith("/") && !/\s/.test(value.slice(1))
     ? value.slice(1).toLowerCase()
@@ -935,7 +983,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   const filteredSlashCommands = (() => {
     if (slashQuery === null) return [];
-    const commands = [...(isStreaming ? [] : BUILTIN_SLASH_COMMANDS), ...(slashCommands ?? [])];
+    const commands = [...BUILTIN_SLASH_COMMANDS, ...(slashCommands ?? []).filter(command => !WEB_SLASH_COMMANDS.some(builtin => builtin.name === command.name))];
     return [...commands]
       .filter((command) => {
         const name = command.name.toLowerCase();
@@ -951,9 +999,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   })();
 
   const {
-    commands: displayedSlashCommands,
-    groups: groupedSlashCommands,
+    commands: groupedCommands,
   } = buildSlashCommandLayout(filteredSlashCommands, skillDormancy);
+  const displayedSlashCommands = slashQuery ? filteredSlashCommands : groupedCommands;
 
   const slashCommandCountLabel = filteredSlashCommands.length === 1
     ? t(slashQuery ? "chat.match" : "chat.command")
@@ -1228,7 +1276,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     });
   }, []);
 
-  const applySlashCommand = useCallback((command: SlashCommandPaletteItem) => {
+  const applySlashCommand = useCallback((command: SlashCommandPaletteItem, execute = false) => {
+    if (execute && command.source === "builtin" && !["name", "compact"].includes(command.name)) {
+      setSlashMenuOpen(false);
+      void dispatchBuiltin(`/${command.name}`);
+      return;
+    }
     const nextValue = `/${command.name} `;
     setValue(nextValue);
     setSlashMenuOpen(false);
@@ -1241,12 +1294,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       ta.style.height = "auto";
       ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
     });
-  }, []);
+  }, [dispatchBuiltin]);
 
   const sendQueued = useCallback(async (mode: "steer" | "followup") => {
     if (invalidDraftImages || orphanedPaste || (draftKey && hydratedDraftKey !== draftKey) || persistenceStatus === "conflict") return;
     const msg = splicePastedTexts(value, pastedTexts).trim();
     if (!msg && !attachedImages.length) return;
+    if (await dispatchBuiltin(msg)) return;
     if (attachedImages.length) return;
     if (preparingRef.current) return;
     preparingRef.current = true; setPreparationError("");
@@ -1260,50 +1314,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       else if (onFollowUp) onFollowUp(prepared.text);
       if (JSON.stringify(snapshotRef.current()) === original) clearInput();
     } catch (e) { setPreparationError(String(e)); } finally { preparingRef.current = false; }
-  }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput, prepare]);
-
-  const getNextSlashIndex = useCallback((direction: "up" | "down" | "left" | "right") => {
-    const lastIndex = displayedSlashCommands.length - 1;
-    if (lastIndex < 0) return 0;
-
-    if (direction === "left") return Math.max(0, slashActiveIndex - 1);
-    if (direction === "right") return Math.min(lastIndex, slashActiveIndex + 1);
-
-    const currentNode = slashItemRefs.current[slashActiveIndex];
-    if (!currentNode) {
-      return direction === "down"
-        ? Math.min(lastIndex, slashActiveIndex + 1)
-        : Math.max(0, slashActiveIndex - 1);
-    }
-
-    const currentRect = currentNode.getBoundingClientRect();
-    const currentX = currentRect.left + currentRect.width / 2;
-    const currentY = currentRect.top + currentRect.height / 2;
-    let bestIndex = -1;
-    let bestScore = Number.POSITIVE_INFINITY;
-
-    for (let index = 0; index <= lastIndex; index += 1) {
-      if (index === slashActiveIndex) continue;
-      const node = slashItemRefs.current[index];
-      if (!node) continue;
-      const rect = node.getBoundingClientRect();
-      const candidateY = rect.top + rect.height / 2;
-      const verticalDelta = candidateY - currentY;
-      if (direction === "down" ? verticalDelta <= 4 : verticalDelta >= -4) continue;
-
-      const candidateX = rect.left + rect.width / 2;
-      const score = Math.abs(verticalDelta) * 1000 + Math.abs(candidateX - currentX);
-      if (score < bestScore) {
-        bestIndex = index;
-        bestScore = score;
-      }
-    }
-
-    if (bestIndex >= 0) return bestIndex;
-    return direction === "down"
-      ? Math.min(lastIndex, slashActiveIndex + 1)
-      : Math.max(0, slashActiveIndex - 1);
-  }, [displayedSlashCommands.length, slashActiveIndex]);
+  }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput, prepare, dispatchBuiltin]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1342,25 +1353,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         }
       }
 
-      if (slashMenuOpen && slashQuery !== null) {
+      if (slashMenuOpen && slashQuery !== null && !isComposing) {
         if (e.key === "ArrowDown") {
           e.preventDefault();
-          setSlashActiveIndex(getNextSlashIndex("down"));
+          setSlashActiveIndex(index => (index + 1) % Math.max(1, displayedSlashCommands.length));
           return;
         }
         if (e.key === "ArrowUp") {
           e.preventDefault();
-          setSlashActiveIndex(getNextSlashIndex("up"));
-          return;
-        }
-        if (e.key === "ArrowRight") {
-          e.preventDefault();
-          setSlashActiveIndex(getNextSlashIndex("right"));
-          return;
-        }
-        if (e.key === "ArrowLeft") {
-          e.preventDefault();
-          setSlashActiveIndex(getNextSlashIndex("left"));
+          setSlashActiveIndex(index => (index - 1 + displayedSlashCommands.length) % Math.max(1, displayedSlashCommands.length));
           return;
         }
         if (e.key === "Escape") {
@@ -1370,7 +1371,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         }
         if ((e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) && displayedSlashCommands[slashActiveIndex]) {
           e.preventDefault();
-          applySlashCommand(displayedSlashCommands[slashActiveIndex]);
+          applySlashCommand(displayedSlashCommands[slashActiveIndex], e.key === "Enter");
           return;
         }
       }
@@ -1452,7 +1453,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         }
       }
     },
-    [isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, displayedSlashCommands, slashActiveIndex, applySlashCommand, sendQueued, handleSend, getNextSlashIndex, hashMenuOpen, hashQuery, hashMatches, hashActiveIndex, applyHashCompletion, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value]
+    [isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, displayedSlashCommands, slashActiveIndex, applySlashCommand, sendQueued, handleSend, hashMenuOpen, hashQuery, hashMatches, hashActiveIndex, applyHashCompletion, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value]
   );
 
   const handleInput = useCallback(() => {
@@ -1512,6 +1513,19 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       });
     }
   }, [slashQuery, onLoadSlashCommands]);
+
+  useLayoutEffect(() => {
+    if (!slashMenuOpen) return;
+    const measure = () => {
+      const top = composerRef.current?.getBoundingClientRect().top ?? 364;
+      setSlashMaxHeight(Math.max(80, Math.min(320, top - 64)));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (composerRef.current) observer.observe(composerRef.current);
+    window.addEventListener("resize", measure);
+    return () => { observer.disconnect(); window.removeEventListener("resize", measure); };
+  }, [slashMenuOpen, isNarrow]);
 
   // Lazy-load skill dormancy (disable-model-invocation) each time the slash
   // palette opens, so toggles made in the skills panel are reflected on the
@@ -1757,68 +1771,37 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           )}
           {slashMenuOpen && slashQuery !== null && (
             <div
-              className="native-popover composer-completion-popover is-slash"
+              className={`native-popover composer-completion-popover is-slash${isNarrow ? " is-narrow" : ""}`}
+              style={{ "--completion-max": `${slashMaxHeight}px` } as React.CSSProperties}
             >
               <div
                 className="composer-completion-header"
               >
                  <span>{slashCommandsLoading ? t("chat.loadingCommands") : t("chat.slashCommands", { label: slashCommandCountLabel })}</span>
-                 <span className="composer-completion-hint">{t("chat.tabEnter")}</span>
+                 <span className="composer-completion-hint">{t("chat.commandNavigation")}</span>
               </div>
-              <div className="composer-completion-body is-slash">
-                {!slashCommandsLoading && filteredSlashCommands.length === 0 ? (
-                  <div className="composer-slash-empty">
-                     {t("chat.noCommands")}
-                  </div>
-                ) : (
-                  groupedSlashCommands.map((group) => (
-                    <section key={group.source} className="composer-slash-group">
-                      <div
-                        className="composer-slash-group-header"
-                      >
-                           <span>{t(SLASH_SOURCE_GROUP_LABEL_KEYS[group.source])}</span>
-                        <span className="composer-slash-count">{group.items.length}</span>
-                      </div>
-                      <div
-                        className="composer-slash-grid"
-                      >
-                        {group.items.map(({ command, index }) => {
-                          const active = index === slashActiveIndex;
-                          const dormant = isDormantSkillCommand(command, skillDormancy);
-                          return (
-                            <button
-                              key={`${command.source}:${command.name}`}
-                              ref={(node) => {
-                                slashItemRefs.current[index] = node;
-                              }}
-                              type="button"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                applySlashCommand(command);
-                              }}
-                              onMouseEnter={() => setSlashActiveIndex(index)}
-                              className={`composer-slash-item${active ? " is-active" : ""}`}
-                            >
-                              <span className={`composer-slash-name${dormant ? " is-dormant" : ""}`}>
-                                /{command.name}
-                                {dormant && (
-                                  <span className="composer-slash-dormant">
-                                    {t("chat.dormant")}
-                                  </span>
-                                )}
-                              </span>
-                               {command.description && (
-                                <span className="composer-slash-desc">
-                                   {getSlashDescription(command, t)}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </section>
-                  ))
-                )}
+              <div className="composer-completion-body is-slash" id={slashListId} role="listbox" aria-label={t("chat.commandList")}>
+                {displayedSlashCommands.length === 0 ? <div className="composer-slash-empty">{slashCommandsLoading ? t("chat.loadingCommands") : t("chat.noCommands")}</div> : displayedSlashCommands.map((command, index) => {
+                  const active = index === slashActiveIndex;
+                  const dormant = isDormantSkillCommand(command, skillDormancy);
+                  const description = getSlashDescription(command, t);
+                  return (
+                    <button
+                      key={`${command.source}:${command.name}`} id={`${slashListId}-${index}`}
+                      ref={node => { slashItemRefs.current[index] = node; }}
+                      type="button" role="option" aria-selected={active} tabIndex={-1}
+                      title={`/${command.name} — ${description}`}
+                      onMouseDown={event => event.preventDefault()}
+                      onClick={() => applySlashCommand(command, true)}
+                      onMouseEnter={() => setSlashActiveIndex(index)}
+                      className={`composer-slash-item${active ? " is-active" : ""}`}
+                    >
+                      <span className={`composer-slash-name${dormant ? " is-dormant" : ""}`}>/{command.name}</span>
+                      <span className="composer-slash-desc">{description}</span>
+                      <span className="composer-slash-source">{dormant ? t("chat.dormant") : t(SLASH_SOURCE_GROUP_LABEL_KEYS[command.source])}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -2011,6 +1994,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             className="chat-composer-editor"
           >
           <textarea
+            aria-controls={slashMenuOpen && slashQuery !== null ? slashListId : undefined}
+            aria-activedescendant={slashMenuOpen && slashQuery !== null && displayedSlashCommands[slashActiveIndex] ? `${slashListId}-${slashActiveIndex}` : undefined}
+            aria-autocomplete="list"
             readOnly={Boolean(draftKey && hydratedDraftKey !== draftKey)}
             ref={textareaRef}
             value={value}
@@ -2208,6 +2194,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       });
                     }}
                     disabled={isStreaming}
+                    ref={modelButtonRef}
                     title={modelOptions.length > 0 ? "Change model" : "No available models"}
                   >
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
