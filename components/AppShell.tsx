@@ -230,8 +230,11 @@ export function AppShell() {
   const rightPanelWidth = rightPanelResizer.width;
   // On mobile the sidebar is an overlay drawer; hide it by default so the chat
   // is visible on load. Runs once the breakpoint resolves after hydration.
+  // The desktop open-state lives in its own ref, so closing the drawer on
+  // mobile does not leave the sidebar hidden after resizing back to desktop.
+  const desktopSidebarOpenRef = useRef(true);
   useEffect(() => {
-    if (isMobile) setSidebarOpen(false);
+    setSidebarOpen(isMobile ? false : desktopSidebarOpenRef.current);
   }, [isMobile]);
   // Close right panel when viewport is too narrow for split-panel layout.
   // Uses matchMedia's change event (not just the rightPanelOpen dependency)
@@ -320,7 +323,11 @@ export function AppShell() {
 
   const handleSidebarToggle = useCallback(() => {
     if (isMobile) setActiveTopPanel(null);
-    setSidebarOpen((open) => !open);
+    setSidebarOpen((open) => {
+      const next = !open;
+      if (!isMobile) desktopSidebarOpenRef.current = next;
+      return next;
+    });
   }, [isMobile]);
 
   const handleRightPanelToggle = useCallback(() => {
