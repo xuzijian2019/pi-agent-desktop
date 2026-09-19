@@ -4161,3 +4161,14 @@ span.linenumber {
   background: transparent;
   color: var(--text-muted);
 }
+
+/* ==========================================================================
+   Fork component classes (Phase 3, stream H). Each section is owned by one
+   sub-stream; keep additions inside the matching block.
+   ========================================================================== */
+
+/* -- H1: sidebar menus and popovers (SessionSidebar.tsx) ------------------ */
+
+/* -- H2: composer chips, popovers and controls (ChatInput.tsx) ------------ */
+
+/* -- H3: message view (MessageView.tsx) ----------------------------------- */
