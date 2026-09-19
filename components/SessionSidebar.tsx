@@ -965,7 +965,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         else next.add(group.projectRoot);
         return next;
       });
-      if (!isActive) setSelectedCwd(group.projectRoot);
+      // Expand/collapse only. Switching the active cwd here would blank the
+      // chat into a new task for this project; that stays on the "+" button.
     };
 
     return (
