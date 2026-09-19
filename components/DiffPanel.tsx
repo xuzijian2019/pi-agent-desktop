@@ -1,107 +1,78 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { getFileIcon } from "./FileIcons";
 import { getRelativeFilePath } from "@/lib/file-paths";
-import type { GitFileStatus, GitStatusResponse } from "@/lib/git-types";
+import { parseUnifiedPatch } from "@/lib/patch";
+import { uiFetch } from "@/lib/web-ui-client";
+import type { GitFileDiffResponse, GitFileStatus, GitStatusResponse } from "@/lib/git-types";
 
-interface Props {
-  cwd: string;
-  selectedFilePath?: string | null;
-  refreshKey?: number;
-  onOpenFile: (filePath: string, fileName: string, options?: { modeHint?: "diff" }) => void;
+function FileDiff({ cwd, file, selected, refreshKey }: {
+  cwd: string; file: GitFileStatus; selected: boolean; refreshKey: number;
+}) {
+  const { t } = useI18n();
+  const id = useId();
+  const [open, setOpen] = useState(selected);
+  const [diff, setDiff] = useState<GitFileDiffResponse>();
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  useEffect(() => { if (selected) setOpen(true); }, [selected]);
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    setLoading(true); setError("");
+    void uiFetch<GitFileDiffResponse>(`/api/git/diff?${new URLSearchParams({ cwd, path: file.filePath })}`, undefined, undefined, controller.signal)
+      .then(setDiff)
+      .catch(e => { if (!controller.signal.aborted) setError(e.message); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [cwd, file.filePath, open, refreshKey]);
+  const rows = useMemo(() => parseUnifiedPatch(diff?.patch ?? "")?.flatMap(file => file.rows) ?? [], [diff]);
+  const additions = rows.filter(row => row.type === "line" && row.right.type === "added").length;
+  const deletions = rows.filter(row => row.type === "line" && row.left.type === "removed").length;
+  const name = getRelativeFilePath(file.filePath, cwd);
+  return <article className="review-file">
+    <button className="review-file-heading" aria-expanded={open} aria-controls={id} onClick={() => setOpen(value => !value)} title={name}>
+      <svg className={open ? "is-expanded" : ""} width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" aria-hidden="true"><path d="m4 2 4 4-4 4" /></svg>
+      {getFileIcon(name.split(/[\\/]/).pop() ?? name, 16)}
+      <span className="review-file-name">{name}</span>
+      {diff?.supported && <span className="review-counts"><span className="review-added">+{additions}</span><span className="review-removed">−{deletions}</span></span>}
+    </button>
+    {open && <div id={id} className="review-file-body" role="region" aria-label={name}>
+      {loading ? <p className="review-message">{t("files.loading")}</p> : error ? <p className="review-message" role="alert">{error}</p> : !diff?.supported ? <p className="review-message">{t("wb.diffUnavailable")}</p> :
+        <div className="review-patch" tabIndex={0}>
+          {rows.map((row, index) => row.type === "hunk" ? <div className="review-hunk" key={index} title={row.text} aria-label={row.text}>···</div> :
+            <div key={index}>
+              {[...(row.left.type === "removed" ? [row.left] : []), ...(row.right.type !== "empty" ? [row.right] : [])].map((cell, side) =>
+                <div className={`review-line is-${cell.type}`} key={side}><span className="review-line-number">{cell.lineNo}</span><span className="review-line-sign">{cell.type === "added" ? "+" : cell.type === "removed" ? "−" : " "}</span><code>{cell.text || " "}</code></div>)}
+            </div>)}
+        </div>}
+    </div>}
+  </article>;
 }
 
-const STATUS_LABELS: Record<GitFileStatus["status"], string> = {
-  modified: "M",
-  added: "A",
-  deleted: "D",
-  renamed: "R",
-  untracked: "U",
-  conflict: "C",
-};
-
-const STATUS_COLORS: Record<GitFileStatus["status"], string> = {
-  modified: "var(--warning)",
-  added: "var(--success)",
-  deleted: "var(--danger)",
-  renamed: "var(--accent)",
-  untracked: "var(--success)",
-  conflict: "var(--danger)",
-};
-
-export function DiffPanel({ cwd, selectedFilePath, refreshKey = 0, onOpenFile }: Props) {
+export function DiffPanel({ cwd, selectedFilePath, refreshKey = 0 }: {
+  cwd: string; selectedFilePath?: string | null; refreshKey?: number;
+}) {
   const { t } = useI18n();
-  const [status, setStatus] = useState<GitStatusResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadStatus = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(`/api/git/status?cwd=${encodeURIComponent(cwd)}`, { signal });
-      const data = await response.json() as GitStatusResponse & { error?: string };
-      if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`);
-      setStatus(data);
-    } catch (reason) {
-      if (reason instanceof DOMException && reason.name === "AbortError") return;
-      setError(reason instanceof Error ? reason.message : String(reason));
-      setStatus(null);
-    } finally {
-      if (!signal?.aborted) setLoading(false);
-    }
-  }, [cwd]);
-
+  const [status, setStatus] = useState<GitStatusResponse>();
+  const [error, setError] = useState("");
+  const [revision, setRevision] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
-    void loadStatus(controller.signal);
+    setError("");
+    void uiFetch<GitStatusResponse>(`/api/git/status?cwd=${encodeURIComponent(cwd)}`, undefined, undefined, controller.signal)
+      .then(setStatus).catch(e => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
-  }, [loadStatus, refreshKey]);
-
-  const files = status?.files ?? [];
-
-  return (
-    <div className="context-diff-panel">
-      <div className="context-diff-header">
-        <div>
-          <strong>{t("contextPanel.tabDiff")}</strong>
-          <span>{status ? t("files.changeStats", { count: files.length, additions: status.additions, deletions: status.deletions }) : t("contextPanel.diffHint")}</span>
-        </div>
-        <button type="button" className="context-diff-refresh" onClick={() => void loadStatus()} disabled={loading} title={t("contextPanel.diffRefresh")} aria-label={t("contextPanel.diffRefresh")}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M20 11a8 8 0 1 0 2 5.3" />
-            <path d="M20 4v7h-7" />
-          </svg>
-        </button>
-      </div>
-      {loading && <div className="context-diff-status">{t("files.loading")}</div>}
-      {!loading && error && <div className="context-diff-status is-error" role="alert">{error}</div>}
-      {!loading && !error && files.length === 0 && (
-        <div className="context-diff-status">{t("contextPanel.diffEmpty")}</div>
-      )}
-      {!loading && !error && files.length > 0 && (
-        <div className="context-diff-list" role="listbox" aria-label={t("contextPanel.tabDiff")}>
-          {files.map((file) => {
-            const selected = file.filePath === selectedFilePath;
-            const fileName = file.filePath.split(/[\\/]/).pop() ?? file.filePath;
-            return (
-              <button
-                key={`${file.filePath}:${file.status}`}
-                type="button"
-                className={`context-diff-row${selected ? " is-selected" : ""}`}
-                onClick={() => onOpenFile(file.filePath, fileName, { modeHint: "diff" })}
-                title={file.filePath}
-              >
-                <span className="context-diff-status-code" style={{ color: STATUS_COLORS[file.status] }}>{STATUS_LABELS[file.status]}</span>
-                <span className="context-diff-file-icon">{getFileIcon(fileName, 14)}</span>
-                <span className="context-diff-file-path">{getRelativeFilePath(file.filePath, cwd)}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
+  }, [cwd, refreshKey, revision]);
+  return <section className="review-panel" aria-label={t("contextPanel.tabDiff")}>
+    <div className="review-summary">
+      <span>{t("wb.workingChanges")}</span>
+      {status && <span className="review-counts"><span className="review-added">+{status.additions}</span><span className="review-removed">−{status.deletions}</span></span>}
+      <button onClick={() => setRevision(value => value + 1)} aria-label={t("contextPanel.diffRefresh")} title={t("contextPanel.diffRefresh")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M20 11a8 8 0 1 0 2 5.3M20 4v7h-7" /></svg></button>
     </div>
-  );
+    {error ? <p className="review-message" role="alert">{error}</p> : !status ? <p className="review-message">{t("files.loading")}</p> : !status.files.length ? <p className="review-message">{t("contextPanel.diffEmpty")}</p> :
+      status.files.map(file => <FileDiff key={file.filePath} cwd={cwd} file={file} selected={file.filePath === selectedFilePath} refreshKey={refreshKey + revision} />)}
+  </section>;
 }
