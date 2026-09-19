@@ -800,7 +800,9 @@ export function AppShell() {
     });
   }, [fileTabs]);
 
-  const handleViewFullHistory = useCallback(() => {
+  // More → Export HTML. The only entry point to the session HTML export since
+  // the "Full history" toolbar button was removed (ui-refresh decision 7).
+  const handleExportHtml = useCallback(() => {
     if (!selectedSession) return;
     // Absolute URL so Tauri's open_external_url (http/https only) can hand the
     // page to the system browser for inline viewing — not a save dialog.
@@ -810,7 +812,7 @@ export function AppShell() {
     ).href;
     void import("@/lib/desktop-native").then(({ openExternal }) => {
       void openExternal(exportUrl).catch((error) => {
-        console.error("Failed to open full history:", error);
+        console.error("Failed to open the session HTML export:", error);
       });
     });
   }, [selectedSession]);
@@ -1404,60 +1406,6 @@ export function AppShell() {
           )}
           {showChat && (
             <div className="app-topbar-actions" style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
-              <button
-                className="native-toolbar-button"
-                onClick={handleViewFullHistory}
-                disabled={!selectedSession}
-                 title={selectedSession ? translate("history.full") : translate("history.unsaved")}
-                 aria-label={translate("history.full")}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  height: "100%",
-                  padding: "0 12px",
-                  background: "none",
-                  border: "none",
-                  borderTop: "2px solid transparent",
-                  borderRight: "1px solid var(--border)",
-                  color: selectedSession ? "var(--text-muted)" : "var(--text-dim)",
-                  cursor: selectedSession ? "pointer" : "not-allowed",
-                  opacity: selectedSession ? 1 : 0.45,
-                  flexShrink: 0,
-                  fontSize: 11,
-                  whiteSpace: "nowrap",
-                  transition: "color 0.1s, background 0.1s, opacity 0.1s",
-                }}
-                onMouseEnter={(e) => {
-                  if (!selectedSession) return;
-                  e.currentTarget.style.color = "var(--text)";
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = selectedSession ? "var(--text-muted)" : "var(--text-dim)";
-                  e.currentTarget.style.background = "none";
-                }}
-              >
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{
-                    color: selectedSession ? "var(--text-muted)" : "var(--text-dim)",
-                    flexShrink: 0,
-                  }}
-                >
-                  <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-                  <path d="M3 3v5h5" />
-                  <path d="M12 7v5l3 2" />
-                </svg>
-                 {!isMobile && <span>{translate("history.label")}</span>}
-              </button>
               <BranchNavigator
                 tree={branchTree}
                 activeLeafId={branchActiveLeafId}
@@ -1588,6 +1536,31 @@ export function AppShell() {
                           <span className="app-topbar-more-copy">
                             <span>{translate("system.prompt")}</span>
                             <small>{systemPrompt === null ? translate("appshell.systemLoads") : systemPrompt ? translate("appshell.viewInstructions") : translate("appshell.toolsDisabled")}</small>
+                          </span>
+                        </button>
+                        <button
+                          className="app-topbar-more-item"
+                          type="button"
+                          role="menuitem"
+                          disabled={!selectedSession}
+                          onClick={() => {
+                            setTopMoreOpen(false);
+                            handleExportHtml();
+                          }}
+                        >
+                          <span
+                            className="app-topbar-more-icon"
+                            style={{ color: selectedSession ? "var(--text-muted)" : "var(--text-dim)" }}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="7 10 12 15 17 10" />
+                              <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                          </span>
+                          <span className="app-topbar-more-copy">
+                            <span>{translate("appshell.exportHtml")}</span>
+                            <small>{selectedSession ? translate("appshell.exportHtmlHint") : translate("appshell.exportHtmlUnsaved")}</small>
                           </span>
                         </button>
                         {(() => {
