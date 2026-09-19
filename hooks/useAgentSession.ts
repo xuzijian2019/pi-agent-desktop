@@ -797,12 +797,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [isNew, newSessionCwd, onSessionCreated]);
 
   const taskSetupRef = useRef<TaskSetup | undefined>(undefined);
-  const applyTaskSetup = useCallback((setup: TaskSetup) => {
+  const applyTaskSetup = useCallback((setup: TaskSetup | undefined) => {
     if (!isNew || sessionIdRef.current) return;
     taskSetupRef.current = setup;
-    if (setup.model) { newSessionModelOverrideRef.current = setup.model; setNewSessionModel(setup.model); }
-    if (setup.effort !== "inherit") { thinkingLevelOverrideRef.current = setup.effort === "auto" ? null : setup.effort; setThinkingLevel(setup.effort); }
-    if (setup.tools !== "inherit") setToolPreset(setup.tools);
+    const model = setup?.model ?? null;
+    const effort = !setup || setup.effort === "inherit" ? loadStoredThinkingLevel() ?? "auto" : setup.effort;
+    const tools = !setup || setup.tools === "inherit" ? loadStoredToolPreset() : setup.tools;
+    newSessionModelOverrideRef.current = model;
+    setNewSessionModel(model);
+    thinkingLevelOverrideRef.current = effort === "auto" ? null : effort;
+    setThinkingLevel(effort);
+    setToolPreset(tools);
   }, [isNew]);
 
   const ensureNewSession = useCallback(async () => {

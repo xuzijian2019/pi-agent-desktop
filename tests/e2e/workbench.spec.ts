@@ -79,8 +79,109 @@ test("saved task applies to a draft, preserves settings and restores the panel w
   await expect(panel).toBeVisible();
   await composer.fill("Keep this draft");
   await panel.getByRole("button", { name: "Use", exact: true }).click();
+  await composer.fill("Keep this draft plus a late edit");
   await page.getByRole("button", { name: "Append task prompt" }).click();
-  await expect(composer).toHaveValue("Keep this draft\n\nReview this project carefully.");
+  await expect(composer).toHaveValue("Keep this draft plus a late edit\n\nReview this project carefully.");
+});
+
+test("loading a remotely saved draft restores references and setup atomically", async ({ page }) => {
+  const cwd = await project(page);
+  const composer = page.getByPlaceholder("Message…", { exact: false });
+  await composer.fill('stale #"Source A"');
+  await expect(page.getByText("Saving draft…", { exact: true })).toHaveCount(0);
+
+  const savedDraft = {
+    value: 'saved #"Source B"',
+    images: [],
+    texts: [],
+    references: { "Source B": { id: "source-b", leafId: "branch-b" } },
+    setup: { model: null, effort: "high", tools: "full" },
+  };
+  await page.evaluate(async ({ key, savedDraft }) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("pi-chat-drafts", 1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const revision = await new Promise<number>((resolve, reject) => {
+      const transaction = database.transaction("drafts", "readwrite");
+      const store = transaction.objectStore("drafts");
+      const get = store.get(key);
+      let nextRevision = 1;
+      get.onsuccess = () => {
+        nextRevision = (get.result?.revision ?? 0) + 1;
+        store.put({ revision: nextRevision, draft: savedDraft }, key);
+      };
+      transaction.oncomplete = () => resolve(nextRevision);
+      transaction.onerror = () => reject(transaction.error);
+    });
+    database.close();
+    const channel = new BroadcastChannel("pi-chat-drafts");
+    channel.postMessage({ key, revision });
+    channel.close();
+  }, { key: `new:${cwd}`, savedDraft });
+
+  const conflict = page.getByRole("status").filter({ hasText: "Draft changed in another tab" });
+  await expect(conflict).toBeVisible();
+  await conflict.getByRole("button", { name: "Load saved version" }).click();
+  await expect(composer).toHaveValue(savedDraft.value);
+  await expect(page.getByLabel("Thinking effort")).toHaveValue("high");
+  await expect(page.getByLabel("Tools", { exact: true })).toHaveValue("full");
+  await expect(conflict).toHaveCount(0);
+
+  await expect.poll(() => page.evaluate(async (key) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("pi-chat-drafts", 1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      return await new Promise((resolve, reject) => {
+        const request = database.transaction("drafts").objectStore("drafts").get(key);
+        request.onsuccess = () => resolve(request.result?.draft);
+        request.onerror = () => reject(request.error);
+      });
+    } finally { database.close(); }
+  }, `new:${cwd}`)).toEqual(savedDraft);
+});
+
+test("recent task chips reveal draft choices from closed and different panels", async ({ page, request }) => {
+  const created = await request.post("/api/saved-tasks", { data: {
+    name: "Recent conflict task", description: "Visible conflict choices", prompt: "TASK TEXT",
+    projectRoot: null, model: null, effort: "inherit", tools: "inherit",
+  } });
+  expect(created.ok()).toBe(true);
+  const task = await created.json();
+  const cwd = path.join(WORK_ROOT, `task-chip-${randomUUID()}`);
+  await mkdir(cwd, { recursive: true });
+  await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);
+  const composer = page.getByPlaceholder("Message…", { exact: false });
+  await expect(composer).toBeEditable();
+  await composer.fill("KEEP THIS DRAFT");
+  const chip = page.getByRole("button", { name: "Recent conflict task Visible conflict choices", exact: true });
+  await expect(chip).toBeVisible();
+
+  // The panel starts closed. A conflict opens Tasks and moves keyboard focus to
+  // the least destructive choice.
+  await chip.click();
+  const dialog = page.getByRole("dialog", { name: "A draft already exists in this project. Choose how to apply the template.", exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Keep current draft" })).toBeFocused();
+  await dialog.getByRole("button", { name: "Keep current draft" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(composer).toHaveValue("KEEP THIS DRAFT");
+
+  // The same affordance works when Files is the currently selected mode, and
+  // issue 1's late-edit guarantee applies to this chip path too.
+  await mode(page, "files");
+  await chip.click();
+  await expect(dialog).toBeVisible();
+  await composer.fill("KEEP THIS DRAFT PLUS LATE EDIT");
+  await dialog.getByRole("button", { name: "Append task prompt" }).click();
+  await expect(composer).toHaveValue("KEEP THIS DRAFT PLUS LATE EDIT\n\nTASK TEXT");
+
+  const removed = await request.delete(`/api/saved-tasks/${task.id}`, { data: { revision: task.revision } });
+  expect(removed.ok()).toBe(true);
 });
 
 test("the composer send preview keeps the reference snapshot and goes stale after edits", async ({ page, request }) => {
@@ -185,6 +286,14 @@ test("pinned outputs use real files, open in place, and persist shelf metadata",
   // Unpinning empties the shelf, and the section disappears with it.
   await pinned.region.getByRole("button", { name: "Unpin", exact: true }).click();
   await expect(page.getByRole("region", { name: "Pinned", exact: true })).toHaveCount(0);
+
+  // Transcript/file pin actions intentionally have no shelf revision. They
+  // must still atomically repin metadata retained by the unpin operation.
+  await page.getByRole("button", { name: "Pin", exact: true }).click();
+  await expect(pinned.region.getByText("Final report", { exact: true })).toBeVisible();
+  const repinned = (await (await request.get(`/api/sessions/${id}/outputs`)).json()).items[0];
+  expect(repinned.pinned).toBe(true);
+  expect(repinned.revision).toBeGreaterThan(item.revision);
 });
 
 test("branch creation and real Bash activity work without a model", async ({ page, request }) => {
@@ -279,6 +388,29 @@ test("the Changes section expands patches inline without opening file tabs", asy
   await toggle.click();
   await expect(review.getByRole("button", { name: /second\.txt/ })).toHaveCount(0);
   await expect(toggle).toContainText("2");
+});
+
+test("a clean Changes section can refresh after an external edit", async ({ page, request }) => {
+  const cwd = await realpath(await project(page, true));
+  await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);
+  await expect(page.getByPlaceholder("Message…", { exact: false })).toBeEditable();
+  await mode(page, "files");
+  const { region: changes, toggle } = section(page, "Changes");
+  await toggle.click();
+  await expect(changes.getByText("No changed files", { exact: true })).toBeVisible();
+  const refresh = changes.getByRole("button", { name: "Refresh changes", exact: true });
+  await expect(refresh).toBeVisible();
+
+  await writeFile(path.join(cwd, "readme.md"), "# Externally updated\n");
+  await expect.poll(async () => {
+    const response = await request.get(`/api/git/status?cwd=${encodeURIComponent(cwd)}`);
+    return (await response.json()).files?.length;
+  }).toBe(1);
+  // No session/cwd change is necessary: the clean-state control revalidates
+  // both status and any patches through the normal cache invalidation path.
+  await refresh.click();
+  await expect(toggle).toContainText("1");
+  await expect(changes.getByRole("button", { name: /readme\.md/ })).toBeVisible();
 });
 
 test("transcript search jumps to an inactive branch, reveals output, and preserves the draft", async ({ page, request }) => {

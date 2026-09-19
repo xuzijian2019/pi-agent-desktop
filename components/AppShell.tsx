@@ -133,6 +133,7 @@ export function AppShell() {
   const handleDraftChange = useCallback(() => setDraftRevision(v => v + 1), []);
   const [taskSeed, setTaskSeed] = useState<TaskSeed>();
   const [taskConflict, setTaskConflict] = useState<{ task: SavedTask; cwd: string; draft: ChatDraft; generation: number }>();
+  const taskConflictRef = useRef<HTMLDivElement>(null);
   const [workbenchError, setWorkbenchError] = useState("");
   const openMode = useCallback((mode: PanelMode) => { setRightPanelMode(mode); setRightPanelOpen(true); }, []);
   // Pinning no longer switches panels: it opens Files with the Pinned section out.
@@ -819,13 +820,19 @@ export function AppShell() {
   const showPlaceholder = initialSessionRestored && !showChat;
 
   const branchNavigate = useCallback((cwd: string) => { handleNewSession("", cwd); }, [handleNewSession]);
-  const applySavedTask = useCallback((task: SavedTask, cwd: string, draft: ChatDraft | null, append: boolean, generation: number) => {
+  const applySavedTask = useCallback(async (task: SavedTask, cwd: string, append: boolean, generation: number) => {
+    const draftKey = `new:${cwd}`;
     if (generation !== navigationGeneration.current) { setTaskConflict(undefined); return; }
+    // The composer remains editable while the conflict prompt is open. Read the
+    // current draft at the moment the choice is made rather than applying to the
+    // snapshot which originally caused the prompt.
+    const draft = await loadDraft(draftKey);
+    if (generation !== navigationGeneration.current || getDraftStatus(draftKey) === "conflict") { setTaskConflict(undefined); return; }
     const setup = { model: task.model ?? draft?.setup?.model ?? null, effort: task.effort === "inherit" ? draft?.setup?.effort ?? "inherit" : task.effort, tools: task.tools === "inherit" ? draft?.setup?.tools ?? "inherit" : task.tools };
-    setDraft(`new:${cwd}`, { value: append && draft?.value ? `${draft.value}\n\n${task.prompt}` : task.prompt, images: append ? draft?.images ?? [] : [], texts: append ? draft?.texts : [], references: append ? draft?.references : {}, setup });
+    setDraft(draftKey, { value: append && draft?.value ? `${draft.value}\n\n${task.prompt}` : task.prompt, images: append ? draft?.images ?? [] : [], texts: append ? draft?.texts : [], references: append ? draft?.references : {}, setup });
     setTaskConflict(undefined); handleNewSession("", cwd);
   }, [handleNewSession]);
-  const useSavedTask = useCallback(async (task: SavedTask) => {
+  const handleSavedTask = useCallback(async (task: SavedTask, revealConflict = false) => {
     const cwd = selectedSession?.cwd ?? effectiveNewSessionCwd;
     if (!cwd) throw new Error(translate("wb.selectProject"));
     const generation = navigationGeneration.current;
@@ -834,9 +841,17 @@ export function AppShell() {
     const draft = await loadDraft(`new:${cwd}`);
     if (getDraftStatus(`new:${cwd}`) === "conflict") throw new Error(translate("wb.draftConflict"));
     if (generation !== navigationGeneration.current) return;
-    if (draft && (draft.value || draft.images.length)) setTaskConflict({ task, cwd, draft, generation });
-    else applySavedTask(task, cwd, draft, false, generation);
-  }, [selectedSession, effectiveNewSessionCwd, applySavedTask, translate]);
+    if (draft && (draft.value || draft.images.length)) {
+      setTaskConflict({ task, cwd, draft, generation });
+      if (revealConflict) openMode("tasks");
+    }
+    else await applySavedTask(task, cwd, false, generation);
+  }, [selectedSession, effectiveNewSessionCwd, applySavedTask, translate, openMode]);
+  useEffect(() => {
+    if (!taskConflict || !rightPanelOpen || rightPanelMode !== "tasks") return;
+    requestAnimationFrame(() => taskConflictRef.current?.querySelector<HTMLButtonElement>("button")?.focus());
+  }, [taskConflict, rightPanelOpen, rightPanelMode]);
+  const handleGuideSavedTask = useCallback((task: SavedTask) => handleSavedTask(task, true), [handleSavedTask]);
   const openTranscriptResult = useCallback(async (result: TranscriptResult, query: string, signal: AbortSignal) => {
     const generation = ++navigationGeneration.current;
     const params = new URLSearchParams({ q: query, session: result.sessionId, entryId: result.entryId, field: result.field });
@@ -1008,7 +1023,7 @@ export function AppShell() {
   // The composer chip that replaced the Context panel mode; kept out of the
   // ChatWindow call so that element stays one flat attribute list.
   const sendPreview = <SendPreview inputRef={chatInputRef} revision={draftRevision} identity={selectedSession?.id ?? `new:${effectiveNewSessionCwd}`} systemPrompt={systemPrompt} />;
-  const newTaskGuide = selectedSession ? undefined : <NewTaskGuide cwd={effectiveNewSessionCwd} onUseTask={useSavedTask} onOpenTasks={() => openMode("tasks")} />;
+  const newTaskGuide = selectedSession ? undefined : <NewTaskGuide cwd={effectiveNewSessionCwd} onUseTask={handleGuideSavedTask} onOpenTasks={() => openMode("tasks")} />;
 
   const copyActiveFilePath = useCallback(async () => {
     if (!activeFileTab?.filePath) return;
@@ -1720,8 +1735,8 @@ export function AppShell() {
         <div hidden={rightPanelMode !== "activity"} className="workbench-mode-body"><ActivityPanel visible={rightPanelOpen && rightPanelMode === "activity"} cwd={activeCwd} onOpen={openActivitySession} /></div>
         <div hidden={rightPanelMode !== "search"} className="workbench-mode-body"><TranscriptSearchPanel visible={rightPanelOpen && rightPanelMode === "search"} onOpen={openTranscriptResult} /></div>
         <div hidden={rightPanelMode !== "tasks"} className="workbench-mode-body">
-          {taskConflict && <div className="workbench-card" role="dialog" aria-label={translate("wb.existingDraft")}><p>{translate("wb.existingDraft")}</p><button onClick={() => setTaskConflict(undefined)}>{translate("wb.keepDraft")}</button><button onClick={() => applySavedTask(taskConflict.task, taskConflict.cwd, taskConflict.draft, false, taskConflict.generation)}>{translate("wb.replaceDraft")}</button><button onClick={() => applySavedTask(taskConflict.task, taskConflict.cwd, taskConflict.draft, true, taskConflict.generation)}>{translate("wb.appendPrompt")}</button></div>}
-          <SavedTasksPanel visible={rightPanelOpen && rightPanelMode === "tasks"} cwd={activeCwd} seed={taskSeed} onUse={useSavedTask} onCapture={captureTask} />
+          {taskConflict && <div ref={taskConflictRef} className="workbench-card" role="dialog" aria-label={translate("wb.existingDraft")}><p>{translate("wb.existingDraft")}</p><button onClick={() => setTaskConflict(undefined)}>{translate("wb.keepDraft")}</button><button onClick={() => void applySavedTask(taskConflict.task, taskConflict.cwd, false, taskConflict.generation)}>{translate("wb.replaceDraft")}</button><button onClick={() => void applySavedTask(taskConflict.task, taskConflict.cwd, true, taskConflict.generation)}>{translate("wb.appendPrompt")}</button></div>}
+          <SavedTasksPanel visible={rightPanelOpen && rightPanelMode === "tasks"} cwd={activeCwd} seed={taskSeed} onUse={handleSavedTask} onCapture={captureTask} />
         </div>
         <div hidden={rightPanelMode !== "files"} className="workbench-files-body">
         <div className="right-panel-tab-strip">

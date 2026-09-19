@@ -97,8 +97,12 @@ export async function changeOutput(sessionId: string, body: Record<string, unkno
   const candidate = discoverOutputs(sessionId, s.cwd, s.context.messages, s.context.entryIds, s.leaf).find(i => i.id === id);
   return updateUiStore<Shelf, OutputOverride | null>(store(sessionId), { items: {} }, data => {
     const current = data.items[id];
-    if (current?.pinned && body.pinned === true && body.revision === undefined && body.label === undefined && body.hidden === undefined && !remove) return current;
-    if ((current?.revision ?? 0) !== (body.revision ?? 0)) throw new UiError("Output changed. Refresh the shelf.", 409);
+    // Pin entry points only know a path (a transcript/file may have no shelf
+    // row on screen). Treat that narrow operation as an atomic, idempotent
+    // repin while retaining revision checks for every shelf edit.
+    const pathOnlyPin = body.pinned === true && body.revision === undefined && body.label === undefined && body.hidden === undefined && !remove;
+    if (current?.pinned && pathOnlyPin) return current;
+    if (!pathOnlyPin && (current?.revision ?? 0) !== (body.revision ?? 0)) throw new UiError("Output changed. Refresh the shelf.", 409);
     if (remove) { delete data.items[id]; return null; }
     if (!current && Object.keys(data.items).length >= 500) throw new UiError("Output shelf is full");
     const item: OutputOverride = { path, label: typeof body.label === "string" ? body.label : current?.label ?? basename(path), revision: (current?.revision ?? 0) + 1, pinned: typeof body.pinned === "boolean" ? body.pinned : current?.pinned ?? false, hidden: typeof body.hidden === "boolean" ? body.hidden : current?.hidden ?? false, sourceEntryIds: current?.sourceEntryIds ?? candidate?.sourceEntryIds ?? [], leafId: current?.leafId ?? s.leaf, observedMtime: current?.observedMtime ?? mtime };

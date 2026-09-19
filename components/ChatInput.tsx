@@ -56,7 +56,7 @@ interface ModelOption {
 interface Props {
   onSend: (message: string, images?: AttachedImage[]) => void;
   onDraftChange?: () => void;
-  onSetupChange?: (setup: TaskSetup) => void;
+  onSetupChange?: (setup: TaskSetup | undefined) => void;
   sendPreview?: React.ReactNode;
   onOpenTasks?: () => void;
   onBranchNavigate?: (cwd: string) => void;
@@ -883,8 +883,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     clearImages();
     setAttachedImages(draftImagesToAttachedImages(draft?.images));
     setPastedTexts(draftTextsToPastedTexts(draft?.texts));
+    setReferenceSelections(draft?.references ?? {});
+    sessionMentionTargetsRef.current = new Map(Object.entries(draft?.references ?? {}).map(([label, target]) => [label, target.id]));
+    setDraftSetup(draft?.setup);
+    onSetupChange?.(draft?.setup);
     setHydratedDraftKey(draftKey);
-  }, [draftKey, clearImages]);
+  }, [draftKey, clearImages, onSetupChange]);
   const persistenceStatus = draftKey ? getDraftStatus(draftKey) : "saved";
   const invalidDraftImages = attachedImages.length > MAX_ATTACHED_IMAGES || attachedImages.some((image) => !isBase64ImageWithinLimits(image));
   const orphanedPaste = (value.match(/\[Pasted text \d+ · \d+ lines\]/g) ?? []).some((token) => !pastedTexts.some((paste) => paste.token === token));
