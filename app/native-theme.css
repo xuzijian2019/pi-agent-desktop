@@ -4169,6 +4169,587 @@ span.linenumber {
 
 /* -- H1: sidebar menus and popovers (SessionSidebar.tsx) ------------------ */
 
+/* Everything below replaces an inline style={{…}} object that used to live in
+   components/SessionSidebar.tsx. Declarations marked !important are there to
+   out-rank the blanket .native-popover button / input rules above, which
+   already won over the inline styles they replace — so the rendered result is
+   unchanged. Only positions computed at runtime stay inline. */
+
+/* Leading glyphs inside sidebar rows and menu items. */
+.sidebar-glyph,
+.sidebar-glyph-block {
+  flex-shrink: 0;
+}
+
+.sidebar-glyph-block {
+  display: block;
+}
+
+/* -- sidebar shell ------------------------------------------------------- */
+
+.session-sidebar {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0%;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.session-sidebar > .session-sidebar-header {
+  flex-shrink: 0;
+}
+
+.sidebar-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.sidebar-folder-row.is-hidden {
+  display: none;
+}
+
+.sidebar-folder-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+/* -- worktree switcher: trigger row -------------------------------------- */
+
+.sidebar-worktree {
+  position: relative;
+}
+
+.sidebar-worktree.is-hidden {
+  display: none;
+}
+
+.sidebar-worktree-trigger.is-open {
+  background: var(--bg-hover);
+}
+
+.sidebar-worktree-icon {
+  color: var(--text-muted);
+}
+
+.sidebar-worktree-icon.is-linked {
+  color: var(--accent);
+}
+
+.sidebar-worktree-path {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text);
+}
+
+.sidebar-worktree-tag {
+  flex-shrink: 0;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.sidebar-worktree-caret {
+  flex-shrink: 0;
+}
+
+.sidebar-worktree-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+}
+
+.sidebar-header-row.is-disabled {
+  color: var(--text-dim);
+  cursor: default;
+  opacity: 0.82;
+}
+
+.sidebar-header-row.is-quiet {
+  color: var(--text-muted);
+}
+
+/* -- worktree switcher: dropdown surface --------------------------------- */
+
+/* Box, shadow and radius come from .native-popover; this only places it. */
+.sidebar-worktree-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.sidebar-worktree-filter {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-worktree-list {
+  max-height: min(40vh, 300px);
+  overflow-y: auto;
+}
+
+.sidebar-worktree-empty {
+  padding: 8px 10px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.sidebar-worktree-error {
+  padding: 5px 10px 8px;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+/* -- worktree switcher: one row ------------------------------------------ */
+
+.sidebar-worktree-row {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-worktree-row-button {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: none;
+  border-radius: 0 !important;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
+.sidebar-worktree-row-button.is-current {
+  color: var(--text);
+}
+
+.sidebar-worktree-row-check,
+.sidebar-worktree-row-spacer {
+  flex-shrink: 0;
+}
+
+.sidebar-worktree-row-spacer {
+  width: 10px;
+}
+
+.sidebar-worktree-row-path {
+  flex: 1;
+}
+
+.sidebar-worktree-row-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  min-height: 0 !important;
+  padding: 0;
+  margin-right: 2px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm) !important;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition:
+    color 120ms var(--ease-native),
+    background 120ms var(--ease-native);
+}
+
+.sidebar-worktree-row-action.is-remove {
+  width: 34px;
+  margin-right: 4px;
+}
+
+/* -- worktree switcher: remove confirmation ------------------------------ */
+
+.sidebar-worktree-confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+}
+
+.sidebar-worktree-confirm-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.sidebar-worktree-confirm-accept,
+.sidebar-worktree-confirm-cancel {
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border-radius: var(--radius-sm) !important;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sidebar-worktree-confirm-accept {
+  background: var(--danger);
+  border: none;
+  color: #fff;
+  font-weight: 600;
+}
+
+.sidebar-worktree-confirm-cancel {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+/* -- new-worktree form --------------------------------------------------- */
+
+.sidebar-worktree-new {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  border-radius: 0 !important;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+  font-size: 11px;
+}
+
+.sidebar-form {
+  padding: 6px 8px;
+}
+
+.sidebar-form-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.sidebar-form-branches {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 96px;
+  margin-top: 5px;
+  overflow-y: auto;
+}
+
+.sidebar-form-branch {
+  padding: 3px 6px;
+  border: none;
+  border-radius: var(--radius-sm) !important;
+  min-height: 0 !important;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-form-branch.is-current {
+  background: var(--bg-selected);
+}
+
+.sidebar-form-actions {
+  display: flex;
+  gap: 5px;
+  margin-top: 5px;
+}
+
+.sidebar-form-submit,
+.sidebar-form-cancel {
+  flex: 1;
+  padding: 4px 0;
+  border-radius: var(--radius-sm) !important;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sidebar-form-submit {
+  background: var(--accent);
+  border: none;
+  color: var(--accent-contrast);
+  font-weight: 600;
+}
+
+.sidebar-form-submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.sidebar-form-cancel {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+/* -- project path hint --------------------------------------------------- */
+
+/* PathLabel sets line-height inline; the hint is a single flush line. */
+.sidebar-project-path-hint-path {
+  line-height: 1 !important;
+}
+
+/* -- session rows -------------------------------------------------------- */
+
+.sidebar-session-row {
+  position: relative;
+}
+
+.session-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 14px;
+  overflow: hidden;
+  background: transparent;
+  cursor: pointer;
+  transition: background 120ms var(--ease-native);
+}
+
+.session-item:hover,
+.session-item.is-menu-open {
+  background: var(--bg-hover);
+}
+
+.session-item.is-confirming-delete {
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+}
+
+.session-item.is-confirming-delete,
+.session-item.is-renaming {
+  cursor: default;
+}
+
+.session-item.is-deleting {
+  opacity: 0.5;
+}
+
+.session-item-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.session-item-title.is-missing {
+  color: var(--text-dim);
+}
+
+.sidebar-session-icon {
+  flex-shrink: 0;
+}
+
+.sidebar-session-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.sidebar-session-indicator.is-running {
+  color: var(--accent);
+}
+
+.sidebar-session-indicator.is-unread {
+  color: #0891b2;
+}
+
+.sidebar-session-indicator.is-missing {
+  color: var(--text-dim);
+}
+
+.sidebar-session-collapse {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: transform 200ms var(--ease-native);
+}
+
+.sidebar-session-collapse.is-collapsed {
+  transform: rotate(-90deg);
+}
+
+.sidebar-session-menu-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background 120ms var(--ease-native),
+    color 120ms var(--ease-native);
+}
+
+.sidebar-session-menu-button:hover,
+.sidebar-session-menu-button.is-open {
+  background: var(--bg-selected);
+  color: var(--text);
+}
+
+/* -- session row: delete confirmation ------------------------------------ */
+
+.sidebar-session-delete-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.sidebar-session-delete-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 5px;
+}
+
+.sidebar-session-delete-confirm,
+.sidebar-session-delete-cancel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.sidebar-session-delete-confirm {
+  gap: 4px;
+  background: var(--danger);
+  border: none;
+  color: #fff;
+  font-weight: 600;
+}
+
+.sidebar-session-delete-cancel {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.sidebar-session-rename-input {
+  flex: 1;
+  height: 26px;
+  padding: 3px 8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  outline: none;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+}
+
+/* -- session actions menu ------------------------------------------------ */
+
+.sidebar-menu-surface {
+  position: fixed;
+  z-index: 800;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  /* Matches MENU_WIDTH in SessionSidebar.tsx, which positions the portal. */
+  width: 190px;
+  padding: 5px;
+}
+
+.sidebar-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-md) !important;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.sidebar-menu-item.is-danger {
+  color: var(--danger);
+}
+
+.sidebar-menu-separator {
+  height: 1px;
+  margin: 4px 3px;
+  background: var(--border);
+}
+
+.sidebar-menu-meta {
+  padding: 3px 8px 5px;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.sidebar-menu-meta-worktree {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--accent);
+}
+
+.sidebar-menu-meta-branch {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* -- H2: composer chips, popovers and controls (ChatInput.tsx) ------------ */
 
 /* -- H3: message view (MessageView.tsx) ----------------------------------- */
