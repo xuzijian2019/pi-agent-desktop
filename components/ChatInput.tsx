@@ -25,7 +25,11 @@ import {
   filterFileEntries, filterSessionEntries,
   type AtQueryMatch, type FileIndexEntry, type HashQueryMatch, type SessionMentionEntry,
 } from "@/lib/file-fuzzy";
-import { resolveSessionReferences } from "@/lib/session-reference";
+import { SESSION_REFERENCE_PATTERN } from "@/lib/session-reference";
+import { prepareOutgoingMessage, type PreparedOutgoing, type ReferenceSelection } from "@/lib/prepare-outgoing";
+import type { ChatDraft } from "@/lib/draft-store";
+import type { TaskSetup } from "@/lib/task-types";
+import { BranchControl } from "./workbench/BranchControl";
 import { selectableThinkingLevels } from "@/lib/thinking-level-options";
 import { ImageLightbox } from "./ImageLightbox";
 import type { SessionInfo } from "@/lib/types";
@@ -51,6 +55,11 @@ interface ModelOption {
 
 interface Props {
   onSend: (message: string, images?: AttachedImage[]) => void;
+  onDraftChange?: () => void;
+  onSetupChange?: (setup: TaskSetup) => void;
+  onOpenContext?: () => void;
+  onOpenTasks?: () => void;
+  onBranchNavigate?: (cwd: string) => void;
   onAbort: () => void;
   onSteer?: (message: string, images?: AttachedImage[]) => void;
   onFollowUp?: (message: string, images?: AttachedImage[]) => void;
@@ -111,6 +120,11 @@ interface Props {
 }
 
 export interface ChatInputHandle {
+  snapshot: () => ChatDraft;
+  currentSetup: () => TaskSetup;
+  prepare: (refresh?: boolean) => Promise<PreparedOutgoing>;
+  removeContextItem: (kind: "paste" | "reference" | "image", id: string) => void;
+  selectReference: (label: string, selection: ReferenceSelection) => void;
   insertText: (text: string) => void;
   insertIfEmpty: (text: string) => void;
   replaceMessage: (message: UserMessage) => void;
@@ -536,7 +550,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   extensionStatuses = [],
   contextUsage,
   sessionStats,
-  onSessionStatsPanelOpen,
+  onSessionStatsPanelOpen, onDraftChange, onSetupChange, onBranchNavigate,
 }: Props, ref) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
@@ -644,7 +658,37 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   attachedImagesRef.current = attachedImages;
   pastedTextsRef.current = pastedTexts;
 
+  const [draftSetup, setDraftSetup] = useState<TaskSetup>();
+  const [referenceSelections, setReferenceSelections] = useState<Record<string, ReferenceSelection>>({});
+  const [preparationError, setPreparationError] = useState("");
+  const preparingRef = useRef(false);
+  const preparationRef = useRef<{ key: string; result: PreparedOutgoing } | null>(null);
+  const preparationController = useRef<AbortController | null>(null);
+  const snapshot = useCallback((): ChatDraft => ({ value: valueRef.current, images: attachedImagesRef.current.map(imageToDraftImage), texts: pastedTextsToDraftTexts(pastedTextsRef.current), setup: draftSetup, references: { ...Object.fromEntries([...sessionMentionTargetsRef.current].map(([label, id]) => [label, { id }])), ...referenceSelections } }), [draftSetup, referenceSelections]);
+  const snapshotRef = useRef(snapshot); snapshotRef.current = snapshot;
+  const prepare = useCallback(async (refresh = false) => {
+    const draft = snapshotRef.current(); const owner = draftKeyRef.current;
+    const key = JSON.stringify([owner, draft, model, thinkingLevel, toolPreset]);
+    if (!refresh && preparationRef.current?.key === key) return preparationRef.current.result;
+    preparationController.current?.abort();
+    const controller = new AbortController(); preparationController.current = controller;
+    const result = await prepareOutgoingMessage(draft, fetch, controller.signal);
+    if (owner !== draftKeyRef.current || refresh && JSON.stringify(snapshotRef.current()) !== JSON.stringify(draft)) throw new Error(t("wb.previewChanged"));
+    preparationRef.current = { key, result }; return result;
+  }, [model, thinkingLevel, toolPreset, t]);
+  useEffect(() => { onDraftChange?.(); }, [value, attachedImages, pastedTexts, draftSetup, referenceSelections, model?.provider, model?.modelId, thinkingLevel, toolPreset, draftKey, onDraftChange]);
+  useEffect(() => () => { preparationController.current?.abort(); }, [draftKey]);
+
   useImperativeHandle(ref, () => ({
+    snapshot,
+    currentSetup: () => ({ model: model ?? null, effort: thinkingLevel ?? "auto", tools: toolPreset ?? "default" }),
+    prepare,
+    selectReference(label, selection) { setReferenceSelections(prev => ({ ...prev, [label]: selection })); },
+    removeContextItem(kind, id) {
+      if (kind === "image") { setAttachedImages(prev => prev.filter((image, index) => { if (String(index) === id) { revokeImagePreview(image); return false; } return true; })); }
+      if (kind === "paste") { const paste = pastedTextsRef.current.find(p => String(p.id) === id); if (paste) { setValue(v => v.split(paste.token).join("")); setPastedTexts(p => p.filter(i => i.id !== paste.id)); } }
+      if (kind === "reference") { setValue(v => v.replace(SESSION_REFERENCE_PATTERN, (token, quoted, bare) => (quoted ?? bare) === id ? "" : token)); sessionMentionTargetsRef.current.delete(id); setReferenceSelections(prev => { const next = { ...prev }; delete next[id]; return next; }); }
+    },
     insertIfEmpty(text: string) {
       const ta = textareaRef.current;
       const current = ta ? ta.value : value;
@@ -842,6 +886,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (draftKey) clearDraft(draftKey);
     clearImages();
     setPastedTexts([]);
+    setDraftSetup(undefined);
+    setReferenceSelections({});
+    sessionMentionTargetsRef.current.clear();
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
@@ -871,17 +918,21 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         return draftImagesToAttachedImages(draft?.images);
       });
       setPastedTexts(draftTextsToPastedTexts(draft?.texts));
+      setDraftSetup(draft?.setup);
+      if (draft?.setup) onSetupChange?.(draft.setup);
+      setReferenceSelections(draft?.references ?? {});
+      sessionMentionTargetsRef.current = new Map(Object.entries(draft?.references ?? {}).map(([label, target]) => [label, target.id]));
       setAtQuery(null);
       setHashQuery(null);
       setHistoryMenuOpen(false);
       setHydratedDraftKey(draftKey);
     });
     return () => { cancelled = true; };
-  }, [draftKey]);
+  }, [draftKey, onSetupChange]);
   useEffect(() => {
     if (!draftKey || hydratedDraftKey !== draftKey) return;
-    setDraft(draftKey, { value, images: attachedImages.map(imageToDraftImage), texts: pastedTextsToDraftTexts(pastedTexts) });
-  }, [attachedImages, draftKey, hydratedDraftKey, value, pastedTexts]);
+    setDraft(draftKey, snapshot());
+  }, [attachedImages, draftKey, hydratedDraftKey, value, pastedTexts, snapshot]);
   const restoreSavedDraft = useCallback(async () => {
     if (!draftKey) return;
     setHydratedDraftKey(undefined);
@@ -922,11 +973,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         return;
       }
     }
-    const resolvedMessage = await resolveSessionReferences(msg, sessionMentionTargetsRef.current);
-    if (draftKeyRef.current !== draftKey) return;
-    onSend(resolvedMessage, attachedImages.length ? attachedImages : undefined);
-    clearInput();
-  }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, isStreaming, onBuiltinCommand, onSend, clearInput]);
+    if (preparingRef.current) return;
+    preparingRef.current = true; setPreparationError("");
+    try {
+      const original = JSON.stringify(snapshotRef.current());
+      const prepared = await prepare();
+      if (draftKeyRef.current !== draftKey) return;
+      onSend(prepared.text, prepared.images.length ? attachedImages : undefined);
+      if (JSON.stringify(snapshotRef.current()) === original) clearInput();
+    } catch (e) { setPreparationError(String(e)); } finally { preparingRef.current = false; }
+  }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, isStreaming, onBuiltinCommand, onSend, clearInput, prepare]);
 
   const slashQuery = value.startsWith("/") && !/\s/.test(value.slice(1))
     ? value.slice(1).toLowerCase()
@@ -1247,21 +1303,19 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const msg = splicePastedTexts(value, pastedTexts).trim();
     if (!msg && !attachedImages.length) return;
     if (attachedImages.length) return;
-    const resolvedMessage = await resolveSessionReferences(msg, sessionMentionTargetsRef.current);
-    if (draftKeyRef.current !== draftKey) return;
-    const streamingBehavior = mode === "steer" ? "steer" : "followUp";
-    if (msg.startsWith("/") && onPromptWithStreamingBehavior) {
-      onPromptWithStreamingBehavior(resolvedMessage, streamingBehavior, attachedImages.length ? attachedImages : undefined);
-      clearInput();
-      return;
-    }
-    if (mode === "steer" && onSteer) {
-      onSteer(resolvedMessage, attachedImages.length ? attachedImages : undefined);
-    } else if (mode === "followup" && onFollowUp) {
-      onFollowUp(resolvedMessage, attachedImages.length ? attachedImages : undefined);
-    }
-    clearInput();
-  }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput]);
+    if (preparingRef.current) return;
+    preparingRef.current = true; setPreparationError("");
+    try {
+      const original = JSON.stringify(snapshotRef.current());
+      const prepared = await prepare();
+      if (draftKeyRef.current !== draftKey) return;
+      const streamingBehavior = mode === "steer" ? "steer" : "followUp";
+      if (msg.startsWith("/") && onPromptWithStreamingBehavior) onPromptWithStreamingBehavior(prepared.text, streamingBehavior);
+      else if (mode === "steer" && onSteer) onSteer(prepared.text);
+      else if (onFollowUp) onFollowUp(prepared.text);
+      if (JSON.stringify(snapshotRef.current()) === original) clearInput();
+    } catch (e) { setPreparationError(String(e)); } finally { preparingRef.current = false; }
+  }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput, prepare]);
 
   const getNextSlashIndex = useCallback((direction: "up" | "down" | "left" | "right") => {
     const lastIndex = displayedSlashCommands.length - 1;
@@ -2444,6 +2498,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           </div>
         )}
 
+        {preparationError && <div role="alert">{preparationError}</div>}
         {/* Bottom bar: left | center (context) | right */}
         <div className="chat-composer-controls" style={{
           marginTop: 8,
@@ -2454,7 +2509,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         }}>
 
           {/* LEFT: project context + model selector (idle) or steer/followup toggle (streaming) */}
-          <div style={{ flex: isNarrow ? "1 1 auto" : "0 0 auto", minWidth: 0, display: "flex", alignItems: "center", gap: 2 }}>
+          <div style={{ flex: "1 1 auto", minWidth: 0, display: "flex", alignItems: "center", gap: 2 }}>
             {projectLabel && (
               <div ref={projectDropdownRef} style={{ position: "relative", flexShrink: 0 }}>
                 <button
@@ -2584,6 +2639,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 )}
               </div>
             )}
+            {cwd && onBranchNavigate && <BranchControl key={draftKey} cwd={cwd} onNavigate={onBranchNavigate} />}
             {/* Model selector — visible always, disabled during streaming */}
             {(modelOptions.length > 0 || currentName || modelError) && onModelChange && (
                 <div ref={dropdownRef} style={{ position: "relative", flex: isNarrow ? "1 1 auto" : undefined, minWidth: 0 }}>
@@ -2713,7 +2769,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                   onClick={() => {
                                     setModelDropdownOpen(false);
                                     setModelFilter("");
-                                    if (!isActive || isAutoModelSelection) onModelChange(opt.provider, opt.modelId);
+                                    if (!isActive || isAutoModelSelection) { setDraftSetup(previous => previous ? { ...previous, model: { provider: opt.provider, modelId: opt.modelId } } : previous); onModelChange(opt.provider, opt.modelId); }
                                   }}
                                   style={{
                                     display: "flex", alignItems: "center", gap: 8,
@@ -2801,7 +2857,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   e.currentTarget.style.color = "var(--text-muted)";
                 }}
               >
-                {t("chat.moreControls")}
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="8" r="1.25" /><circle cx="8" cy="8" r="1.25" /><circle cx="13" cy="8" r="1.25" /></svg>
               </button>
             )}
             <div style={{
@@ -2885,7 +2941,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       return (
                         <button
                           key={lvl}
-                          onClick={() => { setThinkingDropdownOpen(false); if (!isActive) onThinkingLevelChange(lvl); }}
+                          onClick={() => { setThinkingDropdownOpen(false); if (!isActive) { setDraftSetup(previous => previous ? { ...previous, effort: lvl } : previous); onThinkingLevelChange(lvl); } }}
                           style={{
                             display: "flex", alignItems: "center", gap: 8,
                             width: "100%", padding: "7px 12px",
@@ -2972,7 +3028,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       return (
                         <button
                           key={lvl}
-                          onClick={() => { setToolDropdownOpen(false); if (!isActive) onToolPresetChange(preset); }}
+                          onClick={() => { setToolDropdownOpen(false); if (!isActive) { setDraftSetup(previous => previous ? { ...previous, tools: preset } : previous); onToolPresetChange(preset); } }}
                           style={{
                             display: "flex", alignItems: "center", gap: 8,
                             width: "100%", padding: "7px 12px",

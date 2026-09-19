@@ -1,4 +1,6 @@
 "use client";
+import { TranscriptReveal, HighlightedSnippet, highlightTranscriptNode, clearTranscriptHighlight } from "./workbench/TranscriptHighlight";
+import type { TranscriptPreview } from "@/lib/transcript-types";
 import { registerAbortHandler } from "@/hooks/useKeyboardShortcuts";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, CustomMessage, ExtensionUiRequest, SessionInfo, SessionTreeNode, ToolResultMessage, UserMessage } from "@/lib/types";
@@ -23,6 +25,12 @@ import {
 import { sessionVisibleCounts } from "@/lib/scroll-memory";
 
 interface Props {
+  transcriptPreview?: TranscriptPreview;
+  onCloseTranscript?: () => void;
+  onDraftChange?: () => void;
+  onOpenContext?: () => void;
+  onOpenTasks?: () => void;
+  onBranchNavigate?: (cwd: string) => void;
   session: SessionInfo | null;
   newSessionCwd: string | null;
   onAgentEnd?: () => void;
@@ -175,8 +183,9 @@ function getFinalSplit(message: AssistantMessage): FinalSplitEntry {
   return cached;
 }
 
-function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { messageCount: number; toolCallCount: number; children: ReactNode; t: (key: string, params?: Record<string, string | number>) => string }) {
+function ProcessDetailsGroup({ messageCount, toolCallCount, children, t, entryIds }: { entryIds: string[]; messageCount: number; toolCallCount: number; children: ReactNode; t: (key: string, params?: Record<string, string | number>) => string }) {
   const [expanded, setExpanded] = useState(false);
+  useEffect(() => { const reveal = (event: Event) => { if (entryIds.includes((event as CustomEvent).detail.entryId)) setExpanded(true); }; window.addEventListener("pi-reveal-entry", reveal); return () => window.removeEventListener("pi-reveal-entry", reveal); }, [entryIds]);
   const parts = [t("chat.processDetails"), `${messageCount} ${t(messageCount === 1 ? "chat.message" : "chat.messages")}`];
   if (toolCallCount > 0) parts.push(`${toolCallCount} ${t(toolCallCount === 1 ? "chat.toolCall" : "chat.toolCalls")}`);
 
@@ -219,12 +228,16 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { mes
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onSelectProject, projectOptions, onProjectChange, onOpenFile, onProjectFilesImported, onOpenModelsConfig }: Props) {
+export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onSelectProject, projectOptions, onProjectChange, onOpenFile, onProjectFilesImported, onOpenModelsConfig, onDraftChange, onOpenContext, onOpenTasks, onBranchNavigate }: Props) {
   const { t } = useI18n();
   // Wrap onAgentEnd to play the completion sound. This is more reliable than
   // wrapping handleAgentEventRef because useAgentSession overwrites that ref
   // on every render (it syncs the latest callback), which would blow away an
   // externally-installed wrapper after the first re-render.
+  const searchPreview = transcriptPreview?.sessionId === session?.id ? transcriptPreview : undefined;
+  const publishBranchData = useCallback((tree: SessionTreeNode[], leaf: string | null, change: (id: string | null) => void) => {
+    onBranchDataChange?.(tree, searchPreview?.entryId ?? leaf, id => { onCloseTranscript?.(); change(id); });
+  }, [onBranchDataChange, onCloseTranscript, searchPreview?.entryId]);
   const wrappedOnAgentEnd = useCallback(() => {
     onAgentEnd?.();
   }, [onAgentEnd]);
@@ -235,7 +248,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   }, [chatInputRef]);
 
   const {
-    loading, error, messages, entryIds, streamState,
+    loading, error, messages: liveMessages, entryIds: liveEntryIds, streamState: liveStreamState,
     agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, compactResult, displayModel: displayModelValue, sessionStats,
@@ -247,7 +260,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     isNew,
     sessionIdRef, messagesEndRef, scrollContainerRef,
     isNearBottomRef,
-    handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
+    applyTaskSetup, handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     dismissModelScopeWarnings,
     handleRecallQueue,
@@ -255,9 +268,12 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     handleToolPresetChange, handleThinkingLevelChange, loadSlashCommands, scrollToBottom,
   } = useAgentSession({
     session, newSessionCwd, onAgentEnd: wrappedOnAgentEnd, onSessionCreated, onSessionForked,
-    modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
+    modelsRefreshKey, chatInputRef, onBranchDataChange: publishBranchData, onSystemPromptChange, onSessionStatsPanelOpen,
   });
-  const sessionBusy = agentRunning || bashRunning;
+  const messages = searchPreview?.context.messages ?? liveMessages;
+  const entryIds = searchPreview?.context.entryIds ?? liveEntryIds;
+  const streamState = searchPreview ? { ...liveStreamState, isStreaming: false } : liveStreamState;
+  const sessionBusy = !searchPreview && (agentRunning || bashRunning);
 
   const conversationTurns = useMemo<ConversationTurnLocation[]>(() => {
     const turns: ConversationTurnLocation[] = [];
@@ -304,6 +320,42 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   const lazyLoadObserverRef = useRef<IntersectionObserver | null>(null);
   const lazyLoadPagingRef = useRef(false);
   const prevScrollDistanceRef = useRef<number | null>(null);
+
+  const [revealEntry, setRevealEntry] = useState<string>();
+  useEffect(() => {
+    if (!searchPreview || loading) return;
+    setRevealEntry(searchPreview.displayEntryId); setVisibleCount(Number.MAX_SAFE_INTEGER);
+  }, [searchPreview, loading]);
+  useEffect(() => { const reveal = (event: Event) => { const detail = (event as CustomEvent).detail; if (detail.sessionId === session?.id) { setRevealEntry(detail.entryId); setVisibleCount(Number.MAX_SAFE_INTEGER); } }; window.addEventListener("pi-reveal-entry", reveal); return () => window.removeEventListener("pi-reveal-entry", reveal); }, [session?.id]);
+  useEffect(() => {
+    if (!revealEntry || !entryIds.includes(revealEntry)) return;
+    const frame = requestAnimationFrame(() => {
+      window.dispatchEvent(new CustomEvent("pi-reveal-entry", { detail: { entryId: revealEntry } }));
+      requestAnimationFrame(() => { if (!searchPreview) scrollContainerRef.current?.querySelector<HTMLElement>(`[data-entry-id="${CSS.escape(revealEntry)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }); setRevealEntry(undefined); });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [revealEntry, entryIds, scrollContainerRef, searchPreview]);
+
+  useEffect(() => {
+    if (!searchPreview || loading) return;
+    const container = scrollContainerRef.current; if (!container) return;
+    let frame = 0; let revealed = false;
+    const highlight = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const root = container.querySelector<HTMLElement>(`[data-entry-id="${CSS.escape(searchPreview.displayEntryId)}"]`);
+        if (!root) return;
+        const range = highlightTranscriptNode(root, searchPreview.query);
+        if (range && !revealed) { const box = range.getBoundingClientRect(); if (box.height) { container.scrollTop += box.top - container.getBoundingClientRect().top - container.clientHeight * 0.4; revealed = true; } }
+      });
+    };
+    // Install this browser-native selector directly; the bundled CSS parser predates it.
+    const style = document.createElement("style");
+    style.textContent = "::highlight(transcript-search-match) { background: #e0bd4870; color: inherit; }";
+    document.head.appendChild(style);
+    const observer = new MutationObserver(highlight); observer.observe(container, { childList: true, subtree: true }); highlight();
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); clearTranscriptHighlight(); style.remove(); };
+  }, [searchPreview, loading, scrollContainerRef]);
 
   const selectConversationTurn = useCallback((turnIndex: number) => {
     setVisibleCount(messages.length);
@@ -630,7 +682,9 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         }
       }
       if (options.showTimestamp !== undefined) showTimestamp = options.showTimestamp;
+      const isSearchMatch = !!searchPreview && searchPreview.displayEntryId === entryIds[idx];
       const view = (
+        <TranscriptReveal.Provider key={`${keyPrefix}-view-${idx}`} value={isSearchMatch}>
         <MessageView
           key={`${keyPrefix}-view-${idx}`}
           message={msg}
@@ -639,20 +693,24 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
           cwd={messageCwd}
           onOpenFile={onOpenFile}
           entryId={entryIds[idx]}
-          onFork={isNew || (idx === 0 && msg.role === "user") ? undefined : stableHandleFork}
+          onFork={searchPreview || isNew || (idx === 0 && msg.role === "user") ? undefined : stableHandleFork}
           forking={forkingEntryId === entryIds[idx]}
-          onNavigate={stableHandleNavigate}
+          onNavigate={searchPreview ? undefined : stableHandleNavigate}
           prevAssistantEntryId={prevAssistantEntryId}
-          onEditContent={handleEditContent}
+          onEditContent={searchPreview ? undefined : handleEditContent}
           showTimestamp={showTimestamp}
           prevTimestamp={idx > 0 ? (messages[idx - 1] as AgentMessage & { timestamp?: number }).timestamp : undefined}
           sessionId={sessionIdForViews ?? sessionIdRef.current ?? undefined}
         />
+        {isSearchMatch && <div className="transcript-exact-match" aria-label={t("wb.exactMatch")}><HighlightedSnippet text={searchPreview.snippet} query={searchPreview.query} /></div>}
+        </TranscriptReveal.Provider>
       );
-      if (!isVisible || options.attachRef === false) return view;
+      if (!isVisible) return view;
+      if (options.attachRef === false) return <div key={`${keyPrefix}-${idx}`} data-entry-id={entryIds[idx]}>{view}</div>;
       return (
-        <div key={`${keyPrefix}-${idx}`} data-conversation-turn={turnIndexByMessageIndex.get(idx)}>
+        <div key={`${keyPrefix}-${idx}`} data-entry-id={entryIds[idx]} data-conversation-turn={turnIndexByMessageIndex.get(idx)}>
           {view}
+          {msg.role === "user" && <button className="save-task-message" onClick={() => window.dispatchEvent(new CustomEvent("pi-save-task-message", { detail: { text: getUserInputText(msg) ?? "" } }))}>{t("wb.saveAsTask")}</button>}
         </div>
       );
     };
@@ -706,6 +764,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         rendered.push(
           <ProcessDetailsGroup
             key={`process-group-${userIdx}-${finalAssistantIdx}`}
+            entryIds={[...visibleProcessIndices.map(i => entryIds[i]), entryIds[finalAssistantIdx]]}
             messageCount={processCount}
             t={t}
             toolCallCount={countToolCalls(messages, visibleProcessIndices) + countToolCallBlocks(finalSplit.processBlocks)}
@@ -739,7 +798,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     messages, entryIds, streamActive, sessionBusy, isNew, forkingEntryId,
     modelNames, messageCwd, onOpenFile, handleEditContent,
     stableHandleFork, stableHandleNavigate, sessionIdForViews,
-    visibleCount, t, sessionIdRef, setSentinelNode,
+    visibleCount, t, sessionIdRef, setSentinelNode, searchPreview,
   ]);
 
   const availableThinkingLevels = displayModelValue
@@ -753,6 +812,11 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   const chatInputElement = (
     <ChatInput
       ref={chatInputRef}
+      onDraftChange={onDraftChange}
+      onOpenContext={onOpenContext}
+      onOpenTasks={onOpenTasks}
+      onBranchNavigate={onBranchNavigate}
+      onSetupChange={applyTaskSetup}
       onSend={handleSend}
       onAbort={handleAbort}
       onSteer={agentRunning ? handleSteer : undefined}
@@ -812,6 +876,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {searchPreview && <div className="transcript-preview-banner" role="status"><span>{t("wb.historicalSearch")}</span><button onClick={onCloseTranscript}>{t("wb.returnConversation")}</button></div>}
       {isDragOver && (
         <div className="pointer-events-none absolute inset-0 z-50 flex animate-[drop-zone-in_0.15s_ease_both] items-center justify-center bg-[var(--accent-soft)] backdrop-blur-[1px]">
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -875,7 +940,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         >
           <div className="chat-empty-state w-full max-w-[820px]">
             <NoticeShelf notices={notices} align="right" />
-            {chatInputElement}
+            <div inert={!!searchPreview}>{chatInputElement}</div>
           </div>
         </div>
       ) : (
@@ -994,7 +1059,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             <ExtensionWidgets widgets={belowEditorWidgets} />
           </div>
         </div>
-        {chatInputElement}
+        <div inert={!!searchPreview}>{chatInputElement}</div>
       </div>
       </div>
       </>

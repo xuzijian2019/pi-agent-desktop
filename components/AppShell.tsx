@@ -1,4 +1,20 @@
 "use client";
+import { TranscriptSearchPanel } from "./workbench/TranscriptSearchPanel";
+import type { TranscriptResult } from "@/lib/transcript-search";
+import type { TranscriptPreview } from "@/lib/transcript-types";
+import { PanelModeSelector } from "./workbench/PanelModeSelector";
+import { ActivityPanel } from "./workbench/ActivityPanel";
+import { SavedTasksPanel, type TaskSeed } from "./workbench/SavedTasksPanel";
+import { OutputsPanel } from "./workbench/OutputsPanel";
+import { ContextPanel } from "./workbench/ContextPanel";
+import { BrowserPanel } from "./BrowserPanel";
+import { DiffPanel } from "./DiffPanel";
+import { panelMode, type PanelMode } from "@/lib/panel-modes";
+import { loadDraft, setDraft, getDraftStatus, type ChatDraft } from "@/lib/draft-store";
+import { uiFetch } from "@/lib/web-ui-client";
+import { taskPromptFromDraft } from "@/lib/prepare-outgoing";
+import type { SavedTask } from "@/lib/task-types";
+
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
@@ -76,10 +92,10 @@ export function AppShell() {
   const [extensionWindowTitle, setExtensionWindowTitle] = useState<{ sessionId: string; title: string } | null>(null);
   const [desktopMode] = useState(() => isTauriDesktop());
   const [persistedWorkspace] = useState(() => (
-    desktopMode ? getPrefJson<PersistedWorkspace>(APP_PREF_KEYS.workspace) : null
+    getPrefJson<PersistedWorkspace>(APP_PREF_KEYS.workspace)
   ));
-  const [initialNavigation] = useState(() => resolveInitialNavigation(searchParams, persistedWorkspace));
-  const [workspaceHydrated, setWorkspaceHydrated] = useState(() => !desktopMode);
+  const [initialNavigation] = useState(() => resolveInitialNavigation(searchParams, desktopMode ? persistedWorkspace : null));
+  const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
   const { isDark, toggleTheme } = useTheme();
   const { t: translate } = useI18n();
   const isMobile = useIsMobile();
@@ -106,6 +122,18 @@ export function AppShell() {
   const [projectTrustError, setProjectTrustError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [rightPanelMode, setRightPanelMode] = useState<PanelMode>("files");
+  const [transcriptPreview, setTranscriptPreview] = useState<TranscriptPreview>();
+  const closeTranscriptPreview = useCallback(() => setTranscriptPreview(undefined), []);
+  const [draftRevision, setDraftRevision] = useState(0);
+  const handleDraftChange = useCallback(() => setDraftRevision(v => v + 1), []);
+  const [taskSeed, setTaskSeed] = useState<TaskSeed>();
+  const [taskConflict, setTaskConflict] = useState<{ task: SavedTask; cwd: string; draft: ChatDraft; generation: number }>();
+  const [workbenchError, setWorkbenchError] = useState("");
+  const openMode = useCallback((mode: PanelMode) => { setRightPanelMode(mode); setRightPanelOpen(true); }, []);
+  const [reviewFilePath, setReviewFilePath] = useState<string | null>(null);
+  const [fromOutputs, setFromOutputs] = useState(false);
+
   const [mobileSidebarReady, setMobileSidebarReady] = useState(false);
   // The desktop window has no native title bar. macOS keeps its traffic lights
   // and only needs the top bar inset for them; other platforms get the buttons
@@ -499,6 +527,7 @@ export function AppShell() {
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false) => {
     navigationGeneration.current += 1;
+    setTranscriptPreview(undefined);
     setNewSessionCwd(null);
     setSelectedSession(session);
     // Do not bump sessionKey here — ChatWindow stays mounted and swaps
@@ -529,6 +558,7 @@ export function AppShell() {
     navigationGeneration.current += 1;
     // Reopen the project's unsent draft. Submission clears it in ChatInput;
     // navigating away and back must never discard it.
+    setTranscriptPreview(undefined);
     setSelectedSession(null);
     setNewSessionCwd(cwd);
     // Reset the temporary agent runtime, while the composer restores its
@@ -620,6 +650,7 @@ export function AppShell() {
 
   // Called by ChatWindow when a new session gets its real id from pi
   const handleSessionCreated = useCallback((session: SessionInfo) => {
+    setTranscriptPreview(undefined);
     setNewSessionCwd(null);
     setSelectedSession(session);
     setRefreshKey((k) => k + 1);
@@ -701,6 +732,11 @@ export function AppShell() {
   ) => {
     const sourceSessionId = options?.sourceSessionId;
     const modeHint = options?.modeHint;
+    if (modeHint === "diff") {
+      setReviewFilePath(filePath); setRightPanelMode("diff"); setRightPanelOpen(true);
+      if (isMobile) setSidebarOpen(false);
+      return;
+    }
     const tabId = `file:${filePath}`;
     setFileTabs((prev) => {
       const existing = prev.find((t) => t.id === tabId);
@@ -726,6 +762,7 @@ export function AppShell() {
     });
     setActiveFileTabId(tabId);
     setRightPanelOpen(true);
+    setRightPanelMode("files");
     // On mobile the file panel is full-screen; close the drawer so it shows.
     if (isMobile) setSidebarOpen(false);
   }, [isMobile]);
@@ -765,9 +802,66 @@ export function AppShell() {
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showChat;
 
+  const branchNavigate = useCallback((cwd: string) => { handleNewSession("", cwd); }, [handleNewSession]);
+  const applySavedTask = useCallback((task: SavedTask, cwd: string, draft: ChatDraft | null, append: boolean, generation: number) => {
+    if (generation !== navigationGeneration.current) { setTaskConflict(undefined); return; }
+    const setup = { model: task.model ?? draft?.setup?.model ?? null, effort: task.effort === "inherit" ? draft?.setup?.effort ?? "inherit" : task.effort, tools: task.tools === "inherit" ? draft?.setup?.tools ?? "inherit" : task.tools };
+    setDraft(`new:${cwd}`, { value: append && draft?.value ? `${draft.value}\n\n${task.prompt}` : task.prompt, images: append ? draft?.images ?? [] : [], texts: append ? draft?.texts : [], references: append ? draft?.references : {}, setup });
+    setTaskConflict(undefined); handleNewSession("", cwd);
+  }, [handleNewSession]);
+  const useSavedTask = useCallback(async (task: SavedTask) => {
+    const cwd = selectedSession?.cwd ?? effectiveNewSessionCwd;
+    if (!cwd) throw new Error(translate("wb.selectProject"));
+    const generation = navigationGeneration.current;
+    const current = await uiFetch<{ tasks: SavedTask[] }>(`/api/saved-tasks?cwd=${encodeURIComponent(cwd)}`);
+    if (!current.tasks.some(t => t.id === task.id && t.revision === task.revision)) throw new Error(translate("wb.taskChanged"));
+    const draft = await loadDraft(`new:${cwd}`);
+    if (getDraftStatus(`new:${cwd}`) === "conflict") throw new Error(translate("wb.draftConflict"));
+    if (generation !== navigationGeneration.current) return;
+    if (draft && (draft.value || draft.images.length)) setTaskConflict({ task, cwd, draft, generation });
+    else applySavedTask(task, cwd, draft, false, generation);
+  }, [selectedSession, effectiveNewSessionCwd, applySavedTask, translate]);
+  const openTranscriptResult = useCallback(async (result: TranscriptResult, query: string, signal: AbortSignal) => {
+    const generation = ++navigationGeneration.current;
+    const params = new URLSearchParams({ q: query, session: result.sessionId, entryId: result.entryId, field: result.field });
+    const data = await uiFetch<{ session: SessionInfo; target: Omit<TranscriptPreview, "nonce"> }>(`/api/transcript-search?${params}`, undefined, undefined, signal);
+    if (generation !== navigationGeneration.current || signal.aborted) return;
+    handleSelectSession(data.session);
+    setTranscriptPreview({ ...data.target, nonce: generation });
+    openMode("search");
+  }, [handleSelectSession, openMode]);
+  const captureTask = useCallback(() => {
+    const input = chatInputRef.current; if (!input) return;
+    const draft = input.snapshot();
+    const prompt = taskPromptFromDraft(draft);
+    setTaskSeed({ nonce: Date.now(), prompt, ...input.currentSetup() }); openMode("tasks");
+    if (draft.images.length || Object.keys(draft.references ?? {}).length) setWorkbenchError(translate("wb.taskAttachmentsHint"));
+  }, [openMode, translate]);
+  useEffect(() => {
+    const save = (event: Event) => { const text = (event as CustomEvent).detail.text; const setup = chatInputRef.current?.currentSetup() ?? { model: null, effort: "inherit" as const, tools: "inherit" as const }; setTaskSeed({ nonce: Date.now(), prompt: taskPromptFromDraft({ value: text, images: [] }), ...setup }); openMode("tasks"); };
+    const pin = async (event: Event) => { if (!selectedSession) { setWorkbenchError(translate("wb.selectSession")); return; } try { await uiFetch(`/api/sessions/${selectedSession.id}/outputs`, { path: (event as CustomEvent).detail.path, pinned: true, leafId: branchActiveLeafId }); window.dispatchEvent(new Event("pi-output-changed")); openMode("outputs"); } catch (e) { setWorkbenchError(String(e)); } };
+    window.addEventListener("pi-save-task-message", save); window.addEventListener("pi-pin-output", pin);
+    return () => { window.removeEventListener("pi-save-task-message", save); window.removeEventListener("pi-pin-output", pin); };
+  }, [openMode, selectedSession, branchActiveLeafId, translate]);
+  const openActivitySession = useCallback(async (id: string, focus = false) => {
+    const generation = ++navigationGeneration.current;
+    try { const data = await uiFetch<{ sessions: SessionInfo[] }>("/api/sessions"); const session = data.sessions.find(s => s.id === id); if (generation !== navigationGeneration.current) return; if (!session) throw new Error(translate("wb.sessionMissing")); handleSelectSession(session); if (focus) requestAnimationFrame(() => chatInputRef.current?.focus()); }
+    catch (e) { setWorkbenchError(String(e)); }
+  }, [handleSelectSession, translate]);
+  const pinActiveOutput = useCallback(async () => {
+    const file = fileTabs.find(tab => tab.id === activeFileTabId);
+    if (!selectedSession || !file) return;
+    try { await uiFetch(`/api/sessions/${selectedSession.id}/outputs`, { path: file.filePath, pinned: true, leafId: branchActiveLeafId }); window.dispatchEvent(new Event("pi-output-changed")); openMode("outputs"); }
+    catch (e) { setWorkbenchError(String(e)); }
+  }, [selectedSession, fileTabs, activeFileTabId, branchActiveLeafId, openMode]);
+  useEffect(() => {
+    const refresh = () => setExplorerRefreshKey(k => k + 1);
+    window.addEventListener("pi-git-changed", refresh); return () => window.removeEventListener("pi-git-changed", refresh);
+  }, []);
+
   // Reopen the last file tabs after the cold-start session/cwd restore settles.
   useEffect(() => {
-    if (!desktopMode || !initialSessionRestored || workspaceHydrated) return;
+    if (!initialSessionRestored || workspaceHydrated) return;
 
     const cwd = selectedSession?.cwd ?? newSessionCwd ?? activeCwd;
     const canMatch = workspaceFileTabsMatchContext(
@@ -795,8 +889,10 @@ export function AppShell() {
           ? activeId
           : (tabs[0]?.id ?? null),
       );
-      setRightPanelOpen(Boolean(persistedWorkspace.rightPanelOpen && tabs.length > 0));
+      setRightPanelOpen(Boolean(persistedWorkspace.rightPanelOpen));
     }
+    setRightPanelMode(panelMode(persistedWorkspace?.panelMode));
+    if (persistedWorkspace?.rightPanelOpen && panelMode(persistedWorkspace.panelMode) !== "files") setRightPanelOpen(true);
     setWorkspaceHydrated(true);
   }, [
     initialSessionRestored,
@@ -812,7 +908,7 @@ export function AppShell() {
 
   // Persist workspace so the next desktop cold start can restore chat + files.
   useEffect(() => {
-    if (!desktopMode || !workspaceHydrated) return;
+    if (!workspaceHydrated) return;
     setPrefJson(APP_PREF_KEYS.workspace, {
       sessionId: selectedSession?.id ?? null,
       cwd: selectedSession?.cwd ?? newSessionCwd ?? activeCwd,
@@ -824,6 +920,7 @@ export function AppShell() {
       })),
       activeFileTabId,
       rightPanelOpen,
+      panelMode: rightPanelMode,
     } satisfies PersistedWorkspace);
   }, [
     workspaceHydrated,
@@ -835,6 +932,7 @@ export function AppShell() {
     fileTabs,
     activeFileTabId,
     rightPanelOpen,
+    rightPanelMode,
   ]);
 
   useEffect(() => {
@@ -1566,7 +1664,13 @@ export function AppShell() {
         <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
           {showChat ? (
             <ChatWindow
+              transcriptPreview={transcriptPreview}
+              onCloseTranscript={closeTranscriptPreview}
               key={sessionKey}
+              onDraftChange={handleDraftChange}
+              onOpenContext={() => openMode("context")}
+              onOpenTasks={() => openMode("tasks")}
+              onBranchNavigate={branchNavigate}
               session={selectedSession}
               newSessionCwd={effectiveNewSessionCwd}
               onAgentEnd={handleAgentEnd}
@@ -1662,6 +1766,7 @@ export function AppShell() {
       <div
         ref={rightPanelResizer.panelRef}
         id="file-panel"
+        onKeyDown={event => { if (event.key === "Escape" && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); setRightPanelOpen(false); } }}
         inert={!rightPanelOpen}
         className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
         style={{
@@ -1672,51 +1777,20 @@ export function AppShell() {
           background: "var(--bg)",
         } as React.CSSProperties}
       >
-        {/* The panel is intentionally focused on local files. */}
-        {/*
-          <button
-            type="button"
-            role="tab"
-            aria-selected={contextPanelTab === "files"}
-            className={`context-panel-mode-tab${contextPanelTab === "files" ? " is-active" : ""}`}
-            onClick={() => setContextPanelTab("files")}
-            title={translate("contextPanel.tabFiles")}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
-            </svg>
-            <span>{translate("contextPanel.tabFiles")}</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={contextPanelTab === "browser"}
-            className={`context-panel-mode-tab${contextPanelTab === "browser" ? " is-active" : ""}`}
-            onClick={() => setContextPanelTab("browser")}
-            title={translate("contextPanel.tabBrowser")}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="9" />
-              <path d="M3 12h18M12 3c2.2 2.4 3.3 5.4 3.3 9s-1.1 6.6-3.3 9c-2.2-2.4-3.3-5.4-3.3-9S9.8 5.4 12 3Z" />
-            </svg>
-            <span>{translate("contextPanel.tabBrowser")}</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={contextPanelTab === "diff"}
-            className={`context-panel-mode-tab${contextPanelTab === "diff" ? " is-active" : ""}`}
-            onClick={() => setContextPanelTab("diff")}
-            title={translate("contextPanel.tabDiff")}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="12" cy="6" r="2.5" />
-              <circle cx="12" cy="18" r="2.5" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            <span>{translate("contextPanel.tabDiff")}</span>
-          </button>
-        */}
+        <PanelModeSelector mode={rightPanelMode} onChange={openMode} onClose={() => setRightPanelOpen(false)} />
+        {workbenchError && <div className="workbench-error" role="alert">{workbenchError}<button onClick={() => setWorkbenchError("")}>×</button></div>}
+        <div hidden={rightPanelMode !== "activity"} className="workbench-mode-body"><ActivityPanel visible={rightPanelOpen && rightPanelMode === "activity"} cwd={activeCwd} onOpen={openActivitySession} /></div>
+        <div hidden={rightPanelMode !== "search"} className="workbench-mode-body"><TranscriptSearchPanel visible={rightPanelOpen && rightPanelMode === "search"} onOpen={openTranscriptResult} /></div>
+        <div hidden={rightPanelMode !== "tasks"} className="workbench-mode-body">
+          {taskConflict && <div className="workbench-card" role="dialog" aria-label={translate("wb.existingDraft")}><p>{translate("wb.existingDraft")}</p><button onClick={() => setTaskConflict(undefined)}>{translate("wb.keepDraft")}</button><button onClick={() => applySavedTask(taskConflict.task, taskConflict.cwd, taskConflict.draft, false, taskConflict.generation)}>{translate("wb.replaceDraft")}</button><button onClick={() => applySavedTask(taskConflict.task, taskConflict.cwd, taskConflict.draft, true, taskConflict.generation)}>{translate("wb.appendPrompt")}</button></div>}
+          <SavedTasksPanel visible={rightPanelOpen && rightPanelMode === "tasks"} cwd={activeCwd} seed={taskSeed} onUse={useSavedTask} onCapture={captureTask} />
+        </div>
+        <div hidden={rightPanelMode !== "outputs"} className="workbench-mode-body"><OutputsPanel visible={rightPanelOpen && rightPanelMode === "outputs"} sessionId={selectedSession?.id ?? null} title={selectedSession?.name || selectedSession?.firstMessage} leafId={branchActiveLeafId} refreshKey={refreshKey} onOpen={path => { setFromOutputs(true); handleOpenFile(path, getFileName(path), { sourceSessionId: selectedSession?.id }); }} onMessage={(entryId, leafId) => { if (leafId !== branchActiveLeafId) handleBranchLeafChange(leafId); window.dispatchEvent(new CustomEvent("pi-reveal-entry", { detail: { sessionId: selectedSession?.id, entryId } })); }} /></div>
+        <div hidden={rightPanelMode !== "context"} className="workbench-mode-body"><ContextPanel visible={rightPanelOpen && rightPanelMode === "context"} inputRef={chatInputRef} revision={draftRevision} identity={selectedSession?.id ?? `new:${effectiveNewSessionCwd}`} systemPrompt={systemPrompt} /></div>
+        <div hidden={rightPanelMode !== "browser"} className="workbench-mode-body"><BrowserPanel /></div>
+        <div hidden={rightPanelMode !== "diff"} className="workbench-mode-body">{activeCwd && rightPanelOpen && rightPanelMode === "diff" && <DiffPanel key={activeCwd} cwd={activeCwd} selectedFilePath={reviewFilePath} refreshKey={explorerRefreshKey} />}</div>
+        <div hidden={rightPanelMode !== "files"} className="workbench-files-body">
+        {fromOutputs && <button onClick={() => openMode("outputs")}>{translate("wb.backOutputs")}</button>}
         <div className="right-panel-tab-strip">
           <div className="file-tab-bar-slot">
             <TabBar
@@ -1743,6 +1817,7 @@ export function AppShell() {
                 </button>
                 {fileActionsMenuOpen && (
                   <div className="native-popover file-actions-menu" role="menu" aria-label={translate("contextPanel.fileActions")}>
+                    <button type="button" role="menuitem" disabled={!activeFileTab || !selectedSession} onClick={() => void pinActiveOutput()}>{translate("wb.pinOutputs")}</button>
                     <button type="button" role="menuitem" disabled={!activeFileTab} onClick={() => void copyActiveFilePath()}>
                       <span className="file-action-menu-icon" aria-hidden="true">
                         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -1806,6 +1881,7 @@ export function AppShell() {
                   sourceSessionId={activeFileTab.sourceSessionId}
                   gitRefreshKey={explorerRefreshKey}
                   initialDisplayMode={activeFileTab.initialDisplayMode}
+                  onReviewDiff={() => handleOpenFile(activeFileTab.filePath!, activeFileTab.label, { modeHint: "diff" })}
                   onMentionLines={rightPanelOpen ? handleFileLineMention : undefined}
                   onOpenFile={(filePath) => handleOpenFile(
                     filePath,
@@ -1918,6 +1994,7 @@ export function AppShell() {
               </div>
             </>
           )}
+        </div>
         </div>
       </div>
       </div>

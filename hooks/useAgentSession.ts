@@ -1,4 +1,5 @@
 "use client";
+import type { TaskSetup } from "@/lib/task-types";
 
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, useReducer } from "react";
 import type {
@@ -793,6 +794,15 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     });
   }, [isNew, newSessionCwd, onSessionCreated]);
 
+  const taskSetupRef = useRef<TaskSetup | undefined>(undefined);
+  const applyTaskSetup = useCallback((setup: TaskSetup) => {
+    if (!isNew || sessionIdRef.current) return;
+    taskSetupRef.current = setup;
+    if (setup.model) { newSessionModelOverrideRef.current = setup.model; setNewSessionModel(setup.model); }
+    if (setup.effort !== "inherit") { thinkingLevelOverrideRef.current = setup.effort === "auto" ? null : setup.effort; setThinkingLevel(setup.effort); }
+    if (setup.tools !== "inherit") setToolPreset(setup.tools);
+  }, [isNew]);
+
   const ensureNewSession = useCallback(async () => {
     if (sessionIdRef.current) return sessionIdRef.current;
     if (!isNew || !newSessionCwd) return sessionIdRef.current;
@@ -811,6 +821,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         body: JSON.stringify({
           cwd: newSessionCwd,
           type: "ensure_session",
+          ...(taskSetupRef.current ? { persistPreferences: false } : {}),
           toolNames,
           ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
           ...(selectedThinkingLevel
@@ -1574,7 +1585,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           sentSessionId = sid;
           if (selectedModel) {
             setPendingModel(selectedModel);
-            if (existingSid) {
+            if (existingSid && !taskSetupRef.current) {
               await sendAgentCommand(sid, { type: "set_model", provider: selectedModel.provider, modelId: selectedModel.modelId });
             }
           }
@@ -2224,7 +2235,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     sessionIdRef, eventSourceRef, messagesEndRef, scrollContainerRef,
     initialScrollDoneRef,
     // Actions
-    handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
+    applyTaskSetup, handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     dismissModelScopeWarnings,
     handleRecallQueue,

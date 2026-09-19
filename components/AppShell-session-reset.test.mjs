@@ -36,9 +36,10 @@ test("chat file links open in the file panel with session-scoped access", async 
   assert.match(chatWindow, /onOpenFile=\{\(filePath\) => handleOpenFile\(filePath, getFileName\(filePath\), \{ sourceSessionId: selectedSession\?\.id \}\)\}/);
 });
 
-test("desktop workspace is gated and health probes support browsers", async () => {
+test("session restore remains desktop-only while panel state supports browsers", async () => {
   const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
-  assert.match(source, /desktopMode \? getPrefJson<PersistedWorkspace>/);
+  assert.match(source, /resolveInitialNavigation\(searchParams, desktopMode \? persistedWorkspace : null\)/);
   assert.match(source, /useDesktopConnection\(\)/);
-  assert.match(source, /if \(!desktopMode \|\| !workspaceHydrated\) return/);
+  assert.match(source, /panelMode: rightPanelMode/);
+  assert.match(source, /if \(!workspaceHydrated\) return/);
 });

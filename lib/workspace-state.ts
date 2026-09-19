@@ -1,3 +1,4 @@
+import type { PanelMode } from "./panel-modes";
 import { getInitialNavigation, type InitialNavigation } from "./initial-navigation.ts";
 
 export type PersistedFileTab = {
@@ -13,6 +14,7 @@ export type PersistedWorkspace = {
   fileTabs: PersistedFileTab[];
   activeFileTabId: string | null;
   rightPanelOpen: boolean;
+  panelMode?: PanelMode;
 };
 
 /**

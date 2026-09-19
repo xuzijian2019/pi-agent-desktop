@@ -1,0 +1,99 @@
+/* Shared right panel: one header, quiet rounded surfaces, secondary actions on demand. */
+.right-panel-container { container-type: inline-size; }
+.right-panel-toggle-button.is-open { display: none; }
+.workbench-mode-selector { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 7px 12px; border-bottom: 1px solid var(--separator, var(--border)); flex-shrink: 0; background: var(--bg); }
+.workbench-mode-selector > button { margin-left: auto; width: 28px; height: 28px; border-radius: 8px; color: var(--text-muted); font-size: 20px; }
+.workbench-mode-tabs { display: flex; gap: 4px; }
+.workbench-mode-tabs button { padding: 6px 8px; border-radius: 9px; font-size: 12px; }
+.workbench-mode-tabs button[aria-selected="true"] { background: var(--bg-selected); color: var(--text); }
+.workbench-mode-select { display: none; flex: 1; align-items: center; gap: 8px; }
+.workbench-mode-select select { min-width: 132px; border: 0; border-radius: 10px; font-size: 13px; font-weight: 600; padding: 6px 8px; color: var(--text); background: transparent; }
+@container (max-width: 670px) { .workbench-mode-tabs { display: none; } .workbench-mode-select { display: flex; } }
+.workbench-mode-body, .workbench-files-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.workbench-mode-body[hidden], .workbench-files-body[hidden] { display: none; }
+.workbench-files-body .right-panel-tab-strip { padding-right: 10px !important; background: var(--bg) !important; }
+.workbench-content { padding: 20px; overflow: auto; font-size: 13px; color: var(--text); }
+.workbench-content p { margin: 8px 0; color: var(--text-muted); line-height: 1.6; overflow-wrap: anywhere; }
+.workbench-content > p:first-of-type { margin-top: 0; margin-bottom: 18px; font-size: 12px; }
+.workbench-content small { display: block; color: var(--text-dim); overflow-wrap: anywhere; }
+.workbench-content pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; max-height: 420px; overflow: auto; padding: 12px; background: var(--bg-panel); border-radius: 12px; }
+.workbench-content details { margin: 12px 0; }
+.workbench-content summary { cursor: pointer; }
+.workbench-content label { display: block; margin: 8px 0; font-size: 12px; }
+.workbench-content form label { margin: 14px 0; }
+.workbench-content input:not([type="checkbox"]), .workbench-content textarea, .workbench-content select { display: block; width: 100%; margin-top: 4px; padding: 9px 12px; background: color-mix(in srgb, var(--bg-hover) 50%, var(--bg)); color: var(--text); border: 1px solid transparent; border-radius: 12px; }
+.workbench-content input[type="checkbox"] { margin-right: 6px; }
+.workbench-content button, .workbench-content a, .workbench-files-body > button { font-size: 12px; padding: 6px 10px; border: 1px solid transparent; border-radius: 9px; color: var(--text); background: var(--bg-panel); cursor: pointer; }
+.workbench-content button:disabled { opacity: .45; cursor: default; }
+.workbench-content button:hover:not(:disabled), .workbench-mode-selector > button:hover { background: var(--bg-hover); }
+.workbench-content input:focus-visible, .workbench-content select:focus-visible, .workbench-content textarea:focus-visible, .workbench-content button:focus-visible, .workbench-mode-selector button:focus-visible, .workbench-overflow > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.workbench-toolbar, .workbench-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin: 10px 0; }
+.workbench-toolbar > input, .workbench-toolbar > select { flex: 1; width: auto !important; min-width: 90px; }
+.workbench-card { border: 0; background: color-mix(in srgb, var(--bg-panel) 65%, var(--bg)); border-radius: 16px; padding: 16px; margin: 12px 0; overflow-wrap: anywhere; }
+.workbench-card .workbench-actions { margin-bottom: 0; padding-top: 4px; }
+.workbench-actions button { background: transparent; }
+.workbench-status { float: right; font-size: 11px; color: var(--accent); }
+.status-failed, .status-interrupted, .workbench-content [role="alert"], .workbench-error { color: var(--danger, #d65c5c); }
+.workbench-thumbnail { max-width: 160px; max-height: 120px; object-fit: contain; border-radius: 12px; margin-bottom: 8px; }
+.workbench-content .workbench-overflow { position: relative; margin: 0 0 0 auto; }
+.workbench-overflow > summary { list-style: none; padding: 3px 10px; border-radius: 8px; font-size: 18px; color: var(--text-muted); }
+.workbench-overflow > summary::-webkit-details-marker { display: none; }
+.workbench-overflow > summary:hover, .workbench-overflow[open] > summary { background: var(--bg-hover); }
+.workbench-overflow > div { position: absolute; right: 0; top: calc(100% + 5px); z-index: 20; min-width: 170px; padding: 6px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 13px; box-shadow: 0 6px 22px #00000012; }
+.workbench-overflow > div > button { display: block; width: 100%; text-align: left; padding: 8px 10px; border: 0; }
+.workbench-branch-control { position: relative; min-width: 0; }
+.workbench-branch-control > button { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+.workbench-branch-popover { position: fixed; z-index: 100; padding: 12px; overflow-y: auto; box-shadow: 0 8px 24px #00000018; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-panel); }
+.workbench-branch-row { display: flex; justify-content: space-between; gap: 12px; width: 100%; text-align: left; margin: 4px 0; }
+.chat-composer-controls .workbench-branch-control { flex: 0 0 auto; max-width: 130px; }
+.chat-composer-controls .workbench-branch-control > button { display: block; max-width: 100%; height: 32px; padding: 5px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--text-muted); font-size: 12px; transition: background .15s, color .15s; }
+.chat-composer-controls .workbench-branch-control > button:hover { background: var(--bg-hover); color: var(--text); }
+.workbench-error { padding: 8px 12px; font-size: 12px; }
+.save-task-message { font-size: 11px; color: var(--text-dim); padding: 3px 0 8px; }
+.pin-output-link { font-size: 11px; margin-left: 4px; color: var(--text-dim); }
+.save-task-message:hover, .pin-output-link:hover { color: var(--accent); }
+.workbench-sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0 !important; margin: -1px !important; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 600px) {
+  .chat-composer-controls .workbench-branch-control { max-width: 68px; }
+  .chat-composer-controls .workbench-branch-control > button { padding-inline: 5px; }
+  .chat-composer-controls .chat-project-context { max-width: 94px !important; }
+  .workbench-content { padding: 16px; }
+}
+
+/* Review expands in place: one summary, then filenames and their patches. */
+.review-panel { padding: 0 0 20px; font-size: 13px; }
+.review-summary { display: flex; align-items: center; gap: 12px; padding: 14px 18px; color: var(--text-muted); }
+.review-summary > button { margin-left: auto; padding: 6px; border-radius: 8px; }
+.review-summary > button:hover, .review-file-heading:hover { background: var(--bg-hover); }
+.review-counts { display: inline-flex; gap: 5px; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.review-added { color: var(--success); }
+.review-removed { color: var(--danger); }
+.review-file-heading { display: flex; align-items: center; gap: 9px; width: 100%; padding: 13px 18px; text-align: left; color: var(--text); }
+.review-file-heading > svg { flex-shrink: 0; }
+.review-file-heading > svg:first-child { color: var(--text-dim); transition: transform .15s; }
+.review-file-heading > svg.is-expanded:first-child { transform: rotate(90deg); }
+.review-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.review-file-body { margin: 0 10px 10px; border-radius: 12px; overflow: hidden; background: var(--bg-panel); }
+.review-patch { overflow-x: auto; font: 12px/1.65 var(--font-mono); }
+.review-line { display: flex; min-width: 100%; width: max-content; white-space: pre; }
+.review-line.is-added { background: color-mix(in srgb, var(--success) 12%, transparent); }
+.review-line.is-removed { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.review-line-number { width: 48px; text-align: right; padding-right: 12px; color: var(--text-dim); user-select: none; flex-shrink: 0; }
+.review-line-sign { width: 20px; user-select: none; flex-shrink: 0; }
+.review-line.is-added .review-line-sign { color: var(--success); }
+.review-line.is-removed .review-line-sign { color: var(--danger); }
+.review-line code { padding-right: 16px; font: inherit; }
+.review-hunk { padding: 6px 16px; color: var(--text-dim); font-size: 11px; white-space: pre; }
+.review-message { padding: 14px 18px; color: var(--text-muted); }
+.review-message[role="alert"] { color: var(--danger); }
+.review-file-heading:focus-visible, .review-summary button:focus-visible, .review-patch:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.transcript-filters { display: flex; gap: 8px; margin-bottom: 16px; }
+.transcript-filters select { min-width: 0; flex: 1; text-overflow: ellipsis; }
+.workbench-content .transcript-hit { display: block; width: 100%; margin: 10px 0; padding: 14px; text-align: left; border-radius: 14px; background: var(--bg-panel); }
+.transcript-hit strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.transcript-hit > span { display: block; margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.transcript-hit mark, .transcript-exact-match mark { color: inherit; background: color-mix(in srgb, var(--accent) 25%, transparent); border-radius: 3px; }
+.transcript-preview-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 18px; font-size: 12px; color: var(--text-muted); background: var(--bg-panel); }
+.transcript-preview-banner button { padding: 5px 9px; border-radius: 8px; color: var(--text); background: var(--bg-hover); }
+.transcript-exact-match { margin: 10px 0; padding: 12px; border-left: 2px solid var(--accent); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg-panel); font: 12px/1.6 var(--font-mono); }

@@ -8,15 +8,16 @@ const jiti = createJiti(import.meta.url, {
   jsx: { runtime: "automatic" },
   tsconfigPaths: true,
 });
+const { I18nProvider } = await jiti.import("../hooks/useI18n.tsx");
 const { MarkdownBody } = await jiti.import("./MarkdownBody.tsx");
 const { normalizeDisplayMath } = await jiti.import("../lib/markdown.ts");
 
 function renderMarkdown(markdown) {
   return renderToStaticMarkup(
-    React.createElement(MarkdownBody, {
+    React.createElement(I18nProvider, null, React.createElement(MarkdownBody, {
       cwd: "/home/me/project",
       onOpenFile() {},
-    }, markdown),
+    }, markdown)),
   );
 }
 

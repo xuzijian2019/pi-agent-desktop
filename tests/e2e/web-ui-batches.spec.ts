@@ -108,7 +108,7 @@ test("latest selection, history, native links and project search", async ({ page
   await page.keyboard.press("Control+Alt+n");
   release(); await expect(page).toHaveURL(/cwd=/); await expect(composer).toHaveValue("");
   // Search matches the project path even though session names are alpha/beta.
-  const search = page.getByPlaceholder(/search.*session|search.*task/i);
+  const search = page.getByRole("searchbox", { name: "Search sessions…", exact: true });
   await expect(search).toBeVisible();
   {
     await search.fill(cwd.split("/").at(-1)!); await expect(linkA).toBeVisible(); await expect(linkB).toBeVisible();

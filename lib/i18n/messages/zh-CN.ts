@@ -1,3 +1,4 @@
+import { workbenchZh } from "./workbench";
 import type { LocalePlugin } from "../types";
 
 /** Pi Web 内置简体中文语言包。 */
@@ -5,6 +6,7 @@ export const zhCNLocale: LocalePlugin = {
   id: "zh-CN",
   label: "简体中文",
   messages: {
+    ...workbenchZh,
     "common.ok": "确定",
     "common.language": "语言",
     "common.models": "模型",

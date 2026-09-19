@@ -2,6 +2,7 @@
 
 import { memo, useMemo, type MouseEvent } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
+import { PinOutputButton } from "./workbench/PinOutputButton";
 import { resolveLocalFileHref } from "@/lib/file-links";
 import { encodeFilePathForApi } from "@/lib/file-paths";
 import { markdownRehypePlugins, markdownRemarkPlugins, normalizeDisplayMath } from "@/lib/markdown";
@@ -73,9 +74,9 @@ function buildComponents(
       };
 
       return (
-        <a href={href} {...props} onClick={handleClick}>
+        <span className="file-link-with-pin"><a href={href} {...props} onClick={handleClick}>
           {children}
-        </a>
+        </a><PinOutputButton path={filePath} /></span>
       );
     },
     img({ src, alt, ...props }) {
