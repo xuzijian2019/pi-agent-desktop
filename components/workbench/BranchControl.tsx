@@ -59,7 +59,7 @@ export function BranchControl({ cwd, onNavigate }: { cwd: string; onNavigate: (c
           <button disabled={busy}>{t("wb.reviewOperation")}</button>
         </form>}
         <input aria-label={t("wb.searchBranches")} placeholder={t("wb.searchBranches")} value={query} onChange={e => setQuery(e.target.value)} />
-        {inventory.branches.filter(b => b.name.toLowerCase().includes(query.toLowerCase())).map(b => <button className="workbench-branch-row" disabled={busy || b.ref === `refs/heads/${inventory.current}`} key={b.ref} onClick={() => b.worktree && b.worktree !== inventory.root ? (setOpen(false), onNavigate(b.worktree)) : b.remote ? (setRemoteRef(b.ref), setCreating(false), setName(b.name.slice(b.name.indexOf("/") + 1))) : void review({ action: "switch", location: "current", ref: b.ref })}><span>{b.name}</span><small>{t(b.worktree && b.worktree !== inventory.root ? "wb.openWorktree" : "wb.switch")}</small></button>)}
+        {inventory.branches.filter(b => b.name.toLowerCase().includes(query.toLowerCase())).map(b => <button className="workbench-branch-row" title={b.worktree && b.worktree !== inventory.root ? b.worktree : undefined} disabled={busy || b.ref === `refs/heads/${inventory.current}`} key={b.ref} onClick={() => b.worktree && b.worktree !== inventory.root ? (setOpen(false), onNavigate(b.worktree)) : b.remote ? (setRemoteRef(b.ref), setCreating(false), setName(b.name.slice(b.name.indexOf("/") + 1))) : void review({ action: "switch", location: "current", ref: b.ref })}><span>{b.name}</span><small>{t(b.worktree && b.worktree !== inventory.root ? "wb.openWorktree" : "wb.switch")}</small></button>)}
         </>}
       </>}
     </div>}
