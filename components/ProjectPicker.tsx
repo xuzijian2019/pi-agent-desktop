@@ -6,6 +6,7 @@ import { AnimatedDropdown, PathLabel, displayCwd } from "./path-ui";
 import { selectDirectoryNative } from "@/lib/desktop-window";
 
 interface ProjectPickerProps {
+  onDismiss?: () => void;
   recentProjects: string[];
   selectedCwd: string | null;
   selectedProject: string | null;
@@ -80,7 +81,7 @@ export async function selectProjectDirectoryNative(selectedCwd: string | null, h
   return data.cwd ?? path;
 }
 
-export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, homeDir, onSelectCwd, variant = "block", disabled }: ProjectPickerProps) {
+export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, homeDir, onSelectCwd, variant = "block", disabled, onDismiss }: ProjectPickerProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const [projectFilter, setProjectFilter] = useState("");
@@ -217,7 +218,7 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
               if (e.key === "Escape") {
                 e.stopPropagation();
                 if (projectFilter) setProjectFilter("");
-                else closeDropdown();
+                else { closeDropdown(); onDismiss?.(); }
               }
             }}
             placeholder="Filter projects…"

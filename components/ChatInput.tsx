@@ -6,7 +6,7 @@ import type { BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, Slas
 import type { SkillsResponse } from "@/lib/api-types";
 import type { ModelScopeWarning } from "@/lib/model-scope-warnings";
 import type { TextContent, UserMessage } from "@/lib/types";
-import { clearDraft, getDraft, setDraft, type ChatDraftImage } from "@/lib/draft-store";
+import { clearDraft, getDraft, setDraft, loadDraft, subscribeDrafts, getDraftStatus, retryDraft, type ChatDraftImage } from "@/lib/draft-store";
 import {
   buildPasteToken,
   normalizePastedText,
@@ -254,10 +254,7 @@ function draftImageToAttachedImage(image: ChatDraftImage): AttachedImage {
 }
 
 function draftImagesToAttachedImages(images: ChatDraftImage[] | undefined): AttachedImage[] {
-  return (images ?? [])
-    .filter(isBase64ImageWithinLimits)
-    .slice(0, MAX_ATTACHED_IMAGES)
-    .map(draftImageToAttachedImage);
+  return (images ?? []).map(draftImageToAttachedImage);
 }
 
 export function draftTextsToPastedTexts(texts: ChatDraftText[] | undefined): PastedTextChip[] {
@@ -497,6 +494,27 @@ export function ModelScopeWarningBanner({
       onDismiss={onDismiss}
       dismissLabel={dismissLabel}
     />
+  );
+}
+
+/** Quick commits stay quiet; a slow save never adds a row to the editor. */
+function DraftSavingIndicator({ loading }: { loading: boolean }) {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setVisible(true), 600);
+    return () => clearTimeout(timer);
+  }, []);
+  if (!visible) return null;
+  return (
+    <div style={{ position: "relative", height: 0, pointerEvents: "none" }}>
+      <span role="status" style={{
+        position: "absolute", right: 0, bottom: 8,
+        fontSize: 11, color: "var(--text-muted)", background: "var(--surface)",
+        padding: "2px 6px", borderRadius: 4,
+      }}>
+        {loading ? "Loading draft…" : "Saving draft…"}
+      </span>
+    </div>
   );
 }
 
@@ -822,7 +840,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     setHashQuery(null);
     setHistoryMenuOpen(false);
     if (draftKey) clearDraft(draftKey);
-    if (draftKeyRef.current && draftKeyRef.current !== draftKey) clearDraft(draftKeyRef.current);
     clearImages();
     setPastedTexts([]);
     if (textareaRef.current) {
@@ -839,40 +856,46 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     });
   }, [value]);
 
+  const [hydratedDraftKey, setHydratedDraftKey] = useState<string>();
+  const [, refreshDraftStatus] = useState(0);
+  useEffect(() => subscribeDrafts(() => refreshDraftStatus((n) => n + 1)), []);
   useEffect(() => {
-    if (!draftKey || draftKeyRef.current !== draftKey) return;
-    setDraft(draftKey, {
-      value,
-      images: attachedImages.map(imageToDraftImage),
-      texts: pastedTextsToDraftTexts(pastedTexts),
-    });
-  }, [attachedImages, draftKey, value, pastedTexts]);
-
-  useEffect(() => {
-    const previousDraftKey = draftKeyRef.current;
-    if (previousDraftKey === draftKey) return;
-
-    if (previousDraftKey) {
-      setDraft(previousDraftKey, {
-        value: valueRef.current,
-        images: attachedImagesRef.current.map(imageToDraftImage),
-        texts: pastedTextsToDraftTexts(pastedTextsRef.current),
-      });
-    }
-
-    const draft = draftKey ? getDraft(draftKey) : null;
+    let cancelled = false;
     draftKeyRef.current = draftKey;
-    setValue(draft?.value ?? "");
-    setAtQuery(null);
-    setHashQuery(null);
-    setHistoryMenuOpen(false);
-    setAttachedImages((prev) => {
-      prev.forEach(revokeImagePreview);
-      return draftImagesToAttachedImages(draft?.images);
+    if (!draftKey) return;
+    void loadDraft(draftKey).then((draft) => {
+      if (cancelled) return;
+      setValue(draft?.value ?? "");
+      setAttachedImages((prev) => {
+        prev.forEach(revokeImagePreview);
+        return draftImagesToAttachedImages(draft?.images);
+      });
+      setPastedTexts(draftTextsToPastedTexts(draft?.texts));
+      setAtQuery(null);
+      setHashQuery(null);
+      setHistoryMenuOpen(false);
+      setHydratedDraftKey(draftKey);
     });
-    setPastedTexts(draftTextsToPastedTexts(draft?.texts));
+    return () => { cancelled = true; };
   }, [draftKey]);
-
+  useEffect(() => {
+    if (!draftKey || hydratedDraftKey !== draftKey) return;
+    setDraft(draftKey, { value, images: attachedImages.map(imageToDraftImage), texts: pastedTextsToDraftTexts(pastedTexts) });
+  }, [attachedImages, draftKey, hydratedDraftKey, value, pastedTexts]);
+  const restoreSavedDraft = useCallback(async () => {
+    if (!draftKey) return;
+    setHydratedDraftKey(undefined);
+    const draft = await loadDraft(draftKey, true);
+    if (draftKeyRef.current !== draftKey) return;
+    setValue(draft?.value ?? "");
+    clearImages();
+    setAttachedImages(draftImagesToAttachedImages(draft?.images));
+    setPastedTexts(draftTextsToPastedTexts(draft?.texts));
+    setHydratedDraftKey(draftKey);
+  }, [draftKey, clearImages]);
+  const persistenceStatus = draftKey ? getDraftStatus(draftKey) : "saved";
+  const invalidDraftImages = attachedImages.length > MAX_ATTACHED_IMAGES || attachedImages.some((image) => !isBase64ImageWithinLimits(image));
+  const orphanedPaste = (value.match(/\[Pasted text \d+ · \d+ lines\]/g) ?? []).some((token) => !pastedTexts.some((paste) => paste.token === token));
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -887,20 +910,23 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, []);
 
   const handleSend = useCallback(async () => {
+    if (invalidDraftImages || orphanedPaste || (draftKey && hydratedDraftKey !== draftKey) || persistenceStatus === "conflict") return;
     const msg = splicePastedTexts(value, pastedTexts).trim();
     if (!msg && !attachedImages.length) return;
     if (isStreaming) return;
     if (!attachedImages.length && msg.startsWith("/") && onBuiltinCommand) {
       const result = await onBuiltinCommand(msg);
+      if (draftKeyRef.current !== draftKey) return;
       if (result.handled) {
         if (!result.error) clearInput();
         return;
       }
     }
     const resolvedMessage = await resolveSessionReferences(msg, sessionMentionTargetsRef.current);
+    if (draftKeyRef.current !== draftKey) return;
     onSend(resolvedMessage, attachedImages.length ? attachedImages : undefined);
     clearInput();
-  }, [value, pastedTexts, attachedImages, isStreaming, onBuiltinCommand, onSend, clearInput]);
+  }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, isStreaming, onBuiltinCommand, onSend, clearInput]);
 
   const slashQuery = value.startsWith("/") && !/\s/.test(value.slice(1))
     ? value.slice(1).toLowerCase()
@@ -1217,10 +1243,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, []);
 
   const sendQueued = useCallback(async (mode: "steer" | "followup") => {
+    if (invalidDraftImages || orphanedPaste || (draftKey && hydratedDraftKey !== draftKey) || persistenceStatus === "conflict") return;
     const msg = splicePastedTexts(value, pastedTexts).trim();
     if (!msg && !attachedImages.length) return;
     if (attachedImages.length) return;
     const resolvedMessage = await resolveSessionReferences(msg, sessionMentionTargetsRef.current);
+    if (draftKeyRef.current !== draftKey) return;
     const streamingBehavior = mode === "steer" ? "steer" : "followUp";
     if (msg.startsWith("/") && onPromptWithStreamingBehavior) {
       onPromptWithStreamingBehavior(resolvedMessage, streamingBehavior, attachedImages.length ? attachedImages : undefined);
@@ -1233,7 +1261,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       onFollowUp(resolvedMessage, attachedImages.length ? attachedImages : undefined);
     }
     clearInput();
-  }, [value, pastedTexts, attachedImages, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput]);
+  }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput]);
 
   const getNextSlashIndex = useCallback((direction: "up" | "down" | "left" | "right") => {
     const lastIndex = displayedSlashCommands.length - 1;
@@ -1407,7 +1435,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       }
 
       // Esc stops the agent when no slash/@/history menu or IME composition is active.
-      if (e.key === "Escape" && !isComposing && isStreaming && onAbort) {
+      if (e.key === "Escape" && !e.defaultPrevented && !document.querySelector('[role="dialog"], [role="menu"]') && !isComposing && isStreaming && onAbort) {
         e.preventDefault();
         onAbort();
         return;
@@ -2148,6 +2176,24 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             );
           })()}
           <div ref={composerRef} className="chat-composer">
+          {draftKey && (persistenceStatus === "pending" || persistenceStatus === "loading") && (
+            <DraftSavingIndicator key={draftKey} loading={persistenceStatus === "loading"} />
+          )}
+          {draftKey && (persistenceStatus === "failed" || persistenceStatus === "conflict") && (
+            <div role="status" style={{ fontSize: 12, padding: "4px 6px" }}>
+              {persistenceStatus === "conflict"
+                ? "Draft changed in another tab. Your input is preserved; choose which version to keep."
+                : "Draft could not be saved. Keep this tab open and retry."}
+              {(persistenceStatus === "failed" || persistenceStatus === "conflict") && (
+                <button onClick={() => retryDraft(draftKey)}>Save my version</button>
+              )}
+              {persistenceStatus === "conflict" && (
+                <button onClick={() => void restoreSavedDraft()}>Load saved version</button>
+              )}
+            </div>
+          )}
+          {invalidDraftImages && <div role="alert">Some restored images are invalid or exceed the attachment limits. Remove and reattach them before sending.</div>}
+          {orphanedPaste && <div role="alert">Pasted text is missing. Paste it again or remove its placeholder before sending.</div>}
           {pastedTexts.length > 0 && (
             <div style={{ display: "flex", gap: 6, padding: "4px 6px 0", flexWrap: "wrap" }}>
               {pastedTexts.map((chip) => (
@@ -2248,6 +2294,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             } as React.CSSProperties}
           >
           <textarea
+            readOnly={Boolean(draftKey && hydratedDraftKey !== draftKey)}
             ref={textareaRef}
             value={value}
             onChange={(e) => {

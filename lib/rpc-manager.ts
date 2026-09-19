@@ -167,6 +167,8 @@ export class AgentSessionWrapper {
   private extensionStatuses = new Map<string, string>();
   private extensionWidgets = new Map<string, ExtensionWidgetItem>();
   private promptRunning = false;
+  private extensionRunActive = false;
+  runId = randomUUID();
   private extensionsBound = false;
   private extensionBindingPromise: Promise<void> | null = null;
   private extensionBindingError: unknown = null;
@@ -249,6 +251,11 @@ export class AgentSessionWrapper {
 
   start(): void {
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
+      if (event.type === "agent_start") {
+        if (!this.promptRunning && !this.extensionRunActive) this.runId = randomUUID();
+        this.extensionRunActive = true;
+      }
+      if (event.type === "agent_settled") this.extensionRunActive = false;
       if (event.type === "agent_end") {
         invalidateSessionListCache();
       }
@@ -435,6 +442,7 @@ export class AgentSessionWrapper {
         // Fire and forget — events come via subscribe
         const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
         const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
+        if (!this.isRunning()) this.runId = randomUUID();
         this.promptRunning = true;
         notifyRunningChange();
         this.inner.prompt(command.message as string, {
@@ -703,6 +711,7 @@ export class AgentSessionWrapper {
         if (this.promptRunning || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning) {
           throw new Error("Cannot run a shell command while the session is busy");
         }
+        this.runId = randomUUID();
         const execution = this.inner.executeBash(
           command.command as string,
           undefined,
@@ -1202,6 +1211,11 @@ export function getLiveSessionSnapshots(knownSessionIds: ReadonlySet<string>): L
     if (snapshot && !knownSessionIds.has(snapshot.id)) snapshots.push(snapshot);
   }
   return snapshots;
+}
+
+/** Stable identity for completion deduplication across browser tabs. */
+export function getRpcSessionRunIds(): Record<string, string> {
+  return Object.fromEntries([...getRegistry()].map(([id, session]) => [id, session.runId]));
 }
 
 export function getRunningRpcSessionIds(): string[] {

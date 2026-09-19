@@ -7,7 +7,6 @@ import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
 import { selectProjectDirectoryNative } from "./ProjectPicker";
-import { clearDraft } from "@/lib/draft-store";
 import { TabBar, type Tab } from "./TabBar";
 
 // Heavy, rarely-used surfaces are code-split out of the main bundle. The
@@ -71,7 +70,10 @@ const FILE_TREE_MAX_WIDTH = 520;
 const FILE_TREE_PREVIEW_MIN_WIDTH = 240;
 export function AppShell() {
   const router = useRouter();
+  const navigationGeneration = useRef(0);
   const searchParams = useSearchParams();
+  const [runFeedback, setRunFeedback] = useState({ running: 0, unread: 0 });
+  const [extensionWindowTitle, setExtensionWindowTitle] = useState<{ sessionId: string; title: string } | null>(null);
   const [desktopMode] = useState(() => isTauriDesktop());
   const [persistedWorkspace] = useState(() => (
     desktopMode ? getPrefJson<PersistedWorkspace>(APP_PREF_KEYS.workspace) : null
@@ -304,7 +306,7 @@ export function AppShell() {
       if (!topMoreRef.current?.contains(event.target as Node)) setTopMoreOpen(false);
     };
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setTopMoreOpen(false);
+      if (event.key === "Escape") { event.preventDefault(); setTopMoreOpen(false); }
     };
 
     document.addEventListener("mousedown", handlePointerDown);
@@ -328,7 +330,7 @@ export function AppShell() {
       if (!topBarRef.current?.contains(event.target as Node)) setActiveTopPanel(null);
     };
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setActiveTopPanel(null);
+      if (event.key === "Escape") { event.preventDefault(); setActiveTopPanel(null); }
     };
 
     document.addEventListener("mousedown", handlePointerDown);
@@ -374,6 +376,7 @@ export function AppShell() {
     };
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      event.preventDefault();
       setFileActionsMenuOpen(false);
     };
 
@@ -390,7 +393,7 @@ export function AppShell() {
     }
   }, [desktopMode]);
 
-  const { state: connectionState, retry: retryConnection } = useDesktopConnection(desktopMode);
+  const { state: connectionState, retry: retryConnection } = useDesktopConnection();
 
   const handleFileLineMention = useCallback((relativePath: string, startLine: number, endLine: number) => {
     chatInputRef.current?.insertText(buildFileLineMentionText(relativePath, startLine, endLine));
@@ -440,6 +443,7 @@ export function AppShell() {
   }, [initialNavigation]);
 
   const handleCwdChange = useCallback((cwd: string | null, projectRoot?: string | null) => {
+    navigationGeneration.current += 1;
     setActiveCwd(cwd);
     // Skip if cwd is null (initial mount).
     if (!cwd) return;
@@ -494,6 +498,7 @@ export function AppShell() {
   }, [router, selectedSession]);
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false) => {
+    navigationGeneration.current += 1;
     setNewSessionCwd(null);
     setSelectedSession(session);
     // Do not bump sessionKey here — ChatWindow stays mounted and swaps
@@ -514,21 +519,20 @@ export function AppShell() {
       // onCwdChange effect firing after setSelectedCwd in the sidebar
       suppressCwdBumpRef.current = true;
     }
-    // Skip router.replace when restoring from URL — the param is already correct
-    // and calling replace in production Next.js triggers a Suspense remount loop
+    // Native history preserves the mounted composer. Back/Forward is reconciled below.
     if (!isRestore) {
-      router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
+      window.history.pushState({ ...window.history.state, piSession: session }, "", `?session=${encodeURIComponent(session.id)}`);
     }
-  }, [router, isMobile]);
+  }, [isMobile]);
 
   const handleNewSession = useCallback((_sessionId: string, cwd: string) => {
-    // "New task" is an explicit reset. A cwd-based blank-task draft would
-    // otherwise be reloaded immediately when the composer remounts.
-    clearDraft(`new:${cwd}`);
+    navigationGeneration.current += 1;
+    // Reopen the project's unsent draft. Submission clears it in ChatInput;
+    // navigating away and back must never discard it.
     setSelectedSession(null);
     setNewSessionCwd(cwd);
-    // A second click in the same cwd must still create a clean composer. The
-    // cwd-derived session identity alone cannot distinguish those blank tasks.
+    // Reset the temporary agent runtime, while the composer restores its
+    // persisted new:<cwd> draft even when reopening the same project.
     setSessionKey((key) => key + 1);
     setBranchTree([]);
     setBranchActiveLeafId(null);
@@ -538,8 +542,33 @@ export function AppShell() {
     setContextUsage(null);
     setActiveTopPanel(null);
     if (isMobile) setSidebarOpen(false);
-    router.replace("/", { scroll: false });
-  }, [router, isMobile]);
+    window.history.pushState({ ...window.history.state, piSession: null, piCwd: cwd }, "", `?cwd=${encodeURIComponent(cwd)}`);
+  }, [isMobile]);
+
+  useEffect(() => {
+    const restore = async () => {
+      const generation = ++navigationGeneration.current;
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get("session");
+      if (!id) {
+        setSelectedSession(null);
+        setNewSessionCwd(params.get("cwd"));
+        setActiveCwd(params.get("cwd"));
+        return;
+      }
+      const saved = window.history.state?.piSession as SessionInfo | undefined;
+      if (saved?.id === id) { handleSelectSession(saved, true); return; }
+      try {
+        const response = await fetch("/api/sessions", { signal: AbortSignal.timeout(10_000) });
+        const data = await response.json() as { sessions: SessionInfo[] };
+        if (generation !== navigationGeneration.current) return;
+        const session = data.sessions.find((item) => item.id === id);
+        if (session) handleSelectSession(session, true);
+      } catch { if (generation === navigationGeneration.current) window.location.reload(); }
+    };
+    window.addEventListener("popstate", restore);
+    return () => { navigationGeneration.current += 1; window.removeEventListener("popstate", restore); };
+  }, [handleSelectSession]);
 
   const handleProjectsChange = useCallback((projectRoots: string[]) => {
     setAvailableProjectRoots((previous) => (
@@ -556,12 +585,13 @@ export function AppShell() {
 
   const handleSelectProjectFromComposer = useCallback(async () => {
     if (!desktopMode) return;
+    const generation = ++navigationGeneration.current;
     try {
       const cwd = await selectProjectDirectoryNative(
         selectedSession?.cwd ?? newSessionCwd ?? activeCwd,
         "",
       );
-      if (cwd) handleNewSession(`project-${Date.now()}`, cwd);
+      if (cwd && generation === navigationGeneration.current) handleNewSession(`project-${Date.now()}`, cwd);
     } catch (error) {
       console.error("Failed to switch project:", error);
     }
@@ -879,7 +909,7 @@ export function AppShell() {
     }
   }, [activeFileTab?.filePath]);
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
-  const windowTitle = activeCwdName ? `${activeCwdName} - ${PRODUCT_NAME}` : PRODUCT_NAME;
+  const windowTitle = [selectedSession ? (selectedSession.name || selectedSession.firstMessage || "Untitled task").slice(0, 70) : "New task", activeCwdName, PRODUCT_NAME].filter(Boolean).join(" - ");
   const topBarTitle = selectedSession
     ? selectedSession.name || selectedSession.firstMessage || translate("appshell.untitledTask")
     : showChat
@@ -888,15 +918,18 @@ export function AppShell() {
   const topBarSubtitle = activeCwdName ?? translate("appshell.subtitle");
 
   useEffect(() => {
-    const syncWindowTitle = () => {
-      if (document.title !== windowTitle) document.title = windowTitle;
-    };
-
-    syncWindowTitle();
-    const observer = new MutationObserver(syncWindowTitle);
-    observer.observe(document.head, { childList: true, subtree: true, characterData: true });
-    return () => observer.disconnect();
-  }, [windowTitle]);
+    const feedback = (event: Event) => setRunFeedback((event as CustomEvent<{ running: number; unread: number }>).detail);
+    const extension = (event: Event) => setExtensionWindowTitle((event as CustomEvent<{ sessionId: string; title: string }>).detail);
+    window.addEventListener("pi-run-feedback", feedback);
+    window.addEventListener("pi-extension-title", extension);
+    return () => { window.removeEventListener("pi-run-feedback", feedback); window.removeEventListener("pi-extension-title", extension); };
+  }, []);
+  useEffect(() => {
+    const prefix = runFeedback.running ? "◉ " : runFeedback.unread ? "● " : "";
+    const title = extensionWindowTitle?.sessionId === selectedSession?.id && extensionWindowTitle
+      ? `${extensionWindowTitle.title.slice(0, 70)} - ${activeCwdName ?? PRODUCT_NAME}` : windowTitle;
+    document.title = `${prefix}${title}`;
+  }, [windowTitle, runFeedback, extensionWindowTitle, selectedSession?.id, activeCwdName]);
 
   // Theme + collapse controls at the sidebar's own top-right (Claude Desktop
   // style). When the sidebar is closed, the topbar shows a reopen button.
@@ -1140,6 +1173,7 @@ export function AppShell() {
       <div
         ref={sidebarResizer.panelRef}
         id="session-sidebar"
+        inert={!sidebarOpen}
         className={`app-sidebar sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}${mobileSidebarReady ? "" : " sidebar-mobile-pending"}${sidebarResizer.isResizing ? " sidebar-resizing" : ""}`}
         style={{
           "--sidebar-width": `${sidebarResizer.width}px`,
@@ -1477,7 +1511,7 @@ export function AppShell() {
           )}
           {/* Top panel dropdown — shared, only one active at a time */}
           {activeTopPanel && topPanelPos && (
-            <div style={{
+            <div role="dialog" style={{
               position: "fixed",
               top: topPanelPos.top,
               left: topPanelPos.left,
@@ -1628,6 +1662,7 @@ export function AppShell() {
       <div
         ref={rightPanelResizer.panelRef}
         id="file-panel"
+        inert={!rightPanelOpen}
         className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
         style={{
           "--right-panel-width": `${rightPanelResizer.width}px`,

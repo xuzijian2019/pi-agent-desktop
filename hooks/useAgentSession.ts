@@ -21,6 +21,7 @@ import { modelScopeWarningKey, type ModelScopeWarning } from "@/lib/model-scope-
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import {
   cacheSessionData,
+  invalidateSessionData,
   getCachedSessionData,
   type CachedSessionData,
 } from "@/lib/session-data-cache";
@@ -650,8 +651,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } satisfies SessionStatsInfo;
   }, [messages, sessionStatsOverride, contextUsage, data?.filePath, session?.id, session?.name]);
 
+  const sessionReadIdRef = useRef(0);
+  useEffect(() => () => { sessionGenerationRef.current += 1; }, []);
   const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false) => {
-    const isCurrent = () => sessionIdRef.current === sid;
+    const generation = sessionGenerationRef.current;
+    const readId = ++sessionReadIdRef.current;
+    const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.current === generation && sessionReadIdRef.current === readId;
     let messagesLoaded = false;
     try {
       // A warmed payload is already on screen. Refresh it in the background
@@ -1044,7 +1049,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         });
         break;
       case "setTitle":
-        if (request.title) document.title = request.title;
+        if (request.title) window.dispatchEvent(new CustomEvent("pi-extension-title", { detail: { sessionId: sessionIdRef.current, title: request.title } }));
         break;
       case "set_editor_text":
         opts.chatInputRef?.current?.insertText(request.text);
@@ -1702,6 +1707,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (bashRunningRef.current) return;
     const sid = sessionIdRef.current;
     if (!sid) return;
+    sessionReadIdRef.current += 1;
+    invalidateSessionData(sid);
     sendAgentCommand(sid, { type: "navigate_tree", targetId: entryId }).catch(() => {});
     setActiveLeafId(entryId);
     await loadContext(sid, entryId);
@@ -1711,6 +1718,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (bashRunningRef.current) return;
     const sid = sessionIdRef.current;
     if (!sid) return;
+    sessionReadIdRef.current += 1;
+    invalidateSessionData(sid);
     setActiveLeafId(leafId);
     const loaded = await loadContext(sid, leafId);
     if (loaded && leafId && sessionIdRef.current === sid) {

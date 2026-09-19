@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { isTauriDesktop } from "@/lib/desktop-updater";
 import { relaunchAppNative } from "@/lib/desktop-native";
 
 export type DesktopConnectionState = "online" | "offline" | "checking";
@@ -81,11 +82,21 @@ export function useDesktopConnection(enabled = true): {
     void probe().then(async (reachable) => {
       if (stoppedRef.current || reachable === null) return;
       if (reachable) {
-        // Recreate every HTTP/SSE connection, not only the health probe.
-        window.location.reload();
+        if (isTauriDesktop()) {
+          window.location.reload();
+        } else {
+          // Existing HTTP/SSE owners reconcile on online. Keep the editor
+          // mounted, including any input whose local storage write failed.
+          window.dispatchEvent(new Event("online"));
+        }
         return;
       }
 
+      if (!isTauriDesktop()) {
+        setState("offline");
+        schedule();
+        return;
+      }
       try {
         // Tauri IPC remains available even when the localhost server is not.
         // Relaunching recreates both the WebView and packaged Node server.

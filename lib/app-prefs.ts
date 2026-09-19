@@ -15,6 +15,8 @@ export const APP_PREF_KEYS = {
   archivedProjects: "pi-web:archived-projects",
   updateSnooze: "pi-web:update-snooze",
   closeQuits: "pi-desktop-close-quits",
+  browserNotifications: "pi-browser-notifications",
+  notificationClaims: "pi-notification-claims",
   notifyOnComplete: "pi-desktop-notify-on-complete",
   chatDrafts: "pi-chat-drafts-v1",
   diffViewMode: "pi-diff-view-mode",

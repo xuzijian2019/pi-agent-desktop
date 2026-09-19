@@ -1,5 +1,6 @@
 "use client";
 
+import { isTauriDesktop } from "@/lib/desktop-updater";
 import { useEffect } from "react";
 
 // ---------------------------------------------------------------------------
@@ -47,9 +48,11 @@ export function useGlobalKeyboardShortcuts(
 
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
+      if (e.defaultPrevented || e.isComposing) return;
       // ---- Esc: stop agent ----
       if (e.key === "Escape") {
         if (!globalAbortHandler) return;
+        if ((e.target as HTMLElement)?.isContentEditable || document.querySelector('[role="dialog"], [role="menu"]')) return;
 
         const tag = (e.target as HTMLElement)?.tagName;
         // Let textarea/input handle Esc internally (ChatInput menus / stop).
@@ -63,7 +66,7 @@ export function useGlobalKeyboardShortcuts(
       // ---- ⌘N / Ctrl+N: new session ----
       // Note: regular browsers reserve ⌘N/Ctrl+N for "new window"; this works
       // in the desktop (Tauri) build where the page receives the event.
-      if (e.key.toLowerCase() === "n" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+      if (e.key.toLowerCase() === "n" && (e.metaKey || e.ctrlKey) && !e.shiftKey && (isTauriDesktop() || (e.ctrlKey && e.altKey))) {
         if (!activeCwd || !onNewSession) return;
         e.preventDefault();
         onNewSession(activeCwd);

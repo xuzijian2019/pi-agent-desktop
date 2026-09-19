@@ -13,7 +13,7 @@ import { revealItemInDirNative } from "@/lib/desktop-native";
 import { isTauriDesktop } from "@/lib/desktop-updater";
 import { getDesktopPlatform, type DesktopPlatform } from "@/lib/desktop-window";
 import { useWindowDrag } from "./desktop";
-import { prefetchSessionData } from "@/lib/session-data-cache";
+import { prefetchSessionData, invalidateSessionData } from "@/lib/session-data-cache";
 interface Props {
   selectedSessionId: string | null;
   onSelectSession: (session: SessionInfo, isRestore?: boolean) => void;
@@ -155,6 +155,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, []);
   const windowDrag = useWindowDrag();
   const [wtFilter, setWtFilter] = useState("");
+  const runIdsRef = useRef<Record<string, string>>({});
   const [sessionQuery, setSessionQuery] = useState("");
   // Worktree switcher state
   const [worktreeState, setWorktreeState] = useState<WorktreeState | null>(null);
@@ -269,8 +270,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       source = new EventSource("/api/agent/running/events");
       source.onmessage = (e) => {
         try {
-          const data = JSON.parse(e.data) as { type?: string; runningSessionIds?: string[] };
+          const data = JSON.parse(e.data) as { type?: string; runningSessionIds?: string[]; runIds?: Record<string, string> };
           if (data.type === "running") {
+            runIdsRef.current = data.runIds ?? {};
             sseAuthoritativeRef.current = true;
             setRunningSessionIds(new Set(data.runningSessionIds ?? []));
           }
@@ -319,7 +321,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
   useEffect(() => {
     const previous = previousRunningSessionIdsRef.current;
-    const completedInBackground = [...previous].filter((id) => !runningSessionIds.has(id) && id !== selectedSessionId);
+    const completedInBackground = [...previous].filter((id) => !runningSessionIds.has(id) && (id !== selectedSessionId || !document.hasFocus() || document.hidden));
     const newlyRunning = [...runningSessionIds];
 
     if (completedInBackground.length > 0 || newlyRunning.length > 0) {
@@ -338,6 +340,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       };
       for (const id of completedInBackground) {
         void notifyDesktop({
+          key: runIdsRef.current[id] ? `${id}:${runIdsRef.current[id]}` : undefined,
           title: "Pi Agent",
           body: `Finished: ${sessionName(id)}`,
         });
@@ -363,13 +366,21 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [runningSessionIds, allSessions, loadSessions]);
 
   useEffect(() => {
-    if (!selectedSessionId) return;
-    setUnreadSessionIds((prev) => {
-      if (!prev.has(selectedSessionId)) return prev;
-      const next = new Set(prev);
-      next.delete(selectedSessionId);
-      return next;
-    });
+    window.dispatchEvent(new CustomEvent("pi-run-feedback", { detail: { running: runningSessionIds.size, unread: unreadSessionIds.size } }));
+  }, [runningSessionIds, unreadSessionIds]);
+
+  useEffect(() => {
+    const markRead = () => {
+      if (!selectedSessionId || document.hidden || !document.hasFocus()) return;
+      setUnreadSessionIds((prev) => {
+        if (!prev.has(selectedSessionId)) return prev;
+        const next = new Set(prev); next.delete(selectedSessionId); return next;
+      });
+    };
+    markRead();
+    window.addEventListener("focus", markRead);
+    document.addEventListener("visibilitychange", markRead);
+    return () => { window.removeEventListener("focus", markRead); document.removeEventListener("visibilitychange", markRead); };
   }, [selectedSessionId]);
 
   useEffect(() => {
@@ -770,15 +781,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // Done on the click path (not via the selectedCwd prop sync) so it also
   // works when the prop value won't change — e.g. re-clicking the already
   // open session after manually switching worktrees.
-  const sessionSelectionIdRef = useRef(0);
   const handleSelectSessionFromList = useCallback((s: SessionInfo) => {
-    const selectionId = ++sessionSelectionIdRef.current;
-    void prefetchSessionData(s.id).then(() => {
-      // A second click supersedes an earlier, slower session read.
-      if (sessionSelectionIdRef.current !== selectionId) return;
-      if (s.cwd) setSelectedCwd(s.cwd);
-      onSelectSession(s);
-    });
+    // Navigation is synchronous; warming never owns a later selection.
+    if (s.cwd) setSelectedCwd(s.cwd);
+    onSelectSession(s);
   }, [onSelectSession]);
 
   const handleNewSession = useCallback((cwdOverride?: string) => {
@@ -802,6 +808,19 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
     onNewSession?.(tempId, cwd);
   }, [selectedCwd, archivedProjectRoots, onNewSession, projectRootFor]);
+
+  useEffect(() => {
+    if (!projectPickerOpen) return;
+    const previous = document.activeElement as HTMLElement | null;
+    document.querySelector<HTMLElement>(".project-picker-modal-shell input, .project-picker-modal-shell button")?.focus();
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+      event.preventDefault();
+      setProjectPickerOpen(false);
+    };
+    document.addEventListener("keydown", dismiss);
+    return () => { document.removeEventListener("keydown", dismiss); previous?.focus(); };
+  }, [projectPickerOpen]);
 
   const handleAddProject = useCallback(() => {
     setProjectPickerOpen(true);
@@ -842,14 +861,16 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const searchedSessions = trimmedSessionQuery
     ? allSessions.filter((session) =>
         (session.name ?? "").toLowerCase().includes(trimmedSessionQuery)
-        || session.firstMessage.toLowerCase().includes(trimmedSessionQuery))
+        || session.firstMessage.toLowerCase().includes(trimmedSessionQuery)
+        || (session.projectRoot ?? session.cwd ?? "").toLowerCase().includes(trimmedSessionQuery)
+        || (session.cwd ?? "").toLowerCase().includes(trimmedSessionQuery))
     : allSessions;
   const allProjects = groupByProject(searchedSessions, { runningIds: runningSessionIds, unreadIds: unreadSessionIds });
   const activeProjects = allProjects.filter((group) => !archivedProjectRoots.has(group.projectRoot));
   useEffect(() => {
-    const projectRoots = activeProjects.map((group) => group.projectRoot);
+    const projectRoots = groupByProject(allSessions).filter((group) => !archivedProjectRoots.has(group.projectRoot)).map((group) => group.projectRoot);
     onProjectsChange?.(projectRoots);
-  }, [activeProjects, onProjectsChange]);
+  }, [allSessions, archivedProjectRoots, onProjectsChange]);
   // Sessions of every worktree in the selected project are shown together
   const selectedProject = projectRootFor(selectedCwd);
   const showWorktreeSwitcher = Boolean(
@@ -1053,7 +1074,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           className="sidebar-header-row sidebar-new-row"
           onClick={() => handleNewSession()}
           disabled={!selectedCwd}
-          title={selectedCwd ? `${t("sidebar.newSessionTitle", { path: selectedCwd })} (⌘/Ctrl+N)` : t("sidebar.selectProject")}
+          title={selectedCwd ? `${t("sidebar.newSessionTitle", { path: selectedCwd })} (${isTauriDesktop() ? "⌘/Ctrl+N" : "Ctrl+Alt+N"})` : t("sidebar.selectProject")}
         >
           <span className="sidebar-new-plus" aria-hidden="true">
             <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -1739,7 +1760,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         document.body,
       )}
       {projectPickerOpen && createPortal(
-        <div className="project-picker-modal-overlay" role="dialog" aria-modal="true" onClick={(e) => { if (e.target === e.currentTarget) setProjectPickerOpen(false); }}>
+        <div className="project-picker-modal-overlay" role="dialog" aria-modal="true" onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setProjectPickerOpen(false); } }} onClick={(e) => { if (e.target === e.currentTarget) setProjectPickerOpen(false); }}>
           <div className="project-picker-modal-shell" onClick={(e) => e.stopPropagation()}>
             <div className="project-picker-modal-title">{t("sidebar.addProject")}</div>
             <ProjectPicker
@@ -1754,6 +1775,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 // straight into a new chat there instead of a bare project.
                 if (source === "create") handleNewSession(cwd);
               }}
+              onDismiss={() => setProjectPickerOpen(false)}
               variant="panel"
             />
           </div>
@@ -1937,6 +1959,7 @@ function SessionItem({
   }, [session.name]);
 
   const commitRename = useCallback(async () => {
+    invalidateSessionData(session.id);
     const name = renameValue.trim();
     setRenaming(false);
     if (name === (session.name ?? "")) return;
@@ -1953,6 +1976,7 @@ function SessionItem({
   }, [renameValue, session.id, session.name, onRenamed]);
 
   const performDelete = useCallback(async () => {
+    invalidateSessionData(session.id);
     setConfirmDelete(false);
     setDeleting(true);
     try {
@@ -2142,7 +2166,15 @@ function SessionItem({
               <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
             </svg>
           )}
-          <span
+          <a
+            href={`?session=${encodeURIComponent(session.id)}`}
+            aria-current={isSelected ? "page" : undefined}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+              event.preventDefault();
+              onClick();
+            }}
             className="session-item-title"
             title={session.cwdMissing ? `${title} · ${t("sidebar.cwdMissing")}` : title}
             style={{
@@ -2158,7 +2190,7 @@ function SessionItem({
             }}
           >
             {title}
-          </span>
+          </a>
 
           {/* Collapse toggle — always visible when has children */}
           {hasChildren && (

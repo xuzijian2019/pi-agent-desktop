@@ -213,6 +213,8 @@ export function AppSettings({ onClose }: { onClose: () => void }) {
   const [upgradeProgress, setUpgradeProgress] = useState<DesktopUpgradeProgress | null>(null);
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
   const [closeQuits, setCloseQuits] = useState(() => getPrefBool(APP_PREF_KEYS.closeQuits, false));
+  const [browserNotifications, setBrowserNotifications] = useState(() => getPrefBool(APP_PREF_KEYS.browserNotifications, false));
+  const [notificationPermission, setNotificationPermission] = useState("");
   const [notifyOnComplete, setNotifyOnComplete] = useState(() => getPrefBool(APP_PREF_KEYS.notifyOnComplete, true));
   const [customCssBusy, setCustomCssBusy] = useState(false);
   const [customCssError, setCustomCssError] = useState<string | null>(null);
@@ -514,6 +516,19 @@ export function AppSettings({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
+          {!desktop && <div className="native-settings-card" style={sectionCardStyle}>
+            <label><input type="checkbox" checked={browserNotifications} onChange={async (event) => {
+              const enabled = event.target.checked;
+              if (enabled) {
+                const permission = typeof Notification === "undefined" ? "unsupported" : await Notification.requestPermission();
+                setNotificationPermission(permission);
+                if (permission !== "granted") return;
+              }
+              setBrowserNotifications(enabled);
+              setPrefBool(APP_PREF_KEYS.browserNotifications, enabled);
+            }} /> Notify when background work finishes</label>
+            {notificationPermission && <div role="status">Notifications: {notificationPermission}. Unread indicators remain available.</div>}
+          </div>}
           {desktop && (
             <div className="native-settings-card" style={sectionCardStyle}>
               <div style={sectionTitleStyle}>{t("appSettings.desktopSection")}</div>

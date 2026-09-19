@@ -1,108 +1,124 @@
-import { APP_PREF_KEYS, getPrefJson, setPrefJson } from "@/lib/app-prefs";
+import { APP_PREF_KEYS } from "@/lib/app-prefs";
 import type { ChatDraftText } from "@/lib/pasted-text";
 
-export interface ChatDraftImage {
-  data: string;
-  mimeType: string;
-}
-
-export interface ChatDraft {
-  value: string;
-  images: ChatDraftImage[];
-  texts?: ChatDraftText[];
-}
-
+export interface ChatDraftImage { data: string; mimeType: string }
+export interface ChatDraft { value: string; images: ChatDraftImage[]; texts?: ChatDraftText[] }
+type RecordValue = { revision: number; draft: ChatDraft | null };
+export type DraftStatus = "loading" | "pending" | "saved" | "failed" | "conflict";
 const drafts = new Map<string, ChatDraft>();
-const MAX_PERSISTED_IMAGE_BYTES = 400_000; // approx decoded size via base64 length
-const MAX_PERSISTED_TEXT_CHARS = 131_072;
-const MAX_PERSISTED_DRAFTS = 40;
-
-let hydrated = false;
-let persistTimer: ReturnType<typeof setTimeout> | null = null;
-
-function cloneDraft(draft: ChatDraft): ChatDraft {
-  return {
-    value: draft.value,
-    images: draft.images.map((image) => ({ ...image })),
-    texts: draft.texts?.map((text) => ({ ...text })),
-  };
+const revisions = new Map<string, number>();
+const statuses = new Map<string, DraftStatus>();
+const listeners = new Set<() => void>();
+const queues = new Map<string, Promise<void>>();
+let database: Promise<IDBDatabase> | undefined;
+let channel: BroadcastChannel | undefined;
+const emit = () => listeners.forEach((listener) => listener());
+function status(key: string, value: DraftStatus) { statuses.set(key, value); emit(); }
+export function subscribeDrafts(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }
+export function getDraftStatus(key: string): DraftStatus { return statuses.get(key) ?? "loading"; }
+export function getDraft(key: string): ChatDraft | null { return structuredClone(drafts.get(key) ?? null); }
+function db(): Promise<IDBDatabase> {
+  if (!database) database = new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open("pi-chat-drafts", 1);
+    const timeout = setTimeout(() => reject(new Error("Draft database timed out")), 5_000);
+    request.onupgradeneeded = () => request.result.createObjectStore("drafts");
+    request.onerror = () => { clearTimeout(timeout); reject(request.error); };
+    request.onblocked = () => { clearTimeout(timeout); reject(new Error("Draft database blocked")); };
+    request.onsuccess = () => { clearTimeout(timeout); request.result.onversionchange = () => { request.result.close(); database = undefined; }; resolve(request.result); };
+  }).catch((error) => { database = undefined; throw error; });
+  if (typeof window !== "undefined" && !channel && typeof BroadcastChannel !== "undefined") {
+    channel = new BroadcastChannel("pi-chat-drafts");
+    channel.onmessage = (event) => {
+      const { key, revision } = event.data;
+      if (revisions.has(key) && revisions.get(key) !== revision) status(key, "conflict");
+    };
+  }
+  return database;
 }
-
-function isEmptyDraft(draft: ChatDraft): boolean {
-  return !draft.value && draft.images.length === 0 && (draft.texts?.length ?? 0) === 0;
+function valid(draft: ChatDraft): boolean {
+  return typeof draft?.value === "string" && Array.isArray(draft.images)
+    && draft.images.every((image) => typeof image.data === "string" && typeof image.mimeType === "string")
+    && (draft.texts ?? []).every((text) => Number.isFinite(text.id) && typeof text.content === "string");
 }
-
-function imagePersistable(image: ChatDraftImage): boolean {
-  // base64 length ≈ 4/3 of bytes; keep a conservative cap so localStorage stays usable.
-  return image.data.length * 0.75 <= MAX_PERSISTED_IMAGE_BYTES;
-}
-
-function textPersistable(text: ChatDraftText): boolean {
-  return typeof text.id === "number" && typeof text.content === "string" && text.content.length <= MAX_PERSISTED_TEXT_CHARS;
-}
-
-function hydrateFromStorage(): void {
-  if (hydrated || typeof window === "undefined") return;
-  hydrated = true;
-  const stored = getPrefJson<Record<string, ChatDraft>>(APP_PREF_KEYS.chatDrafts);
-  if (!stored || typeof stored !== "object") return;
-  for (const [key, draft] of Object.entries(stored)) {
-    if (!draft || typeof draft.value !== "string" || !Array.isArray(draft.images)) continue;
-    if (isEmptyDraft(draft)) continue;
-    drafts.set(key, {
-      value: draft.value,
-      images: draft.images
-        .filter((image) => image && typeof image.data === "string" && typeof image.mimeType === "string")
-        .filter(imagePersistable)
-        .map((image) => ({ data: image.data, mimeType: image.mimeType })),
-      texts: Array.isArray(draft.texts)
-        ? draft.texts.filter(textPersistable).map((text) => ({ id: text.id, content: text.content }))
-        : [],
+export async function loadDraft(key: string, discardLocal = false): Promise<ChatDraft | null> {
+  await queues.get(key);
+  if (!discardLocal && drafts.has(key) && ["failed", "conflict"].includes(getDraftStatus(key))) return getDraft(key);
+  try {
+    const database = await db();
+    const record = await new Promise<RecordValue | undefined>((resolve, reject) => {
+      const tx = database.transaction("drafts", "readwrite", { durability: "strict" });
+      const store = tx.objectStore("drafts");
+      const request = store.get(key);
+      let value: RecordValue | undefined;
+      request.onsuccess = () => {
+        value = request.result;
+        if (!value) {
+          // Retain legacy data until migration has committed. Tombstones stop
+          // deleted drafts from being migrated again in another browser tab.
+          try {
+            const legacy = JSON.parse(window.localStorage.getItem(APP_PREF_KEYS.chatDrafts) ?? "{}")[key];
+            if (legacy && !valid(legacy)) throw new Error("Invalid legacy draft");
+            value = { revision: 0, draft: legacy ?? null };
+            store.put(value, key);
+          } catch { tx.abort(); }
+        }
+      };
+      tx.oncomplete = () => resolve(value);
+      tx.onabort = tx.onerror = () => reject(tx.error ?? new Error("Draft migration failed"));
     });
+    if (record?.draft && !valid(record.draft)) throw new Error("Invalid draft attachments");
+    revisions.set(key, record?.revision ?? 0);
+    if (record?.draft) drafts.set(key, record.draft); else drafts.delete(key);
+    status(key, "saved");
+    return getDraft(key);
+  } catch {
+    // Storage denial must still let the user recover a readable legacy draft.
+    if (!drafts.has(key)) {
+      try {
+        const legacy = JSON.parse(window.localStorage.getItem(APP_PREF_KEYS.chatDrafts) ?? "{}")[key];
+        if (legacy && valid(legacy)) drafts.set(key, legacy);
+      } catch { /* The failed status also covers denied legacy storage. */ }
+    }
+    status(key, "failed"); return getDraft(key);
   }
 }
-
-function schedulePersist(): void {
-  if (typeof window === "undefined") return;
-  if (persistTimer) clearTimeout(persistTimer);
-  persistTimer = setTimeout(() => {
-    persistTimer = null;
-    const entries = [...drafts.entries()]
-      .slice(-MAX_PERSISTED_DRAFTS)
-      .map(([key, draft]) => [
-        key,
-        {
-          value: draft.value,
-          images: draft.images.filter(imagePersistable),
-          texts: (draft.texts ?? []).filter(textPersistable),
-        },
-      ] as const);
-    setPrefJson(APP_PREF_KEYS.chatDrafts, Object.fromEntries(entries));
-  }, 250);
-}
-
-export function getDraft(key: string): ChatDraft | null {
-  hydrateFromStorage();
-  const draft = drafts.get(key);
-  return draft ? cloneDraft(draft) : null;
-}
-
 export function setDraft(key: string, draft: ChatDraft): void {
-  hydrateFromStorage();
-  if (isEmptyDraft(draft)) {
-    drafts.delete(key);
-    schedulePersist();
-    return;
-  }
-  // Map.set() does not refresh insertion order for an existing key. Delete it
-  // first so the persistence cap below keeps the most recently edited drafts.
-  drafts.delete(key);
-  drafts.set(key, cloneDraft(draft));
-  schedulePersist();
+  const value = !draft.value && !draft.images.length && !draft.texts?.length ? null : structuredClone(draft);
+  const previous = drafts.get(key) ?? null;
+  if (previous === value || (previous && value && previous.value === value.value
+    && previous.images.length === value.images.length
+    && previous.images.every((image, index) => image.data === value.images[index].data && image.mimeType === value.images[index].mimeType)
+    && (previous.texts?.length ?? 0) === (value.texts?.length ?? 0)
+    && (previous.texts ?? []).every((text, index) => text.id === value.texts![index].id && text.content === value.texts![index].content))) return;
+  if (value) drafts.set(key, value); else drafts.delete(key);
+  if (getDraftStatus(key) === "conflict") return;
+  persist(key, value);
 }
-
-export function clearDraft(key: string): void {
-  hydrateFromStorage();
-  drafts.delete(key);
-  schedulePersist();
+function persist(key: string, draft: ChatDraft | null, force = false): void {
+  status(key, "pending");
+  const next = (queues.get(key) ?? Promise.resolve()).then(async () => {
+    const database = await db();
+    const revision = await new Promise<number>((resolve, reject) => {
+      const tx = database.transaction("drafts", "readwrite", { durability: "strict" });
+      const store = tx.objectStore("drafts");
+      const request = store.get(key);
+      let revision = 0;
+      let conflict = false;
+      request.onsuccess = () => {
+        const current = request.result as RecordValue | undefined;
+        if (!force && (current?.revision ?? 0) !== (revisions.get(key) ?? 0)) { conflict = true; tx.abort(); return; }
+        revision = (current?.revision ?? 0) + 1;
+        try { store.put({ revision, draft }, key); } catch { tx.abort(); }
+      };
+      tx.oncomplete = () => resolve(revision);
+      tx.onabort = tx.onerror = () => reject(new Error(conflict ? "conflict" : "save"));
+    });
+    revisions.set(key, revision);
+    channel?.postMessage({ key, revision });
+    if (queues.get(key) === next) status(key, "saved");
+  }).catch((error) => status(key, error.message === "conflict" ? "conflict" : "failed"));
+  queues.set(key, next);
+  void next.finally(() => { if (queues.get(key) === next) queues.delete(key); });
 }
+export function retryDraft(key: string): void { persist(key, getDraft(key), true); }
+export function clearDraft(key: string): void { drafts.delete(key); persist(key, null, true); }

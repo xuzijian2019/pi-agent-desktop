@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("starting another blank task remounts the composer even in the same cwd", async () => {
+test("reopening New Session resets its runtime without discarding the project draft", async () => {
   const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
   const start = source.indexOf("const handleNewSession = useCallback");
   const end = source.indexOf("// Global keyboard shortcuts", start);
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
   const handler = source.slice(start, end);
-  assert.match(handler, /clearDraft\(`new:\$\{cwd\}`\)/);
+  assert.doesNotMatch(handler, /clearDraft\(/);
   assert.match(handler, /setSessionKey\(\(key\) => key \+ 1\)/);
 });
 
@@ -36,9 +36,9 @@ test("chat file links open in the file panel with session-scoped access", async 
   assert.match(chatWindow, /onOpenFile=\{\(filePath\) => handleOpenFile\(filePath, getFileName\(filePath\), \{ sourceSessionId: selectedSession\?\.id \}\)\}/);
 });
 
-test("desktop-only workspace and health behavior is gated before use", async () => {
+test("desktop workspace is gated and health probes support browsers", async () => {
   const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
   assert.match(source, /desktopMode \? getPrefJson<PersistedWorkspace>/);
-  assert.match(source, /useDesktopConnection\(desktopMode\)/);
+  assert.match(source, /useDesktopConnection\(\)/);
   assert.match(source, /if \(!desktopMode \|\| !workspaceHydrated\) return/);
 });
