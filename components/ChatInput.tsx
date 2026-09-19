@@ -325,26 +325,10 @@ function QueuedMessageRow({ kind, label, text }: { kind: "steer" | "follow-up"; 
   return (
     <div
       title={text}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "3px 10px",
-        fontSize: 12,
-        color: "var(--text-muted)",
-        minWidth: 0,
-      }}
+      className="composer-queued-row"
     >
       <span
-        style={{
-          flexShrink: 0,
-          fontSize: 10,
-          fontFamily: "var(--font-mono)",
-          padding: "1px 7px",
-          borderRadius: "var(--radius-pill, 999px)",
-          border: `1px solid ${kind === "steer" ? "color-mix(in srgb, var(--accent) 45%, transparent)" : "var(--border)"}`,
-          color: kind === "steer" ? "var(--accent)" : "var(--text-dim)",
-        }}
+        className={`composer-queued-kind${kind === "steer" ? " is-steer" : ""}`}
       >
         {label}
       </span>
@@ -368,25 +352,10 @@ function ModelNoticeBanner({
   onDismiss?: () => void;
   dismissLabel?: string;
 }) {
-  const color = tone === "error" ? "239,68,68" : "234,179,8";
   return (
     <div
       role="alert"
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 8,
-        maxHeight: 120,
-        marginBottom: 8,
-        padding: "7px 10px",
-        overflowY: "auto",
-        border: `1px solid rgba(${color},0.3)`,
-        borderRadius: "var(--radius-sm)",
-        background: `rgba(${color},0.07)`,
-        color: `rgb(${color})`,
-        fontSize: 11,
-        lineHeight: 1.45,
-      }}
+      className={`composer-notice-banner is-${tone}`}
     >
       <svg
         width="13"
@@ -1662,11 +1631,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   return (
     <div
       className="chat-input-shell"
-      style={{
-        flexShrink: 0,
-        background: "transparent",
-        padding: "0 16px 8px",
-      }}
     >
       <div className="chat-composer-wrap">
         <ModelErrorBanner error={modelError} />
@@ -1678,55 +1642,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         />
         {/* Queued steering / follow-up messages (delivered by pi on upcoming turns) */}
         {((queuedMessages?.steering.length ?? 0) + (queuedMessages?.followUp.length ?? 0)) > 0 && (
-          <div style={{
-            marginBottom: 8,
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-md)",
-            background: "var(--bg-panel)",
-            padding: "5px 0",
-          }}>
-            <div style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 8,
-              padding: "2px 8px 4px 10px",
-            }}>
-              <span style={{
-                fontSize: 10,
-                fontFamily: "var(--font-mono)",
-                color: "var(--text-dim)",
-                textTransform: "uppercase",
-                letterSpacing: 0.4,
-              }}>
+          <div className="composer-queue-strip">
+            <div className="composer-queue-header">
+              <span className="composer-queue-label">
                 {t("chat.queued", { count: (queuedMessages?.steering.length ?? 0) + (queuedMessages?.followUp.length ?? 0) })}
               </span>
               {onRecallQueue && (
                 <button
                   onClick={onRecallQueue}
                    title={t("chat.recallTitle")}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "4px 12px",
-                    fontSize: 12,
-                    color: "var(--text)",
-                    background: "transparent",
-                    border: "1px solid var(--border)",
-                    borderRadius: "var(--radius-sm)",
-                    cursor: "pointer",
-                    transition: "background 0.12s, border-color 0.12s",
-                    whiteSpace: "nowrap",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = "var(--bg-hover)";
-                    e.currentTarget.style.borderColor = "color-mix(in srgb, var(--accent) 45%, var(--border))";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "transparent";
-                    e.currentTarget.style.borderColor = "var(--border)";
-                  }}
+                  className="composer-queue-recall"
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="9 14 4 9 9 4" />
@@ -1746,12 +1671,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         )}
         {/* Retry banner */}
         {retryInfo && (
-          <div style={{
-            marginBottom: 8, padding: "5px 10px",
-            background: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.25)",
-            borderRadius: "var(--radius-sm)", fontSize: 12, color: "rgba(180,130,0,0.9)",
-            display: "flex", alignItems: "center", gap: 6,
-          }}>
+          <div className="composer-retry-banner">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon">
               <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
               <path d="M3 3v5h5" />
@@ -1760,12 +1680,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           </div>
         )}
         {compactResultText && (
-          <div style={{
-            marginBottom: 8, padding: "5px 10px",
-            background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.24)",
-            borderRadius: "var(--radius-sm)", fontSize: 12, color: "rgba(5,150,105,0.95)",
-            display: "flex", alignItems: "center", gap: 6,
-          }}>
+          <div className="composer-compact-banner">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon">
               <polyline points="20 6 9 17 4 12" />
             </svg>
@@ -1775,19 +1690,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         {compactError && (
           <div
             role="alert"
-            style={{
-              marginBottom: 8,
-              padding: "7px 10px",
-              background: "rgba(239,68,68,0.07)",
-              border: "1px solid rgba(239,68,68,0.3)",
-              borderRadius: "var(--radius-sm)",
-              color: "#ef4444",
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-              lineHeight: 1.5,
-              whiteSpace: "pre-wrap",
-              overflowWrap: "anywhere",
-            }}
+            className="composer-compact-alert"
           >
             {compactError}
           </div>
@@ -1867,31 +1770,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   groupedSlashCommands.map((group) => (
                     <section key={group.source} className="composer-slash-group">
                       <div
-                        style={{
-                          position: "sticky",
-                          top: -10,
-                          zIndex: 1,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          gap: 8,
-                          padding: "4px 0 6px",
-                          background: "var(--bg)",
-                          color: "var(--text-dim)",
-                          fontSize: 10,
-                          fontWeight: 600,
-                          textTransform: "uppercase",
-                        }}
+                        className="composer-slash-group-header"
                       >
                            <span>{t(SLASH_SOURCE_GROUP_LABEL_KEYS[group.source])}</span>
                         <span className="composer-slash-count">{group.items.length}</span>
                       </div>
                       <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                          gap: 8,
-                        }}
+                        className="composer-slash-grid"
                       >
                         {group.items.map(({ command, index }) => {
                           const active = index === slashActiveIndex;
@@ -1910,38 +1795,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                               onMouseEnter={() => setSlashActiveIndex(index)}
                               className={`composer-slash-item${active ? " is-active" : ""}`}
                             >
-                              <span style={{
-                                fontSize: 13,
-                                fontFamily: "var(--font-mono)",
-                                overflowWrap: "anywhere",
-                                wordBreak: "break-word",
-                                color: dormant ? "var(--text-dim)" : undefined,
-                              }}>
+                              <span className={`composer-slash-name${dormant ? " is-dormant" : ""}`}>
                                 /{command.name}
                                 {dormant && (
-                                  <span style={{
-                                    marginLeft: 6,
-                                    padding: "0 4px",
-                                    border: "1px solid var(--border)",
-                                    borderRadius: "var(--radius-sm)",
-                                    fontSize: 9,
-                                    color: "var(--text-dim)",
-                                    whiteSpace: "nowrap",
-                                  }}>
+                                  <span className="composer-slash-dormant">
                                     {t("chat.dormant")}
                                   </span>
                                 )}
                               </span>
                                {command.description && (
-                                <span style={{
-                                  display: "-webkit-box",
-                                  WebkitBoxOrient: "vertical",
-                                  WebkitLineClamp: 2,
-                                  overflow: "hidden",
-                                  fontSize: 11,
-                                  lineHeight: 1.35,
-                                  color: "var(--text-dim)",
-                                }}>
+                                <span className="composer-slash-desc">
                                    {getSlashDescription(command, t)}
                                 </span>
                               )}
@@ -2142,20 +2005,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           )}
           <div
             className="chat-composer-editor"
-            style={{
-              minWidth: 0,
-              display: "flex",
-              gap: 8,
-              alignItems: "center",
-              background: "var(--bg)",
-              border: `1px solid ${bashMode ? "var(--tool-bg)" : isStreaming && (onSteer || onFollowUp)
-                ? "rgba(234,179,8,0.4)"
-                : "color-mix(in srgb, var(--border) 70%, transparent)"}`,
-              borderRadius: "var(--radius-lg)",
-              padding: "10px 10px 10px 14px",
-              boxShadow: "0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -12px rgba(15,23,42,0.10)",
-              transition: "border-color 0.15s, background 0.15s, box-shadow 0.15s",
-            } as React.CSSProperties}
           >
           <textarea
             readOnly={Boolean(draftKey && hydratedDraftKey !== draftKey)}
@@ -2194,22 +2043,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 : t("chat.messagePlaceholder")
             }
             rows={1}
-            style={{
-              flex: 1,
-              minWidth: 0,
-              width: "100%",
-              background: "none",
-              border: "none",
-              outline: "none",
-              resize: "none",
-              color: "var(--text)",
-              fontSize: 14,
-              lineHeight: 1.6,
-              fontFamily: "inherit",
-              minHeight: 24,
-              maxHeight: 200,
-              overflow: "auto",
-            }}
+            className="composer-textarea"
           />
 
           {isStreaming ? (
@@ -2370,15 +2204,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       });
                     }}
                     disabled={isStreaming}
-                    onMouseEnter={(e) => {
-                      if (isStreaming) return;
-                      e.currentTarget.style.background = "var(--bg-hover)";
-                      e.currentTarget.style.color = "var(--text)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = modelDropdownOpen ? "var(--bg-hover)" : "none";
-                      e.currentTarget.style.color = "var(--text-muted)";
-                    }}
                     title={modelOptions.length > 0 ? "Change model" : "No available models"}
                   >
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2403,14 +2228,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       ? { left: 8, right: 8, maxWidth: "calc(100vw - 16px)" }
                       : { left: modelDropdownRect.left, width: "max-content", minWidth: modelDropdownRect.width };
                     return (
-                      <div ref={modelDropdownPanelRef} className="native-popover" style={{
-                      position: "fixed",
-                      bottom,
-                      ...panelPos,
-                      zIndex: 500, background: "var(--bg)", border: "1px solid var(--border)",
-                      borderRadius: "var(--radius-md)", boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
-                      overflow: "hidden", maxHeight: maxH, display: "flex", flexDirection: "column",
-                      }}>
+                      <div ref={modelDropdownPanelRef} className="native-popover composer-model-panel" style={{ bottom, ...panelPos, maxHeight: maxH }}>
                       {showModelFilter && (
                         <div className="composer-model-filter-row">
                           <input
@@ -2427,19 +2245,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             autoFocus
                             autoComplete="off"
                             spellCheck={false}
-                            style={{
-                              width: "100%",
-                              minWidth: isMobile ? 0 : 220,
-                              fontSize: 11,
-                              fontFamily: "var(--font-mono)",
-                              padding: "5px 8px",
-                              border: "1px solid var(--border)",
-                              borderRadius: "var(--radius-sm)",
-                              outline: "none",
-                              background: "var(--bg)",
-                              color: "var(--text)",
-                              boxSizing: "border-box",
-                            }}
+                            className={`composer-model-filter-input${isMobile ? " is-mobile" : ""}`}
                           />
                         </div>
                       )}
@@ -2451,12 +2257,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         ) : modelsByProvider.map((group, gi) => (
                           <div key={group.provider}>
                             {(modelsByProvider.length > 1) && (
-                              <div style={{
-                                padding: "6px 12px 4px",
-                                fontSize: 10, fontWeight: 600, color: "var(--text-dim)",
-                                textTransform: "uppercase", letterSpacing: "0.07em",
-                                borderTop: gi > 0 ? "1px solid var(--border)" : "none",
-                              }}>
+                              <div className={`composer-model-group-header${gi > 0 ? " is-divided" : ""}`}>
                                 {group.provider}
                               </div>
                             )}
@@ -2471,8 +2272,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                     if (!isActive || isAutoModelSelection) { setDraftSetup(previous => previous ? { ...previous, model: { provider: opt.provider, modelId: opt.modelId } } : previous); onModelChange(opt.provider, opt.modelId); }
                                   }}
                                   className={`composer-option-row${isActive ? " is-active" : ""}`}
-                                  onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                                  onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "none"; }}
                                 >
                                   {isActive
                                     ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon"><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
@@ -2511,59 +2310,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   setModelFilter("");
                   setControlsMenuOpen(true);
                 }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: "100%",
-                  height: 32,
-                  padding: "8px 10px",
-                  background: "none",
-                  border: "none",
-                  borderRadius: "var(--radius-sm)",
-                  color: "var(--text-muted)",
-                  cursor: controlsMenuOpen ? "default" : "pointer",
-                  fontSize: 12,
-                  fontWeight: 500,
-                  visibility: controlsMenuOpen ? "hidden" : "visible",
-                  pointerEvents: controlsMenuOpen ? "none" : "auto",
-                  transition: "background 0.12s, color 0.12s",
-                }}
-                onMouseEnter={(e) => {
-                  if (controlsMenuOpen) return;
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                  e.currentTarget.style.color = "var(--text)";
-                }}
-                onMouseLeave={(e) => {
-                  if (controlsMenuOpen) return;
-                  e.currentTarget.style.background = "none";
-                  e.currentTarget.style.color = "var(--text-muted)";
-                }}
+                className={`composer-more-button${controlsMenuOpen ? " is-hidden" : ""}`}
               >
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="8" r="1.25" /><circle cx="8" cy="8" r="1.25" /><circle cx="13" cy="8" r="1.25" /></svg>
               </button>
             )}
-            <div style={{
-              display: isNarrow ? (controlsMenuOpen ? "flex" : "none") : "flex",
-              alignItems: "center",
-              gap: isNarrow ? 1 : 2,
-              ...(isNarrow ? {
-                position: "absolute",
-                right: 0,
-                bottom: 0,
-                zIndex: 60,
-                padding: 1,
-                width: "max-content",
-                maxWidth: "calc(100vw - 32px)",
-                flexWrap: "nowrap",
-                justifyContent: "flex-end",
-                border: "1px solid color-mix(in srgb, var(--border) 72%, transparent)",
-                borderRadius: "var(--radius-md)",
-                background: "color-mix(in srgb, var(--bg-panel) 92%, var(--bg))",
-                boxShadow: "0 8px 24px rgba(0,0,0,0.14)",
-                backdropFilter: "blur(10px)",
-              } : null),
-            }}>
+            <div className={`composer-controls-group${isNarrow ? " is-narrow" : ""}${controlsMenuOpen ? " is-open" : ""}`}>
             {!isStreaming && onThinkingLevelChange && (
               <div ref={thinkingDropdownRef} className="composer-anchor">
                 <button
@@ -2572,15 +2324,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   disabled={isStreaming}
                    title={t("chat.changeReasoning", { level: thinkingDisplayLabel })}
                    aria-label={t("chat.changeReasoningLabel")}
-                  onMouseEnter={(e) => {
-                    if (isStreaming) return;
-                    e.currentTarget.style.background = "var(--bg-hover)";
-                    e.currentTarget.style.color = "var(--text)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = thinkingDropdownOpen ? "var(--bg-hover)" : "none";
-                    e.currentTarget.style.color = "var(--text-muted)";
-                  }}
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M9.5 2A5.5 5.5 0 0 0 4 7.5c0 1.7.78 3.21 2 4.21V14a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1v-2.29c1.22-1 2-2.51 2-4.21A5.5 5.5 0 0 0 9.5 2z" />
@@ -2589,17 +2332,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   </svg>
                   {(!isCompact || controlsMenuOpen) && <span className="composer-nowrap">{thinkingDisplayLabel}</span>}
                 </button>
-                {thinkingDropdownOpen && (() => {
-                  const vh = typeof window !== "undefined" ? window.visualViewport?.height ?? window.innerHeight : 800;
-                  const maxH = Math.max(120, vh * 0.6);
-                  return (
-                  <div className="native-popover" style={{
-                    position: "absolute", bottom: "calc(100% + 6px)", right: 0,
-                    zIndex: 100, background: "var(--bg)", border: "1px solid var(--border)",
-                    borderRadius: "var(--radius-md)", boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
-                    overflow: "hidden", minWidth: 180,
-                    maxHeight: maxH, display: "flex", flexDirection: "column",
-                  }}>
+                {thinkingDropdownOpen && (
+                  <div className="native-popover composer-dropdown-panel is-thinking">
                     <div className="composer-menu-scroll">
                     {selectableThinkingLevels(THINKING_LEVELS, availableThinkingLevels, thinkingLevelMap).map((lvl) => {
                       const isActive = (thinkingLevel ?? "auto") === lvl;
@@ -2612,8 +2346,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           key={lvl}
                           onClick={() => { setThinkingDropdownOpen(false); if (!isActive) { setDraftSetup(previous => previous ? { ...previous, effort: lvl } : previous); onThinkingLevelChange(lvl); } }}
                           className={`composer-option-row${isActive ? " is-active" : ""}`}
-                          onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                          onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "none"; }}
                         >
                           {isActive
                             ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon"><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
@@ -2628,8 +2360,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     })}
                     </div>
                   </div>
-                  );
-                })()}
+                )}
               </div>
             )}
             {!isStreaming && onToolPresetChange && (
@@ -2640,32 +2371,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   disabled={isStreaming}
                    title={t("chat.changeToolPreset") + `: ${toolPresetLabel}`}
                    aria-label={t("chat.changeToolPreset")}
-                  onMouseEnter={(e) => {
-                    if (isStreaming) return;
-                    e.currentTarget.style.background = "var(--bg-hover)";
-                    e.currentTarget.style.color = "var(--text)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = toolDropdownOpen ? "var(--bg-hover)" : "none";
-                    e.currentTarget.style.color = "var(--text-muted)";
-                  }}
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
                   </svg>
                   {(!isCompact || controlsMenuOpen) && <span className="composer-nowrap">{toolPresetLabel}</span>}
                 </button>
-                {toolDropdownOpen && (() => {
-                  const vh = typeof window !== "undefined" ? window.visualViewport?.height ?? window.innerHeight : 800;
-                  const maxH = Math.max(120, vh * 0.6);
-                  return (
-                  <div className="native-popover" style={{
-                    position: "absolute", bottom: "calc(100% + 6px)", right: 0,
-                    zIndex: 100, background: "var(--bg)", border: "1px solid var(--border)",
-                    borderRadius: "var(--radius-md)", boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
-                    overflow: "hidden", minWidth: 120,
-                    maxHeight: maxH, display: "flex", flexDirection: "column",
-                  }}>
+                {toolDropdownOpen && (
+                  <div className="native-popover composer-dropdown-panel is-tools">
                     <div className="composer-menu-scroll">
                     {TOOL_PRESETS.map((lvl) => {
                       const preset = TOOL_PRESET_MAP[lvl];
@@ -2676,8 +2389,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           key={lvl}
                           onClick={() => { setToolDropdownOpen(false); if (!isActive) { setDraftSetup(previous => previous ? { ...previous, tools: preset } : previous); onToolPresetChange(preset); } }}
                           className={`composer-option-row${isActive ? " is-active" : ""}`}
-                          onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                          onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "none"; }}
                         >
                           {isActive
                             ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon"><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
@@ -2689,8 +2400,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     })}
                     </div>
                   </div>
-                  );
-                })()}
+                )}
               </div>
             )}
 
@@ -2702,31 +2412,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   </div>
                 )}
                 <button
-                  className="native-toolbar-button"
+                  className={`native-toolbar-button composer-compact-button${(isCompact && !controlsMenuOpen) ? " is-icon-only" : ""}${isCompacting ? " is-compacting" : ""}`}
                   onClick={isCompacting ? onAbortCompaction : onCompact}
                   disabled={isStreaming && !isCompacting}
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                    padding: (isCompact && !controlsMenuOpen) ? "0 6px" : "8px 12px",
-                    width: (isCompact && !controlsMenuOpen) ? 32 : undefined,
-                    height: 32,
-                    background: isCompacting ? "color-mix(in srgb, var(--danger) 8%, transparent)" : "none",
-                    border: "none",
-                    borderRadius: "var(--radius-sm)",
-                    color: isCompacting ? "var(--danger)" : "var(--text-muted)",
-                    cursor: (isStreaming && !isCompacting) ? "not-allowed" : "pointer",
-                    fontSize: 12, opacity: (isStreaming && !isCompacting) ? 0.5 : 1,
-                    transition: "background 0.12s, color 0.12s",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (isStreaming && !isCompacting) return;
-                    e.currentTarget.style.background = isCompacting ? "color-mix(in srgb, var(--danger) 16%, transparent)" : "var(--bg-hover)";
-                    e.currentTarget.style.color = isCompacting ? "var(--danger)" : "var(--text)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = isCompacting ? "color-mix(in srgb, var(--danger) 8%, transparent)" : "none";
-                    e.currentTarget.style.color = isCompacting ? "var(--danger)" : "var(--text-muted)";
-                  }}
                    title={isCompacting ? t("chat.stopCompaction") : t("chat.compactContext")}
                    aria-label={isCompacting ? t("chat.stopCompaction") : t("chat.compactContext")}
                 >
@@ -2753,28 +2441,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   setThinkingDropdownOpen(false);
                   setControlsMenuOpen(false);
                 }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: 36,
-                  height: 32,
-                  padding: 0,
-                  marginLeft: 0,
-                  background: "var(--bg-hover)",
-                  border: "none",
-                  borderLeft: "1px solid color-mix(in srgb, var(--border) 72%, transparent)",
-                  borderRadius: "0 var(--radius-sm) var(--radius-sm) 0",
-                  color: "var(--text)",
-                  cursor: "pointer",
-                  transition: "background 0.12s, color 0.12s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "var(--bg-selected)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                }}
+                className="composer-collapse-button"
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <line x1="18" y1="6" x2="6" y2="18" />

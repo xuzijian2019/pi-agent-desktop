@@ -17,6 +17,15 @@ test("an empty library gets first-run copy, a filtered one keeps the match copy"
   );
 });
 
+// A search box and a scope picker over an empty library are two controls that
+// can only ever return nothing. They appear with the first saved task.
+test("the search and scope toolbar is gated on the library having a task", async () => {
+  const source = await readFile(new URL("./SavedTasksPanel.tsx", import.meta.url), "utf8");
+  assert.match(source, /\{tasks\.length > 0 && <div className="workbench-toolbar">/);
+  // The first-run copy is not part of the gate — it is what fills the gap.
+  assert.match(source, /workbench-empty">\{t\(!tasks\.length/);
+});
+
 test("both locales define the first-run copy", () => {
   for (const messages of [workbenchEn, workbenchZh]) {
     assert.ok(messages["wb.noTasksYet"], "wb.noTasksYet is missing");
