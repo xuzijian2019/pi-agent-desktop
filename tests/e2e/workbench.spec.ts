@@ -68,6 +68,8 @@ test("the composer send preview keeps the reference snapshot and goes stale afte
   await chip.click();
   const panel = page.getByRole("dialog", { name: "Preview outgoing message", exact: true });
   // It floats just above its chip, clamped inside the composer's width.
+  await expect(panel).toBeVisible();
+  await panel.evaluate(el => Promise.all(el.getAnimations({ subtree: true }).map(a => a.finished)));
   const panelBox = (await panel.boundingBox())!;
   const chipBox = (await chip.boundingBox())!;
   const composerBox = (await page.locator(".chat-composer").boundingBox())!;
