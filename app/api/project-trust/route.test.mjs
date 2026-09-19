@@ -7,6 +7,7 @@ import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { tsconfigPaths: true });
 const { GET, POST } = await jiti.import("./route.ts");
+const { allowFileRoot } = await jiti.import("../../../lib/file-access.ts");
 
 function getRequest(cwd) {
   return new Request(`http://localhost/api/project-trust?cwd=${encodeURIComponent(cwd)}`);
@@ -37,9 +38,14 @@ test("POST still rejects a missing directory and names the path", async () => {
   assert.ok(data.error.includes(missing), `message should name the missing path, got: ${data.error}`);
 });
 
-test("GET returns the trust status for an existing directory", async (t) => {
+test("GET returns trust status only after an existing directory is allowed", async (t) => {
   const cwd = await mkdtemp(path.join(tmpdir(), "pi-web-trust-exists-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
+  const denied = await GET(getRequest(cwd));
+  assert.equal(denied.status, 403);
+  assert.deepEqual(await denied.json(), { error: "Access denied" });
+
+  allowFileRoot(cwd);
   const response = await GET(getRequest(cwd));
   assert.equal(response.status, 200);
   const data = await response.json();
