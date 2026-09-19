@@ -160,9 +160,9 @@ html.dark {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   transform: translateY(-50%);
   transition:
-    width 140ms var(--ease-native),
-    background 140ms var(--ease-native),
-    opacity 140ms var(--ease-native);
+    width var(--dur-base) var(--ease-native),
+    background var(--dur-fast) var(--ease-native),
+    opacity var(--dur-base) var(--ease-native);
 }
 
 .conversation-navigator-tick.is-active {
@@ -730,9 +730,9 @@ pre, code {
   font-size: 12px !important;
   font-weight: 500;
   transition:
-    color 120ms ease,
-    background 120ms ease,
-    transform 120ms var(--ease-native) !important;
+    color var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native),
+    transform var(--dur-base) var(--ease-native) !important;
 }
 
 .sidebar-footer button:active:not(:disabled) {
@@ -773,7 +773,7 @@ pre, code {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: color 120ms ease, background 120ms ease;
+  transition: color var(--dur-fast) var(--ease-native), background var(--dur-fast) var(--ease-native);
 }
 
 .sidebar-chrome-button:hover {
@@ -803,7 +803,7 @@ pre, code {
   line-height: 1.35;
   text-align: left;
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
+  transition: background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native);
 }
 
 .sidebar-header-row:hover:not(:disabled):not([aria-disabled="true"]) {
@@ -872,7 +872,7 @@ pre, code {
   color: var(--text);
   font-size: 12px;
   outline: none;
-  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+  transition: border-color var(--dur-fast) var(--ease-native), background var(--dur-fast) var(--ease-native), box-shadow var(--dur-fast) var(--ease-native);
 }
 
 .sidebar-search-input::placeholder {
@@ -958,7 +958,7 @@ pre, code {
   border-radius: var(--radius-sm);
   color: var(--text-dim);
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
+  transition: background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native);
 }
 
 .sidebar-project-tree-menu:hover,
@@ -986,7 +986,7 @@ pre, code {
   font-size: 12.5px;
   text-align: left;
   cursor: pointer;
-  transition: background 100ms ease, color 100ms ease;
+  transition: background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native);
 }
 
 .sidebar-project-tree-row:hover {
@@ -1129,7 +1129,7 @@ pre, code {
   font-weight: 500;
   text-align: left;
   cursor: pointer;
-  transition: color 100ms ease;
+  transition: color var(--dur-fast) var(--ease-native);
 }
 
 .sidebar-project-tree-show-more:hover {
@@ -1277,10 +1277,10 @@ pre, code {
   cursor: default;
   user-select: none;
   transition:
-    color 120ms ease,
-    background 120ms ease,
-    transform 120ms var(--ease-native),
-    box-shadow 120ms ease;
+    color var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native),
+    transform var(--dur-base) var(--ease-native),
+    box-shadow var(--dur-fast) var(--ease-native);
 }
 
 .file-tree-row:hover {
@@ -1318,7 +1318,7 @@ pre, code {
 .file-tree-chevron {
   flex: 0 0 auto;
   transform: rotate(0deg);
-  transition: transform 140ms var(--ease-native);
+  transition: transform var(--dur-base) var(--ease-native);
 }
 
 .file-tree-chevron.is-open {
@@ -1330,7 +1330,7 @@ pre, code {
   flex: 0 0 auto;
   align-items: center;
   color: var(--text-dim);
-  transition: color 120ms ease;
+  transition: color var(--dur-fast) var(--ease-native);
 }
 
 .file-tree-icon.is-folder {
@@ -1393,9 +1393,9 @@ pre, code {
   text-decoration: none;
   transform: translateY(-50%);
   transition:
-    color 120ms ease,
-    background 120ms ease,
-    transform 120ms var(--ease-native);
+    color var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native),
+    transform var(--dur-base) var(--ease-native);
   white-space: nowrap;
 }
 
@@ -1583,10 +1583,10 @@ pre, code {
   color: var(--text-muted);
   cursor: pointer;
   transition:
-    color 140ms ease,
-    background 140ms ease,
-    opacity 140ms ease,
-    transform 140ms var(--ease-native) !important;
+    color var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native),
+    opacity var(--dur-base) var(--ease-native),
+    transform var(--dur-base) var(--ease-native) !important;
 }
 
 .native-icon-button {
@@ -1636,7 +1636,7 @@ pre, code {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
+  transition: background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native);
 }
 
 .window-control-btn:hover {
@@ -1778,8 +1778,8 @@ pre, code {
   min-height: 30px;
   border-radius: var(--radius-sm) !important;
   transition:
-    color 110ms ease,
-    background 110ms ease;
+    color var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native);
 }
 
 .native-popover button:hover:not(:disabled) {
@@ -1880,8 +1880,8 @@ pre, code {
   cursor: pointer;
   font-size: 20px !important;
   transition:
-    color 140ms ease,
-    background 140ms ease;
+    color var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native);
 }
 
 .native-modal-close:hover:not(:disabled) {
@@ -1925,9 +1925,9 @@ pre, code {
   font-size: 12px !important;
   outline: none;
   transition:
-    border-color 140ms ease,
-    background 140ms ease,
-    box-shadow 140ms ease;
+    border-color var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native),
+    box-shadow var(--dur-fast) var(--ease-native);
 }
 
 .settings-modal textarea {
@@ -1973,8 +1973,8 @@ pre, code {
 .native-input-action {
   border-radius: var(--radius-sm) !important;
   transition:
-    color 140ms ease,
-    background 140ms ease;
+    color var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native);
 }
 
 .native-input-action:hover {
@@ -2015,11 +2015,11 @@ pre, code {
   font-weight: 550;
   cursor: pointer;
   transition:
-    color 140ms ease,
-    border-color 140ms ease,
-    background 140ms ease,
-    box-shadow 140ms ease,
-    transform 140ms var(--ease-native);
+    color var(--dur-fast) var(--ease-native),
+    border-color var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native),
+    box-shadow var(--dur-fast) var(--ease-native),
+    transform var(--dur-base) var(--ease-native);
 }
 
 .native-button:hover:not(:disabled) {
@@ -2119,9 +2119,9 @@ pre, code {
   background: transparent !important;
   cursor: pointer;
   transition:
-    color 120ms ease,
-    border-color 120ms ease,
-    background 120ms ease;
+    color var(--dur-fast) var(--ease-native),
+    border-color var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native);
 }
 
 .settings-list-row:hover {
@@ -2200,11 +2200,11 @@ pre, code {
 
 .settings-modal button:not(.native-modal-close) {
   transition:
-    color 140ms ease,
-    border-color 140ms ease,
-    background 140ms ease,
-    opacity 140ms ease,
-    transform 140ms var(--ease-native);
+    color var(--dur-fast) var(--ease-native),
+    border-color var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native),
+    opacity var(--dur-base) var(--ease-native),
+    transform var(--dur-base) var(--ease-native);
 }
 
 .provider-picker-search {
@@ -2239,9 +2239,9 @@ pre, code {
   font-weight: 600;
   cursor: pointer;
   transition:
-    background 140ms ease,
-    box-shadow 140ms ease,
-    transform 140ms var(--ease-native);
+    background var(--dur-fast) var(--ease-native),
+    box-shadow var(--dur-fast) var(--ease-native),
+    transform var(--dur-base) var(--ease-native);
 }
 
 .native-primary-button:hover:not(:disabled) {
@@ -2275,9 +2275,9 @@ pre, code {
   border-radius: var(--radius-lg) !important;
   box-shadow: var(--shadow-composer) !important;
   transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    background 160ms ease !important;
+    border-color var(--dur-fast) var(--ease-native),
+    box-shadow var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native) !important;
 }
 
 .chat-composer-editor {
@@ -2330,7 +2330,7 @@ pre, code {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
+  transition: background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native);
 }
 
 .chat-project-context:hover:not(:disabled) {
@@ -2432,9 +2432,9 @@ pre, code {
   font-size: 11.5px !important;
   font-weight: 500;
   transition:
-    color 140ms ease,
-    background 140ms ease,
-    border-color 140ms ease;
+    color var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native),
+    border-color var(--dur-fast) var(--ease-native);
 }
 
 .process-details-trigger:hover {
@@ -2915,7 +2915,7 @@ pre, code {
   background: var(--bg-hover);
   color: var(--text-muted);
   cursor: pointer;
-  transition: color 120ms ease, background 120ms ease;
+  transition: color var(--dur-fast) var(--ease-native), background var(--dur-fast) var(--ease-native);
 }
 
 .right-panel-toggle-button:hover {
@@ -2943,7 +2943,7 @@ pre, code {
   cursor: pointer;
   font: inherit;
   font-size: 12px;
-  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+  transition: color var(--dur-fast) var(--ease-native), background var(--dur-fast) var(--ease-native), border-color var(--dur-fast) var(--ease-native);
 }
 
 .file-workbench-icon-button {
@@ -2979,10 +2979,10 @@ pre, code {
   font-size: 12px;
   user-select: none;
   transition:
-    background 140ms ease,
-    border-color 140ms ease,
-    color 140ms ease,
-    transform 140ms var(--ease-native);
+    background var(--dur-fast) var(--ease-native),
+    border-color var(--dur-fast) var(--ease-native),
+    color var(--dur-fast) var(--ease-native),
+    transform var(--dur-base) var(--ease-native);
 }
 
 .file-tab:hover {
@@ -3042,9 +3042,9 @@ pre, code {
   color: transparent;
   cursor: pointer;
   transition:
-    background 120ms ease,
-    color 120ms ease,
-    transform 120ms var(--ease-native);
+    background var(--dur-fast) var(--ease-native),
+    color var(--dur-fast) var(--ease-native),
+    transform var(--dur-base) var(--ease-native);
 }
 
 .file-tab:hover .file-tab-close,
@@ -3078,7 +3078,7 @@ pre, code {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: color 140ms ease, background 140ms ease;
+  transition: color var(--dur-fast) var(--ease-native), background var(--dur-fast) var(--ease-native);
 }
 
 .right-panel-close:hover {
@@ -3295,10 +3295,10 @@ pre, code {
   letter-spacing: 0;
   white-space: nowrap;
   transition:
-    color 120ms ease,
-    background 120ms ease,
-    box-shadow 120ms ease,
-    transform 120ms var(--ease-native);
+    color var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native),
+    box-shadow var(--dur-fast) var(--ease-native),
+    transform var(--dur-base) var(--ease-native);
 }
 
 .file-viewer-mode-button:hover:not([aria-pressed="true"]) {
@@ -3331,9 +3331,9 @@ pre, code {
   cursor: pointer;
   text-decoration: none;
   transition:
-    color 120ms ease,
-    background 120ms ease,
-    transform 120ms var(--ease-native);
+    color var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native),
+    transform var(--dur-base) var(--ease-native);
 }
 
 .file-viewer-icon-button:hover {
@@ -3473,8 +3473,8 @@ pre, code {
   font-size: 11.5px;
   font-weight: 550;
   transition:
-    background 120ms ease,
-    transform 120ms var(--ease-native);
+    background var(--dur-fast) var(--ease-native),
+    transform var(--dur-base) var(--ease-native);
 }
 
 .file-viewer-retry-button:hover {
@@ -3753,7 +3753,7 @@ span.linenumber {
   .sidebar-container {
     position: relative;
     overflow: hidden;
-    transition: width 0.2s ease, min-width 0.2s ease;
+    transition: width var(--dur-base) var(--ease-native), min-width var(--dur-base) var(--ease-native);
   }
   .sidebar-container.sidebar-open {
     width: var(--sidebar-width, 284px);
@@ -3775,7 +3775,7 @@ span.linenumber {
 @media (min-width: 641px) {
   .right-panel-container {
     overflow: hidden;
-    transition: width 0.2s ease, min-width 0.2s ease;
+    transition: width var(--dur-base) var(--ease-native), min-width var(--dur-base) var(--ease-native);
     flex-shrink: 0;
   }
   .right-panel-container.right-panel-open {
@@ -3849,7 +3849,7 @@ span.linenumber {
     bottom: 0;
     width: 292px;
     max-width: 85vw;
-    transition: transform 0.25s ease, box-shadow 0.25s ease;
+    transition: transform var(--dur-base) var(--ease-native), box-shadow var(--dur-fast) var(--ease-native);
   }
   .sidebar-container.sidebar-open {
     transform: translateX(0);
@@ -3862,7 +3862,7 @@ span.linenumber {
 
   .right-panel-container {
     overflow: hidden;
-    transition: width 0.2s ease, min-width 0.2s ease;
+    transition: width var(--dur-base) var(--ease-native), min-width var(--dur-base) var(--ease-native);
     flex-shrink: 0;
   }
   .right-panel-container.right-panel-open {
@@ -4013,7 +4013,7 @@ span.linenumber {
   background: var(--surface-muted);
   outline: none !important;
   font-size: 13px;
-  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+  transition: border-color var(--dur-fast) var(--ease-native), background var(--dur-fast) var(--ease-native), box-shadow var(--dur-fast) var(--ease-native);
 }
 
 .context-panel-file-filter::placeholder {
