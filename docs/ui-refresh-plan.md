@@ -1,7 +1,8 @@
 # Web UI refresh plan
 
-Status: decisions accepted 2026-09-19. Scope is the browser profile (`npm run web`);
-the Tauri shell must keep working but is not the target.
+Status: decisions accepted 2026-09-19; all four phases landed on `main` the same day
+(final verification on the desktop web UI at 1440 px, light and dark). Scope is the
+browser profile (`npm run web`); the Tauri shell must keep working but is not the target.
 
 Goal: a calmer, rounder, less duplicated UI with the idle-network and missing-folder
 logic fixed. Every stream below is one worktree, one PR, one fresh session.
