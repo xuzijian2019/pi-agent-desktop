@@ -7,7 +7,7 @@ import { ActivityPanel } from "./workbench/ActivityPanel";
 import { SavedTasksPanel, type TaskSeed } from "./workbench/SavedTasksPanel";
 import { OutputsPanel } from "./workbench/OutputsPanel";
 import { ContextPanel } from "./workbench/ContextPanel";
-import { DiffPanel } from "./DiffPanel";
+import { ChangesSection } from "./workbench/ChangesSection";
 import { panelMode, type PanelMode } from "@/lib/panel-modes";
 import { loadDraft, setDraft, getDraftStatus, type ChatDraft } from "@/lib/draft-store";
 import { uiFetch } from "@/lib/web-ui-client";
@@ -135,6 +135,7 @@ export function AppShell() {
   const [workbenchError, setWorkbenchError] = useState("");
   const openMode = useCallback((mode: PanelMode) => { setRightPanelMode(mode); setRightPanelOpen(true); }, []);
   const [reviewFilePath, setReviewFilePath] = useState<string | null>(null);
+  const [changesExpanded, setChangesExpanded] = useState(false);
   const [fromOutputs, setFromOutputs] = useState(false);
 
   const [mobileSidebarReady, setMobileSidebarReady] = useState(false);
@@ -752,7 +753,7 @@ export function AppShell() {
     const sourceSessionId = options?.sourceSessionId;
     const modeHint = options?.modeHint;
     if (modeHint === "diff") {
-      setReviewFilePath(filePath); setRightPanelMode("diff"); setRightPanelOpen(true);
+      setReviewFilePath(filePath); setChangesExpanded(true); setRightPanelMode("files"); setRightPanelOpen(true);
       if (isMobile) setSidebarOpen(false);
       return;
     }
@@ -1826,7 +1827,6 @@ export function AppShell() {
         </div>
         <div hidden={rightPanelMode !== "outputs"} className="workbench-mode-body"><OutputsPanel visible={rightPanelOpen && rightPanelMode === "outputs"} sessionId={selectedSession?.id ?? null} title={selectedSession?.name || selectedSession?.firstMessage} leafId={branchActiveLeafId} refreshKey={refreshKey} onOpen={path => { setFromOutputs(true); handleOpenFile(path, getFileName(path), { sourceSessionId: selectedSession?.id }); }} onMessage={(entryId, leafId) => { if (leafId !== branchActiveLeafId) handleBranchLeafChange(leafId); window.dispatchEvent(new CustomEvent("pi-reveal-entry", { detail: { sessionId: selectedSession?.id, entryId } })); }} /></div>
         <div hidden={rightPanelMode !== "context"} className="workbench-mode-body"><ContextPanel visible={rightPanelOpen && rightPanelMode === "context"} inputRef={chatInputRef} revision={draftRevision} identity={selectedSession?.id ?? `new:${effectiveNewSessionCwd}`} systemPrompt={systemPrompt} /></div>
-        <div hidden={rightPanelMode !== "diff"} className="workbench-mode-body">{activeCwd && rightPanelOpen && rightPanelMode === "diff" && <DiffPanel key={activeCwd} cwd={activeCwd} selectedFilePath={reviewFilePath} refreshKey={explorerRefreshKey} />}</div>
         <div hidden={rightPanelMode !== "files"} className="workbench-files-body">
         {fromOutputs && <button onClick={() => openMode("outputs")}>{translate("wb.backOutputs")}</button>}
         <div className="right-panel-tab-strip">
@@ -1907,6 +1907,7 @@ export function AppShell() {
               </button>
             </div>
           </div>
+        <ChangesSection visible={rightPanelOpen && rightPanelMode === "files"} cwd={activeCwdMissing ? null : activeCwd} expanded={changesExpanded} onExpandedChange={setChangesExpanded} selectedFilePath={reviewFilePath} refreshKey={explorerRefreshKey} />
         {/* Local files: preview on the left, project tree on the right. */}
         <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
           {/* Preview column */}
