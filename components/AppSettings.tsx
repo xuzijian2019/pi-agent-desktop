@@ -53,16 +53,11 @@ function ChoiceButton({
 }) {
   return (
     <button
-      className="native-button"
+      className="native-button native-choice-button"
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      style={{
-        minWidth: 88,
-        borderColor: active ? "var(--accent)" : "var(--border)",
-        color: active ? "var(--accent)" : "var(--text-muted)",
-        fontWeight: active ? 700 : 500,
-      }}
+      style={{ minWidth: 88 }}
     >
       {children}
     </button>

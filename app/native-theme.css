@@ -1995,6 +1995,58 @@ pre, code {
   cursor: default !important;
 }
 
+/* Segmented choice (theme, language, diff mode). `.native-button` locks colour
+   and border with !important, so the selected state must live here, not inline. */
+.native-choice-button {
+  position: relative;
+  transition:
+    color var(--dur-fast) var(--ease-native),
+    border-color var(--dur-fast) var(--ease-native),
+    background var(--dur-base) var(--ease-native),
+    box-shadow var(--dur-base) var(--ease-native),
+    transform var(--dur-base) var(--ease-native);
+}
+
+.native-choice-button[aria-pressed="true"] {
+  border-color: var(--accent) !important;
+  background: var(--accent) !important;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent),
+    0 1px 2px color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--accent-contrast) !important;
+  font-weight: 650;
+  animation: native-choice-pop 360ms var(--ease-native);
+}
+
+.native-choice-button[aria-pressed="true"]:hover:not(:disabled) {
+  border-color: var(--accent-hover) !important;
+  background: var(--accent-hover) !important;
+  color: var(--accent-contrast) !important;
+}
+
+@keyframes native-choice-pop {
+  0% {
+    transform: scale(0.94);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  55% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent),
+      0 1px 2px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .native-choice-button[aria-pressed="true"] {
+    animation: none;
+  }
+}
+
 .native-button-compact {
   min-height: 26px;
   padding: 0 9px !important;
