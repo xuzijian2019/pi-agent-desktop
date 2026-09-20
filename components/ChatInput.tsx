@@ -2079,7 +2079,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
           {/* LEFT: project context + model selector (idle) or steer/followup toggle (streaming) */}
           <div className="composer-controls-left">
-            {projectLabel && (
+            {showHints && projectLabel && (
               <div ref={projectDropdownRef} className="composer-anchor is-static">
                 <button
                   type="button"
@@ -2263,38 +2263,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   })()}
                 </div>
             )}
-            {hasTranscript && <ContextUsageRing key={draftKey} contextUsage={contextUsage} sessionStats={sessionStats} />}
-            <ExtensionStatusBar statuses={extensionStatuses} />
-          </div>
-
-          {/* spacer */}
-          {!isNarrow && <div className="composer-controls-spacer" />}
-
-          {/* RIGHT: thinking + tools preset + compact (idle) */}
-          <div ref={controlsMenuRef} className={`composer-controls-right${isNarrow ? " is-narrow" : ""}`}>
-            {isNarrow && (
-              <button
-                type="button"
-                 title={controlsMenuOpen ? undefined : t("chat.moreControls")}
-                 aria-label={t("chat.moreControls")}
-                aria-expanded={controlsMenuOpen}
-                aria-hidden={controlsMenuOpen || undefined}
-                tabIndex={controlsMenuOpen ? -1 : undefined}
-                onClick={() => {
-                  setModelDropdownOpen(false);
-                  setModelFilter("");
-                  setControlsMenuOpen(true);
-                }}
-                className={`composer-more-button${controlsMenuOpen ? " is-hidden" : ""}`}
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="8" r="1.25" /><circle cx="8" cy="8" r="1.25" /><circle cx="13" cy="8" r="1.25" /></svg>
-              </button>
-            )}
-            <div className={`composer-controls-group${isNarrow ? " is-narrow" : ""}${controlsMenuOpen ? " is-open" : ""}`}>
             {!isStreaming && onThinkingLevelChange && (
               <div ref={thinkingDropdownRef} className="composer-anchor">
                 <button
-                  className={`native-toolbar-button composer-toolbar-chip${isCompact && !controlsMenuOpen ? " is-icon-only" : ""}${thinkingDropdownOpen ? " is-open" : ""}`}
+                  className={`native-toolbar-button composer-toolbar-chip composer-effort-trigger${thinkingDropdownOpen ? " is-open" : ""}`}
                   onClick={() => !isStreaming && setThinkingDropdownOpen((v) => !v)}
                   disabled={isStreaming}
                    title={t("chat.changeReasoning", { level: thinkingDisplayLabel })}
@@ -2305,7 +2277,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     <line x1="7" y1="18" x2="12" y2="18" />
                     <line x1="8" y1="21" x2="11" y2="21" />
                   </svg>
-                  {(!isCompact || controlsMenuOpen) && <span className="composer-nowrap">{thinkingDisplayLabel}</span>}
+                  <span className="composer-nowrap">{thinkingDisplayLabel}</span>
                 </button>
                 {thinkingDropdownOpen && (
                   <div className="native-popover composer-dropdown-panel is-thinking">
@@ -2338,7 +2310,32 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 )}
               </div>
             )}
-            {!isStreaming && onToolPresetChange && (
+            <ExtensionStatusBar statuses={extensionStatuses} />
+          </div>
+
+          {/* Usage is separated from the model and effort settings. */}
+          <div ref={controlsMenuRef} className={`composer-controls-right${isNarrow ? " is-narrow" : ""}`}>
+            {hasTranscript && <ContextUsageRing key={draftKey} contextUsage={contextUsage} sessionStats={sessionStats} />}
+            {showHints && isNarrow && !isStreaming && onToolPresetChange && (
+              <button
+                type="button"
+                title={controlsMenuOpen ? undefined : t("chat.moreControls")}
+                aria-label={t("chat.moreControls")}
+                aria-expanded={controlsMenuOpen}
+                aria-hidden={controlsMenuOpen || undefined}
+                tabIndex={controlsMenuOpen ? -1 : undefined}
+                onClick={() => {
+                  setModelDropdownOpen(false);
+                  setModelFilter("");
+                  setControlsMenuOpen(true);
+                }}
+                className={`composer-more-button${controlsMenuOpen ? " is-hidden" : ""}`}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="8" r="1.25" /><circle cx="8" cy="8" r="1.25" /><circle cx="13" cy="8" r="1.25" /></svg>
+              </button>
+            )}
+            <div className={`composer-controls-group${isNarrow ? " is-narrow" : ""}${controlsMenuOpen ? " is-open" : ""}`}>
+            {showHints && !isStreaming && onToolPresetChange && (
               <div ref={toolDropdownRef} className="composer-anchor">
                 <button
                   className={`native-toolbar-button composer-toolbar-chip${isCompact && !controlsMenuOpen ? " is-icon-only" : ""}${toolDropdownOpen ? " is-open" : ""}`}

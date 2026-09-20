@@ -5239,6 +5239,12 @@ span.linenumber {
   align-items: center;
   justify-content: flex-end;
   margin-left: auto;
+  padding-left: 10px;
+}
+
+.composer-effort-trigger {
+  flex-shrink: 0;
+  padding-inline: 6px;
 }
 
 .composer-controls-right.is-narrow {

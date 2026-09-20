@@ -2014,6 +2014,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [isNew]);
 
   const handleToolPresetChange = useCallback(async (preset: "none" | "default" | "full") => {
+    if (!isNew || agentRunningRef.current || ensuringNewSessionRef.current) return;
     const toolNames = getToolNamesForPreset(preset);
     setToolPresetState(preset);
     setPref(APP_PREF_KEYS.toolPreset, preset);
@@ -2024,7 +2025,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } catch (e) {
       console.error("Failed to set tools:", e);
     }
-  }, [setToolPresetState]);
+  }, [isNew, setToolPresetState]);
 
   const markUserScrollIntent = useCallback((event: Event) => {
     if (event instanceof KeyboardEvent) {

@@ -13,6 +13,7 @@ import { extractTextContent } from "./session-scan";
 import { cacheSessionPath, invalidateSessionListCache } from "./session-reader";
 import { generateSessionTitle } from "./session-title";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
+import { assertSessionToolsEditable, readSessionToolNames, saveSessionToolNames } from "./session-tools";
 import { persistExplicitStartupPreferences } from "./startup-preferences";
 import type { AgentSession, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import { PRODUCT_NAME } from "./branding";
@@ -759,9 +760,14 @@ export class AgentSessionWrapper {
       }
 
       case "set_tools": {
+        assertSessionToolsEditable(this.inner.sessionManager);
         const toolNames = command.toolNames as string[];
+        if (!Array.isArray(toolNames) || !toolNames.every((name) => typeof name === "string")) {
+          throw new Error("toolNames must be an array of tool names");
+        }
         this.setForceEmptySystemPrompt(toolNames.length === 0);
         this.inner.setActiveToolsByName(withExtensionTools(this.inner, toolNames));
+        saveSessionToolNames(this.inner.sessionManager, toolNames);
         this.applyForcedEmptySystemPrompt();
         return null;
       }
@@ -772,6 +778,8 @@ export class AgentSessionWrapper {
         this.extensionWidgets.clear();
         this.syncProjectTrust();
         await this.inner.reload();
+        const toolNames = readSessionToolNames(this.inner.sessionManager);
+        if (toolNames) this.inner.setActiveToolsByName(withExtensionTools(this.inner, toolNames));
         if (typeof this.inner.bindExtensions !== "function") {
           this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
         }
@@ -1387,7 +1395,7 @@ export async function startRpcSession(
   cwd: string | undefined,
   options: RpcSessionStartOptions = {},
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
-  const { toolNames, initialModel, thinkingLevel } = options;
+  const { initialModel, thinkingLevel } = options;
   const registry = getRegistry();
   const locks = getLocks();
 
@@ -1404,6 +1412,8 @@ export async function startRpcSession(
     if (!cwd) throw new Error("cwd is required for a new session");
     sessionManager = SessionManager.create(cwd, undefined);
   }
+  // Restore the session's selection rather than applying today's new-session preference.
+  const toolNames = readSessionToolNames(sessionManager) ?? options.toolNames;
   const sessionCwd = sessionManager.getCwd();
   const finishStartingSession = trackStartingSession(sessionCwd);
   const starting = withCheckoutGuard(sessionCwd, async () => {
@@ -1486,6 +1496,8 @@ export async function startRpcSession(
     if (toolNames && toolNames.length > 0) {
       inner.setActiveToolsByName(withExtensionTools(inner, toolNames));
     }
+
+    saveSessionToolNames(sessionManager, toolNames ?? inner.getActiveToolNames());
 
     const wrapper = new AgentSessionWrapper(inner);
     // When all tools are disabled, clear the system prompt entirely.

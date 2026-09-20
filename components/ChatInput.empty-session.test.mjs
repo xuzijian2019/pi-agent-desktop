@@ -47,6 +47,20 @@ test("existing sessions have no placeholder hints or Compact button and show a v
   assert.match(usageButton, /aria-haspopup="dialog"/);
 });
 
+test("project and tool setup appear only before a conversation starts", () => {
+  const setup = {
+    projectPath: "/repo/project", onSelectProject() {},
+    toolPreset: "full", onToolPresetChange() {},
+  };
+  const fresh = renderComposer({ ...setup, showInputHints: true });
+  assert.match(fresh, /chat-project-context/);
+  assert.match(fresh, /aria-label="Change tool preset"/);
+  assert.match(fresh, />full<\/span>/);
+  const existing = renderComposer({ ...setup, showInputHints: false, sessionStats: stats });
+  assert.doesNotMatch(existing, /chat-project-context|Change tool preset/);
+  assert.match(existing, /context-usage-ring/);
+});
+
 test("existing sessions with unknown context show a dash, not a misleading zero", () => {
   const html = renderComposer({ showInputHints: false, sessionStats: stats, contextUsage: { percent: null, contextWindow: 200000, tokens: null } });
   assert.match(html, /class="context-usage-percent"[^>]*>—<\/span>/);
