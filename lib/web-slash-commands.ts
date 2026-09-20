@@ -1,4 +1,4 @@
-/** Pi 0.85.1 CLI commands with a supported Web UI equivalent. */
+/** Pi 0.86.1 CLI commands with a supported Web UI equivalent. */
 export const WEB_SLASH_COMMANDS = [
   { name: "side", description: "side.command", args: true },
   { name: "btw", description: "side.command", args: true },

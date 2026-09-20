@@ -3,7 +3,17 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { after } from "node:test";
 import { createJiti } from "jiti";
+
+// Allowed file roots are derived from the real pi data directory's session
+// cwds, so a machine that once ran pi inside /tmp would let the "existing
+// directory" below through the gate before it is explicitly allowed. Point
+// the home/agent-dir overrides at a throwaway directory before any import.
+const isolatedHome = await mkdtemp(path.join(tmpdir(), "pi-web-trust-home-"));
+process.env.PI_AGENT_HOME = isolatedHome;
+process.env.PI_CODING_AGENT_DIR = path.join(isolatedHome, ".pi", "agent");
+after(() => rm(isolatedHome, { recursive: true, force: true }));
 
 const jiti = createJiti(import.meta.url, { tsconfigPaths: true });
 const { GET, POST } = await jiti.import("./route.ts");
