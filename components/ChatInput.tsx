@@ -640,7 +640,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         if (!ta) return;
         ta.focus();
         ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+        ta.style.height = `${ta.scrollHeight}px`;
       });
     },
     replaceMessage(message: UserMessage) {
@@ -660,7 +660,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         if (!ta) return;
         ta.focus();
         ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+        ta.style.height = `${ta.scrollHeight}px`;
       });
     },
     prependText(text: string) {
@@ -678,7 +678,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         ta.focus();
         ta.setSelectionRange(combined.length, combined.length);
         ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+        ta.style.height = `${ta.scrollHeight}px`;
       });
     },
     insertText(text: string) {
@@ -702,7 +702,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         ta.setSelectionRange(pos, pos);
         ta.focus();
         ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+        ta.style.height = `${ta.scrollHeight}px`;
       });
     },
     addImages(files: File[]) {
@@ -895,7 +895,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const ta = textareaRef.current;
     if (!ta) return;
     ta.style.height = "auto";
-    if (value) ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+    if (value) ta.style.height = `${ta.scrollHeight}px`;
   }, [value]);
 
   useEffect(() => {
@@ -1185,7 +1185,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       el.focus();
       el.setSelectionRange(newPos, newPos);
       el.style.height = "auto";
-      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+      el.style.height = `${el.scrollHeight}px`;
     });
   }, [atQuery, value]);
 
@@ -1211,7 +1211,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       el.focus();
       el.setSelectionRange(newPos, newPos);
       el.style.height = "auto";
-      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+      el.style.height = `${el.scrollHeight}px`;
     });
   }, [hashQuery, value]);
 
@@ -1272,7 +1272,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       ta.focus();
       ta.setSelectionRange(text.length, text.length);
       ta.style.height = "auto";
-      ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+      ta.style.height = `${ta.scrollHeight}px`;
     });
   }, []);
 
@@ -1292,7 +1292,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       ta.focus();
       ta.setSelectionRange(nextValue.length, nextValue.length);
       ta.style.height = "auto";
-      ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+      ta.style.height = `${ta.scrollHeight}px`;
     });
   }, [dispatchBuiltin]);
 
@@ -1460,7 +1460,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const ta = textareaRef.current;
     if (!ta) return;
     ta.style.height = "auto";
-    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+    ta.style.height = `${ta.scrollHeight}px`;
   }, []);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {

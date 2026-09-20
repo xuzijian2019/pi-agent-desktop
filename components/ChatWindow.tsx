@@ -989,7 +989,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
           className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8"
           style={{ scrollbarGutter: "stable" }}
         >
-          <div className="chat-empty-state w-full max-w-[820px]">
+          <div className="chat-empty-state w-full">
             <NoticeShelf notices={notices} align="right" />
             {emptyStateSlot}
             <div inert={!!searchPreview}>{chatInputElement}</div>

@@ -2272,7 +2272,7 @@ pre, code {
 
 .chat-composer-wrap {
   width: 100%;
-  max-width: 820px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 0 0 13px;
 }
@@ -2390,7 +2390,7 @@ pre, code {
 
 .chat-empty-state {
   width: 100%;
-  max-width: 820px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
@@ -5486,8 +5486,8 @@ span.linenumber {
   flex: 1;
   width: 100%;
   min-width: 0;
-  min-height: 24px;
-  max-height: 200px;
+  min-height: clamp(24px, calc(12dvh - 46.5px), 97.5px);
+  max-height: max(48px, min(480px, 40dvh));
   border: none;
   outline: none;
   background: none;
