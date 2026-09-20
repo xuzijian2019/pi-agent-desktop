@@ -3,22 +3,45 @@
 .right-panel-container { container-type: inline-size; }
 .right-panel-toggle-button.is-open { display: none; }
 
-/* Header: same height and tint as .app-topbar so the panel reads as one continuous bar. */
-.workbench-mode-selector { display: flex; align-items: center; gap: 8px; height: 48px; flex: 0 0 48px; padding: 0 7px 0 10px; border-bottom: 1px solid var(--separator); background: color-mix(in srgb, var(--bg) 88%, var(--surface)); }
-.workbench-mode-selector > button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 34px; height: 34px; margin-left: auto; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); cursor: pointer; transition: color var(--dur-fast) var(--ease-native), background var(--dur-fast) var(--ease-native); }
-.workbench-mode-selector > button:hover { background: color-mix(in srgb, var(--bg-panel) 65%, var(--surface)); color: var(--text); }
-.workbench-mode-tabs { display: flex; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.workbench-mode-tabs::-webkit-scrollbar { display: none; }
-.workbench-mode-tabs button { display: flex; align-items: center; flex-shrink: 0; height: 26px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); font-size: 11.5px; font-weight: 550; white-space: nowrap; cursor: pointer; transition: background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native); }
-.workbench-mode-tabs button:hover { background: var(--bg-hover); color: var(--text); }
-.workbench-mode-tabs button[aria-selected="true"] { background: var(--bg-selected); color: var(--text); }
-.workbench-mode-select { display: none; flex: 1; min-width: 0; align-items: center; }
-.workbench-mode-select select { max-width: 100%; height: 28px; padding: 0 6px; border: 0; border-radius: var(--radius-sm); font-size: 12px; font-weight: 550; color: var(--text); background: transparent; cursor: pointer; transition: background var(--dur-fast) var(--ease-native); }
+/* Header: one row for the whole panel — view switch, the view's own controls
+   (open file tabs, changes), and close. Same height and tint as .app-topbar so
+   the panel reads as one continuous bar. */
+.workbench-mode-selector { display: flex; align-items: center; gap: 6px; height: 48px; flex: 0 0 48px; padding: 0 8px !important; border-bottom: 1px solid var(--separator); background: color-mix(in srgb, var(--bg) 88%, var(--surface)) !important; }
+.workbench-mode-close { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 32px; height: 32px; margin-left: auto; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); cursor: pointer; transition: color var(--dur-fast) var(--ease-native), background var(--dur-fast) var(--ease-native); }
+.workbench-mode-close:hover { background: color-mix(in srgb, var(--bg-panel) 65%, var(--surface)); color: var(--text); }
+.workbench-mode-select { display: flex; flex: 0 0 auto; max-width: 40%; min-width: 0; align-items: center; }
+.workbench-mode-select select { max-width: 100%; height: 30px; padding: 0 4px 0 6px; border: 0; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; color: var(--text); background: transparent; cursor: pointer; transition: background var(--dur-fast) var(--ease-native); }
 .workbench-mode-select select:hover { background: var(--bg-hover); }
-@container (max-width: 560px) { .workbench-mode-tabs { display: none; } .workbench-mode-select { display: flex; } }
 .workbench-mode-body, .workbench-files-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
 .workbench-mode-body[hidden], .workbench-files-body[hidden] { display: none; }
-.workbench-files-body .right-panel-tab-strip { padding-right: 10px !important; background: var(--bg) !important; }
+
+/* Changes: a chip in the header row; the diff list opens as a drawer under it. */
+.workbench-changes { display: flex; flex: 0 0 auto; align-items: center; }
+.workbench-chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 9px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); font-size: 12px; font-weight: 550; white-space: nowrap; cursor: pointer; transition: background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native); }
+.workbench-chip:hover { background: var(--bg-hover); color: var(--text); }
+.workbench-chip.is-open { background: var(--bg-selected); color: var(--text); }
+.workbench-chip > svg { flex-shrink: 0; }
+.workbench-changes-drawer { position: absolute; z-index: 20; top: 100%; right: 0; left: 0; max-height: 60vh; display: flex; flex-direction: column; overflow: hidden; border-bottom: 1px solid var(--separator); background: var(--surface); box-shadow: var(--shadow-md, 0 10px 24px rgb(0 0 0 / 28%)); }
+.workbench-changes-drawer .workbench-section-body { flex: 1; min-height: 0; }
+.workbench-changes-title { flex: 1; min-width: 0; padding: 9px 8px; color: var(--text-muted); font-size: 12px; font-weight: 550; }
+@container (max-width: 520px) { .workbench-chip-label { display: none; } }
+
+/* Tabs size to their file name, so more open files fit before the strip
+   scrolls; the header no longer repeats the name anywhere else. */
+.right-panel-tab-strip .file-tab { min-width: 0; max-width: 168px; padding: 0 4px 0 9px; gap: 6px; }
+.right-panel-tab-strip .file-tab-close { width: 18px; height: 18px; flex-basis: 18px; }
+
+/* The panel's second row: changes and view controls on the left, the actions
+   that act on a file or on the tree pinned right. */
+.file-panel-viewer-bar { position: relative; z-index: 1; display: flex; flex: 0 0 38px; height: 38px; align-items: center; gap: 4px; padding: 0 6px 0 4px; border-bottom: 1px solid var(--separator); background: var(--bg); }
+.file-panel-viewer-bar > .file-viewer-controls-slot { display: flex; flex: 1; min-width: 0; align-items: center; overflow-x: auto; scrollbar-width: none; }
+.file-panel-viewer-bar > .file-viewer-controls-slot::-webkit-scrollbar { display: none; }
+.file-panel-viewer-bar > .file-workbench-actions { display: flex; flex: 0 0 auto; margin-left: auto; align-items: center; gap: 2px; }
+/* The actions keep their width; the chip gives way first in a narrow panel. */
+.file-panel-viewer-bar > .workbench-changes { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+.file-viewer-controls-slot > .file-viewer-controls { flex: 1; min-width: 0; }
+.file-viewer-mode-switch { height: 26px !important; }
+.file-viewer-action-slot { height: 26px; }
 
 /* Content */
 .workbench-content { padding: 16px 20px 20px; overflow: auto; font-size: 13px; color: var(--text); }

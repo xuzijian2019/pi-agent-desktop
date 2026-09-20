@@ -86,24 +86,29 @@ export function ChangesSection({ visible, cwd, expanded, onExpandedChange, selec
   if (!cwd) return null;
   const files = status?.files ?? [];
   const count = files.length;
-  return <section className="workbench-section" aria-label={t("wb.changes")}>
-    <div className="workbench-section-header">
-      <button type="button" className="workbench-section-toggle" aria-expanded={expanded} aria-controls={id} onClick={() => onExpandedChange(!expanded)}>
-        <svg className={expanded ? "is-expanded" : ""} width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" aria-hidden="true"><path d="m4 2 4 4-4 4" /></svg>
-        <span>{t("wb.changes")}</span>
-        {count > 0 && <span className="workbench-section-badge">{count}</span>}
-      </button>
-      {status && count > 0 && <span className="review-counts"><span className="review-added">+{status.additions}</span><span className="review-removed">−{status.deletions}</span></span>}
-      {/* External editors do not emit an in-app change event. Keep refresh
-          available even for a clean tree so clean-to-dirty transitions can be
-          discovered without switching sessions. */}
-      <button type="button" className="workbench-section-action" onClick={() => { invalidateUiCache("/api/git/"); setRevision(value => value + 1); }} aria-label={t("contextPanel.diffRefresh")} title={t("contextPanel.diffRefresh")}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M20 11a8 8 0 1 0 2 5.3M20 4v7h-7" /></svg>
-      </button>
-    </div>
-    {expanded && <div id={id} className="workbench-section-body">
-      {error ? <p className="review-message" role="alert">{error}</p> : !status ? <p className="review-message">{t("files.loading")}</p> : !count ? <p className="review-message">{t("contextPanel.diffEmpty")}</p> :
-        files.map(file => <FileDiff key={file.filePath} cwd={cwd} file={file} selected={file.filePath === selectedFilePath} refreshKey={refreshKey + revision} />)}
+  // The section lives in the panel's one chrome row: a chip that opens the
+  // diff list as a drawer under the header, so a clean tree costs no space.
+  return <div className="workbench-changes">
+    <button type="button" className={`workbench-chip${expanded ? " is-open" : ""}`} aria-expanded={expanded} aria-controls={id} onClick={() => onExpandedChange(!expanded)} title={t("wb.changes")}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M3 12h6" /><path d="M15 12h6" /></svg>
+      <span className="workbench-chip-label">{t("wb.changes")}</span>
+      {count > 0 && <span className="workbench-section-badge">{count}</span>}
+    </button>
+    {expanded && <div id={id} className="workbench-changes-drawer" role="region" aria-label={t("wb.changes")}>
+      <div className="workbench-section-header">
+        <span className="workbench-changes-title">{t("wb.changes")}</span>
+        {status && count > 0 && <span className="review-counts"><span className="review-added">+{status.additions}</span><span className="review-removed">−{status.deletions}</span></span>}
+        {/* External editors do not emit an in-app change event. Keep refresh
+            available even for a clean tree so clean-to-dirty transitions can be
+            discovered without switching sessions. */}
+        <button type="button" className="workbench-section-action" onClick={() => { invalidateUiCache("/api/git/"); setRevision(value => value + 1); }} aria-label={t("contextPanel.diffRefresh")} title={t("contextPanel.diffRefresh")}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M20 11a8 8 0 1 0 2 5.3M20 4v7h-7" /></svg>
+        </button>
+      </div>
+      <div className="workbench-section-body">
+        {error ? <p className="review-message" role="alert">{error}</p> : !status ? <p className="review-message">{t("files.loading")}</p> : !count ? <p className="review-message">{t("contextPanel.diffEmpty")}</p> :
+          files.map(file => <FileDiff key={file.filePath} cwd={cwd} file={file} selected={file.filePath === selectedFilePath} refreshKey={refreshKey + revision} />)}
+      </div>
     </div>}
-  </section>;
+  </div>;
 }

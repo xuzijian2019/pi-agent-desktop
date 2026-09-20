@@ -131,6 +131,8 @@ export const zhCNLocale: LocalePlugin = {
     "contextPanel.fileActions": "文件操作",
     "contextPanel.copyPath": "复制路径",
     "contextPanel.copyContents": "复制文件内容",
+    "contextPanel.openExternally": "用默认应用打开",
+    "contextPanel.revealInFinder": "在访达中显示",
     "contextPanel.wordWrap": "启用自动换行",
     "contextPanel.hideFileList": "隐藏文件列表",
     "contextPanel.showFileList": "显示文件列表",

@@ -6,6 +6,7 @@ import {
   type SyntaxHighlighterProps,
 } from "react-syntax-highlighter";
 import { SyntaxHighlighter, vs, vscDarkPlus } from "@/lib/syntax-highlighting";
+import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import { useTheme } from "@/hooks/useTheme";
 import {
@@ -21,7 +22,6 @@ import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins, normalizeDi
 import { CodeBlock, MermaidBlock } from "./MermaidBlock";
 import { parseUnifiedPatch } from "@/lib/patch";
 import type { GitFileDiffResponse } from "@/lib/git-types";
-import { getFileIcon } from "./FileIcons";
 import { useI18n } from "@/hooks/useI18n";
 
 interface Props {
@@ -32,6 +32,7 @@ interface Props {
   onReviewDiff?: () => void;
   onMentionLines?: (relativePath: string, startLine: number, endLine: number) => void;
   gitRefreshKey?: number;
+  controlsSlot?: HTMLElement | null;
   initialDisplayMode?: DisplayMode;
 }
 
@@ -218,126 +219,16 @@ function getFileApiUrl(
   return `/api/files/${encoded}?${searchParams.toString()}`;
 }
 
-function DownloadLink({ filePath, sourceSessionId }: { filePath: string; sourceSessionId?: string | null }) {
-  const { t } = useI18n();
-  const [busy, setBusy] = useState(false);
-  return (
-    <button
-      type="button"
-      disabled={busy}
-      title={t("i18n.downloadFile")}
-      aria-label={t("i18n.downloadFile")}
-      className="file-viewer-icon-button"
-      onClick={() => {
-        void (async () => {
-          setBusy(true);
-          try {
-            const { saveLocalFileAs } = await import("@/lib/desktop-native");
-            await saveLocalFileAs(
-              filePath,
-              getFileName(filePath),
-              getFileApiUrl(filePath, "download", sourceSessionId),
-            );
-          } catch (error) {
-            console.error("Failed to save file:", error);
-          } finally {
-            setBusy(false);
-          }
-        })();
-      }}
-    >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-        <polyline points="7 10 12 15 17 10" />
-        <line x1="12" y1="15" x2="12" y2="3" />
-      </svg>
-    </button>
-  );
-}
-
-function DesktopPathActions({ filePath }: { filePath: string }) {
-  const [desktop, setDesktop] = useState(false);
-  useEffect(() => {
-    void import("@/lib/desktop-native").then(({ isTauriDesktop }) => {
-      setDesktop(isTauriDesktop());
-    });
-  }, []);
-  if (!desktop) return null;
-
-  return (
-    <>
-      <button
-        type="button"
-        title="Open with default app"
-        aria-label="Open with default app"
-        className="file-viewer-icon-button"
-        onClick={() => {
-          void import("@/lib/desktop-native").then(({ openPathNative }) => openPathNative(filePath));
-        }}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-          <polyline points="15 3 21 3 21 9" />
-          <line x1="10" y1="14" x2="21" y2="3" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        title="Reveal in Finder"
-        aria-label="Reveal in Finder"
-        className="file-viewer-icon-button"
-        onClick={() => {
-          void import("@/lib/desktop-native").then(({ revealItemInDirNative }) => revealItemInDirNative(filePath));
-        }}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
-        </svg>
-      </button>
-    </>
-  );
-}
-
-function FileViewerToolbar({
-  filePath,
-  cwd,
-  metadata,
-  watching,
-  sourceSessionId,
-  children,
-}: {
-  filePath: string;
-  cwd?: string;
-  metadata?: string | null;
-  watching: boolean;
-  sourceSessionId?: string | null;
-  children?: ReactNode;
-}) {
-  const relativePath = getRelativeFilePath(filePath, cwd);
-  return (
-    <div className="file-viewer-toolbar">
-      <div className="file-viewer-identity">
-        <span className="file-viewer-file-icon" aria-hidden="true">
-          {getFileIcon(getFileName(filePath), 15)}
-        </span>
-        <span className="file-viewer-path" title={filePath}>{relativePath}</span>
-        {metadata && <span className="file-viewer-meta" title={metadata}>{metadata}</span>}
-      </div>
-      <span
-        title={watching ? "Live sync active" : "Live sync unavailable"}
-        aria-label={watching ? "Live sync active" : "Live sync unavailable"}
-        className={`file-viewer-live-status${watching ? " is-live" : ""}`}
-      >
-        <span className="file-viewer-live-indicator" />
-        <span>{watching ? "Live" : "Static"}</span>
-      </span>
-      <div className="file-viewer-controls">
-        {children}
-        <DesktopPathActions filePath={filePath} />
-        <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} />
-      </div>
-    </div>
-  );
+/**
+ * The controls that act on what is displayed (view mode, wrap, mention). They
+ * render into the panel's own toolbar row so the viewer adds no second row;
+ * without a slot there is nowhere to put them, so nothing renders. Identity
+ * (name, type, size) belongs to the file tab, and file-level actions to the
+ * panel's overflow menu.
+ */
+function FileViewerToolbar({ slot, children }: { slot?: HTMLElement | null; children?: ReactNode }) {
+  if (!slot) return null;
+  return createPortal(<div className="file-viewer-controls">{children}</div>, slot);
 }
 
 function FileViewerStatus({
@@ -392,29 +283,6 @@ type DiffLine = {
   oldLineNo: number | null;
   newLineNo: number | null;
 };
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatLanguage(language: string): string {
-  const labels: Record<string, string> = {
-    css: "CSS",
-    html: "HTML",
-    javascript: "JavaScript",
-    jsx: "JavaScript React",
-    json: "JSON",
-    markdown: "Markdown",
-    plaintext: "Plain text",
-    text: "Plain text",
-    tsx: "TypeScript React",
-    typescript: "TypeScript",
-    yaml: "YAML",
-  };
-  return labels[language] ?? `${language.charAt(0).toUpperCase()}${language.slice(1)}`;
-}
 
 function diffLines(patch: string): DiffLine[] {
   const files = parseUnifiedPatch(patch);
@@ -587,22 +455,14 @@ function DiffView({ patch }: { patch: string }) {
   );
 }
 
-function ImageViewer({ filePath, cwd, sourceSessionId }: Props) {
-  const [watching, setWatching] = useState(false);
+function ImageViewer({ filePath, sourceSessionId }: Props) {
   const [bust, setBust] = useState(0);
-  const [size, setSize] = useState<number | null>(null);
-  const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
-  const ext = getFileName(filePath).toLowerCase().split(".").pop() ?? "";
-
   useEffect(() => {
     setBust(0);
-    setSize(null);
-    setNaturalSize(null);
     setError(null);
-    setWatching(false);
 
     if (esRef.current) {
       esRef.current.close();
@@ -612,16 +472,7 @@ function ImageViewer({ filePath, cwd, sourceSessionId }: Props) {
     const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
     esRef.current = es;
 
-    es.addEventListener("connected", () => setWatching(true));
-    es.addEventListener("change", (e) => {
-      try {
-        const d = JSON.parse((e as MessageEvent).data) as { size?: number };
-        if (typeof d.size === "number") setSize(d.size);
-      } catch { /* ignore */ }
-      setBust((b) => b + 1);
-    });
-    es.addEventListener("error", () => setWatching(false));
-    es.onerror = () => setWatching(false);
+    es.addEventListener("change", () => setBust((b) => b + 1));
 
     return () => {
       es.close();
@@ -631,22 +482,8 @@ function ImageViewer({ filePath, cwd, sourceSessionId }: Props) {
 
   const src = getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined);
 
-  const formatSizeStr = size != null ? formatSize(size) : null;
-  const metadata = [
-    ext || "image",
-    naturalSize ? `${naturalSize.w} × ${naturalSize.h}` : null,
-    formatSizeStr,
-  ].filter(Boolean).join(" · ");
-
   return (
     <div className="file-viewer-shell">
-      <FileViewerToolbar
-        filePath={filePath}
-        cwd={cwd}
-        metadata={metadata}
-        watching={watching}
-        sourceSessionId={sourceSessionId}
-      />
       <div
         className="file-viewer-image-stage"
       >
@@ -657,10 +494,6 @@ function ImageViewer({ filePath, cwd, sourceSessionId }: Props) {
           <img
             src={src}
             alt={filePath}
-            onLoad={(e) => {
-              const img = e.currentTarget;
-              setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
-            }}
             onError={() => setError("Failed to load image")}
             style={{
               maxWidth: "100%",
@@ -675,30 +508,14 @@ function ImageViewer({ filePath, cwd, sourceSessionId }: Props) {
   );
 }
 
-function formatDuration(seconds: number): string {
-  if (!Number.isFinite(seconds)) return "";
-  const totalSeconds = Math.round(seconds);
-  const mins = Math.floor(totalSeconds / 60);
-  const secs = totalSeconds % 60;
-  return `${mins}:${String(secs).padStart(2, "0")}`;
-}
-
-function AudioViewer({ filePath, cwd, sourceSessionId }: Props) {
-  const [watching, setWatching] = useState(false);
+function AudioViewer({ filePath, sourceSessionId }: Props) {
   const [bust, setBust] = useState(0);
-  const [size, setSize] = useState<number | null>(null);
-  const [duration, setDuration] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
-  const ext = getFileName(filePath).toLowerCase().split(".").pop() ?? "";
-
   useEffect(() => {
     setBust(0);
-    setSize(null);
-    setDuration(null);
     setError(null);
-    setWatching(false);
 
     if (esRef.current) {
       esRef.current.close();
@@ -708,18 +525,10 @@ function AudioViewer({ filePath, cwd, sourceSessionId }: Props) {
     const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
     esRef.current = es;
 
-    es.addEventListener("connected", () => setWatching(true));
-    es.addEventListener("change", (e) => {
-      try {
-        const d = JSON.parse((e as MessageEvent).data) as { size?: number };
-        if (typeof d.size === "number") setSize(d.size);
-      } catch { /* ignore */ }
-      setDuration(null);
+    es.addEventListener("change", () => {
       setError(null);
       setBust((b) => b + 1);
     });
-    es.addEventListener("error", () => setWatching(false));
-    es.onerror = () => setWatching(false);
 
     return () => {
       es.close();
@@ -728,21 +537,9 @@ function AudioViewer({ filePath, cwd, sourceSessionId }: Props) {
   }, [filePath, sourceSessionId]);
 
   const src = getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined);
-  const metadata = [
-    ext || "audio",
-    duration != null ? formatDuration(duration) : null,
-    size != null ? formatSize(size) : null,
-  ].filter(Boolean).join(" · ");
 
   return (
     <div className="file-viewer-shell">
-      <FileViewerToolbar
-        filePath={filePath}
-        cwd={cwd}
-        metadata={metadata}
-        watching={watching}
-        sourceSessionId={sourceSessionId}
-      />
       <div
         className="file-viewer-audio-stage"
       >
@@ -757,7 +554,6 @@ function AudioViewer({ filePath, cwd, sourceSessionId }: Props) {
             controls
             preload="metadata"
             src={src}
-            onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
             onError={() => setError("Failed to load audio")}
             style={{ width: "100%" }}
           />
@@ -767,11 +563,9 @@ function AudioViewer({ filePath, cwd, sourceSessionId }: Props) {
   );
 }
 
-function DocumentViewer({ filePath, cwd, sourceSessionId }: Props) {
+function DocumentViewer({ filePath, sourceSessionId }: Props) {
   const { t } = useI18n();
-  const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
-  const [size, setSize] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
@@ -783,9 +577,7 @@ function DocumentViewer({ filePath, cwd, sourceSessionId }: Props) {
 
   useEffect(() => {
     setBust(0);
-    setSize(null);
     setError(null);
-    setWatching(false);
 
     if (esRef.current) {
       esRef.current.close();
@@ -796,11 +588,8 @@ function DocumentViewer({ filePath, cwd, sourceSessionId }: Props) {
       .then((r) => r.json())
       .then((d: { size?: number; error?: string }) => {
         if (d.error) setError(d.error);
-        if (typeof d.size === "number") {
-          setSize(d.size);
-          if (!isPdf && d.size > DOCX_PREVIEW_MAX_BYTES) {
-            setError("DOCX too large for preview (>10MB)");
-          }
+        if (typeof d.size === "number" && !isPdf && d.size > DOCX_PREVIEW_MAX_BYTES) {
+          setError("DOCX too large for preview (>10MB)");
         }
       })
       .catch((e) => setError(String(e)));
@@ -808,23 +597,17 @@ function DocumentViewer({ filePath, cwd, sourceSessionId }: Props) {
     const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
     esRef.current = es;
 
-    es.addEventListener("connected", () => setWatching(true));
     es.addEventListener("change", (e) => {
       try {
         const d = JSON.parse((e as MessageEvent).data) as { size?: number };
-        if (typeof d.size === "number") {
-          setSize(d.size);
-          if (!isPdf && d.size > DOCX_PREVIEW_MAX_BYTES) {
-            setError("DOCX too large for preview (>10MB)");
-            return;
-          }
+        if (typeof d.size === "number" && !isPdf && d.size > DOCX_PREVIEW_MAX_BYTES) {
+          setError("DOCX too large for preview (>10MB)");
+          return;
         }
       } catch { /* ignore */ }
       setError(null);
       setBust((b) => b + 1);
     });
-    es.addEventListener("error", () => setWatching(false));
-    es.onerror = () => setWatching(false);
 
     return () => {
       es.close();
@@ -832,20 +615,8 @@ function DocumentViewer({ filePath, cwd, sourceSessionId }: Props) {
     };
   }, [filePath, isPdf, sourceSessionId]);
 
-  const metadata = [
-    ext === "docx" ? "DOCX preview" : "PDF",
-    size != null ? formatSize(size) : null,
-  ].filter(Boolean).join(" · ");
-
   return (
     <div className="file-viewer-shell">
-      <FileViewerToolbar
-        filePath={filePath}
-        cwd={cwd}
-        metadata={metadata}
-        watching={watching}
-        sourceSessionId={sourceSessionId}
-      />
       <div className="file-viewer-document-stage">
         {error ? (
           <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, color: "var(--danger)", fontSize: 13, textAlign: "center" }}>
@@ -865,20 +636,20 @@ function DocumentViewer({ filePath, cwd, sourceSessionId }: Props) {
   );
 }
 
-export function FileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onReviewDiff, onMentionLines, gitRefreshKey, initialDisplayMode }: Props) {
+export function FileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onReviewDiff, onMentionLines, gitRefreshKey, controlsSlot, initialDisplayMode }: Props) {
   if (isImagePath(filePath)) {
-    return <ImageViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} />;
+    return <ImageViewer filePath={filePath} sourceSessionId={sourceSessionId} />;
   }
   if (isAudioPath(filePath)) {
-    return <AudioViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} />;
+    return <AudioViewer filePath={filePath} sourceSessionId={sourceSessionId} />;
   }
   if (isDocumentPreviewPath(filePath)) {
-    return <DocumentViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} />;
+    return <DocumentViewer filePath={filePath} sourceSessionId={sourceSessionId} />;
   }
-  return <TextFileViewer onReviewDiff={onReviewDiff} filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} onOpenFile={onOpenFile} onMentionLines={onMentionLines} gitRefreshKey={gitRefreshKey} initialDisplayMode={initialDisplayMode} />;
+  return <TextFileViewer onReviewDiff={onReviewDiff} filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} onOpenFile={onOpenFile} onMentionLines={onMentionLines} gitRefreshKey={gitRefreshKey} controlsSlot={controlsSlot} initialDisplayMode={initialDisplayMode} />;
 }
 
-function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onReviewDiff, onMentionLines, gitRefreshKey, initialDisplayMode }: Props) {
+function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onReviewDiff, onMentionLines, gitRefreshKey, controlsSlot, initialDisplayMode }: Props) {
   const { isDark } = useTheme();
   const { t } = useI18n();
   const [data, setData] = useState<FileData | null>(null);
@@ -902,7 +673,6 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onReviewDi
     setDisplayModeState({ key: displayModeKey, mode });
   }, [displayModeKey]);
   const [wrapLines, setWrapLines] = useState(false);
-  const [watching, setWatching] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [previewReloadKey, setPreviewReloadKey] = useState(0);
   const esRef = useRef<EventSource | null>(null);
@@ -966,7 +736,6 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onReviewDi
     setData(null);
     setGitDiff(null);
     setWrapLines(false);
-    setWatching(false);
 
     if (esRef.current) {
       esRef.current.close();
@@ -979,23 +748,11 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onReviewDi
     const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
     esRef.current = es;
 
-    es.addEventListener("connected", () => {
-      setWatching(true);
-    });
-
     es.addEventListener("change", () => {
       void fetchContent(filePath);
       void fetchGitDiff(filePath);
       setPreviewReloadKey((value) => value + 1);
     });
-
-    es.addEventListener("error", () => {
-      setWatching(false);
-    });
-
-    es.onerror = () => {
-      setWatching(false);
-    };
 
     return () => {
       es.close();
@@ -1020,7 +777,6 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onReviewDi
     if (!isDeletedDiff || !esRef.current) return;
     esRef.current.close();
     esRef.current = null;
-    setWatching(false);
   }, [isDeletedDiff]);
 
   // Opened from the Changes list (initialDisplayMode === "diff"): switch to the
@@ -1115,7 +871,6 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onReviewDi
   const isMarkdown = language === "markdown";
   const hasPreview = isHtml || isMarkdown;
   const markdownDirectory = getFileDirectory(filePath);
-  const lines = content.split("\n");
   const effectiveDisplayMode = isDeletedDiff ? "diff" : displayMode;
   const htmlPreviewUrl = getFileApiUrl(filePath, "serve", sourceSessionId, { v: previewReloadKey });
   const displayModes: DisplayMode[] = isDeletedDiff
@@ -1125,20 +880,9 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onReviewDi
         ...(hasPreview ? ["preview" as const] : []),
         ...(hasGitDiff ? ["diff" as const] : []),
       ];
-  const lineCount = `${lines.length} ${lines.length === 1 ? "line" : "lines"}`;
-  const metadata = isDeletedDiff
-    ? t("files.deleted")
-    : `${formatLanguage(language)} · ${lineCount} · ${formatSize(data!.size)}`;
-
   return (
     <div className="file-viewer-shell">
-      <FileViewerToolbar
-        filePath={filePath}
-        cwd={cwd}
-        metadata={metadata}
-        watching={watching}
-        sourceSessionId={sourceSessionId}
-      >
+      <FileViewerToolbar slot={controlsSlot}>
         {displayModes.length > 1 && (
           <div className="file-viewer-mode-switch" aria-label={t("i18n.fileViewMode")}>
             {displayModes.map((mode) => {

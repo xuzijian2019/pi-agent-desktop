@@ -131,6 +131,8 @@ export const enLocale: LocalePlugin = {
     "contextPanel.fileActions": "File actions",
     "contextPanel.copyPath": "Copy path",
     "contextPanel.copyContents": "Copy file contents",
+    "contextPanel.openExternally": "Open with default app",
+    "contextPanel.revealInFinder": "Reveal in Finder",
     "contextPanel.wordWrap": "Word wrap",
     "contextPanel.hideFileList": "Hide file list",
     "contextPanel.showFileList": "Show file list",

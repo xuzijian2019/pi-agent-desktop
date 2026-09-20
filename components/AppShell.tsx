@@ -83,6 +83,10 @@ type AutoNameStatus =
   | { kind: "success" }
   | { kind: "error"; message: string };
 const TOP_BAR_ICON_BUTTON_SIZE = 36;
+// Hover peek for the collapsed sidebar: it stays long enough to aim at a
+// session, and closes on its own when the pointer never arrives or leaves.
+const SIDEBAR_PEEK_IDLE_MS = 2600;
+const SIDEBAR_PEEK_LEAVE_MS = 420;
 const FILE_TREE_DEFAULT_WIDTH = 300;
 const FILE_TREE_MIN_WIDTH = 220;
 const FILE_TREE_MAX_WIDTH = 520;
@@ -124,6 +128,8 @@ export function AppShell() {
   const [projectTrustBusy, setProjectTrustBusy] = useState(false);
   const [projectTrustError, setProjectTrustError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarPeek, setSidebarPeek] = useState(false);
+  const [sidebarPeekExiting, setSidebarPeekExiting] = useState(false);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelMode, setRightPanelMode] = useState<PanelMode>("files");
   // Read by the project-switch effect: only the Files view empties on a project change.
@@ -321,12 +327,50 @@ export function AppShell() {
 
   const handleSidebarToggle = useCallback(() => {
     if (isMobile) setActiveTopPanel(null);
+    setSidebarPeek(false);
     setSidebarOpen((open) => {
       const next = !open;
       if (!isMobile) desktopSidebarOpenRef.current = next;
       return next;
     });
   }, [isMobile]);
+
+  // Hover peek: the collapsed sidebar slides over the chat while the pointer is
+  // near it, and retreats by itself once the pointer leaves or never arrives.
+  const sidebarPeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sidebarPeekExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdSidebarPeek = useCallback(() => {
+    if (sidebarPeekTimerRef.current) clearTimeout(sidebarPeekTimerRef.current);
+    sidebarPeekTimerRef.current = null;
+  }, []);
+  // The peek is an overlay, so it must vanish without animating its width back
+  // down: in flow that animation would squeeze the chat for a frame or two.
+  const endSidebarPeek = useCallback(() => {
+    setSidebarPeekExiting(true);
+    setSidebarPeek(false);
+    if (sidebarPeekExitTimerRef.current) clearTimeout(sidebarPeekExitTimerRef.current);
+    sidebarPeekExitTimerRef.current = setTimeout(() => setSidebarPeekExiting(false), 80);
+  }, []);
+  const closeSidebarPeekAfter = useCallback((delay: number) => {
+    holdSidebarPeek();
+    sidebarPeekTimerRef.current = setTimeout(endSidebarPeek, delay);
+  }, [endSidebarPeek, holdSidebarPeek]);
+  const openSidebarPeek = useCallback(() => {
+    setSidebarPeekExiting(false);
+    setSidebarPeek(true);
+    closeSidebarPeekAfter(SIDEBAR_PEEK_IDLE_MS);
+  }, [closeSidebarPeekAfter]);
+  useEffect(() => {
+    if (sidebarOpen || isMobile) {
+      holdSidebarPeek();
+      setSidebarPeek(false);
+      setSidebarPeekExiting(false);
+    }
+  }, [sidebarOpen, isMobile, holdSidebarPeek]);
+  useEffect(() => () => {
+    holdSidebarPeek();
+    if (sidebarPeekExitTimerRef.current) clearTimeout(sidebarPeekExitTimerRef.current);
+  }, [holdSidebarPeek]);
 
   const handleRightPanelToggle = useCallback(() => {
     setActiveTopPanel(null);
@@ -401,6 +445,9 @@ export function AppShell() {
   const fileExplorerRef = useRef<FileExplorerHandle>(null);
   const [fileTreeOpen, setFileTreeOpen] = useState(true);
   const [fileActionsMenuOpen, setFileActionsMenuOpen] = useState(false);
+  // The viewer renders its own controls into this row through a portal, so the
+  // panel keeps one toolbar instead of one per component.
+  const [viewerControlsSlot, setViewerControlsSlot] = useState<HTMLDivElement | null>(null);
   const fileActionsMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!fileActionsMenuOpen) return;
@@ -1123,8 +1170,9 @@ export function AppShell() {
       <button
         className="sidebar-chrome-button"
         onClick={handleSidebarToggle}
-        title={translate("sidebar.hide")}
-        aria-label={translate("sidebar.hide")}
+        // While peeking the same button pins the sidebar open again.
+        title={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
+        aria-label={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="3" x2="9" y2="21" />
@@ -1292,7 +1340,7 @@ export function AppShell() {
           </button>
         </div>
       )}
-      <div style={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
+      <div style={{ position: "relative", display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
       {/* Mobile overlay backdrop */}
       <div
         className={`sidebar-overlay-backdrop${mobileSidebarReady ? "" : " sidebar-mobile-pending"}`}
@@ -1312,8 +1360,12 @@ export function AppShell() {
       <div
         ref={sidebarResizer.panelRef}
         id="session-sidebar"
-        inert={!sidebarOpen}
-        className={`app-sidebar sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}${mobileSidebarReady ? "" : " sidebar-mobile-pending"}${sidebarResizer.isResizing ? " sidebar-resizing" : ""}`}
+        inert={!sidebarOpen && !sidebarPeek}
+        onMouseEnter={sidebarPeek ? holdSidebarPeek : undefined}
+        onMouseMove={sidebarPeek ? holdSidebarPeek : undefined}
+        onMouseLeave={sidebarPeek ? () => closeSidebarPeekAfter(SIDEBAR_PEEK_LEAVE_MS) : undefined}
+        onFocusCapture={sidebarPeek ? holdSidebarPeek : undefined}
+        className={`app-sidebar sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}${sidebarPeek ? " sidebar-peek" : ""}${sidebarPeekExiting ? " sidebar-peek-exit" : ""}${mobileSidebarReady ? "" : " sidebar-mobile-pending"}${sidebarResizer.isResizing ? " sidebar-resizing" : ""}`}
         style={{
           "--sidebar-width": `${sidebarResizer.width}px`,
           background: "var(--bg-panel)",
@@ -1348,8 +1400,8 @@ export function AppShell() {
           {...windowDrag}
           style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--border)", height: "calc(36px + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)", background: "var(--bg-panel)" }}
         >
-          {/* Sidebar reopen — only while the sidebar (and its own toggle) is hidden */}
-          {!sidebarOpen && !rightPanelOpen && (
+          {/* Sidebar reopen — whenever the sidebar (and its own toggle) is hidden */}
+          {!sidebarOpen && (
             <button
               className="native-icon-button"
               onClick={handleSidebarToggle}
@@ -1361,7 +1413,8 @@ export function AppShell() {
                 background: "none", border: "none", borderRight: "1px solid var(--border)",
                 color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
+              // Hovering this button peeks the sidebar; clicking it pins it open.
+              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; if (!isMobile) openSidebarPeek(); }}
               onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1761,7 +1814,18 @@ export function AppShell() {
           background: "var(--bg)",
         } as React.CSSProperties}
       >
-        <PanelModeSelector mode={rightPanelMode} onChange={openMode} onClose={() => setRightPanelOpen(false)} />
+        <PanelModeSelector mode={rightPanelMode} onChange={openMode} onClose={() => setRightPanelOpen(false)}>
+          {rightPanelMode === "files" && (
+            <div className="file-tab-bar-slot">
+              <TabBar
+                tabs={fileTabs}
+                activeTabId={activeFileTabId ?? ""}
+                onSelectTab={setActiveFileTabId}
+                onCloseTab={handleCloseFileTab}
+              />
+            </div>
+          )}
+        </PanelModeSelector>
         {workbenchError && <div className="workbench-error" role="alert">{workbenchError}<button onClick={() => setWorkbenchError("")}>×</button></div>}
         <div hidden={rightPanelMode !== "activity"} className="workbench-mode-body"><ActivityPanel visible={rightPanelOpen && rightPanelMode === "activity"} cwd={activeCwd} onOpen={openActivitySession} /></div>
         <div hidden={rightPanelMode !== "search"} className="workbench-mode-body"><TranscriptSearchPanel visible={rightPanelOpen && rightPanelMode === "search"} onOpen={openTranscriptResult} /></div>
@@ -1770,90 +1834,130 @@ export function AppShell() {
           <SavedTasksPanel visible={rightPanelOpen && rightPanelMode === "tasks"} cwd={activeCwd} seed={taskSeed} onUse={handleSavedTask} onCapture={captureTask} />
         </div>
         <div hidden={rightPanelMode !== "files"} className="workbench-files-body">
-        <div className="right-panel-tab-strip">
-          <div className="file-tab-bar-slot">
-            <TabBar
-              tabs={fileTabs}
-              activeTabId={activeFileTabId ?? ""}
-              onSelectTab={setActiveFileTabId}
-              onCloseTab={handleCloseFileTab}
-            />
-          </div>
-          <div className="file-workbench-actions">
-              <div className="file-actions-menu-anchor" ref={fileActionsMenuRef}>
-                <button
-                  type="button"
-                  className="file-workbench-icon-button"
-                  onClick={() => {
-                    setFileActionsMenuOpen((open) => !open);
-                  }}
-                  title={translate("contextPanel.fileActions")}
-                  aria-label={translate("contextPanel.fileActions")}
-                  aria-haspopup="menu"
-                  aria-expanded={fileActionsMenuOpen}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" /></svg>
-                </button>
-                {fileActionsMenuOpen && (
-                  <div className="native-popover file-actions-menu" role="menu" aria-label={translate("contextPanel.fileActions")}>
-                    <button type="button" role="menuitem" disabled={!activeFileTab || !selectedSession} onClick={() => void pinActiveOutput()}>{translate("wb.pinOutputs")}</button>
-                    <button type="button" role="menuitem" disabled={!activeFileTab} onClick={() => void copyActiveFilePath()}>
-                      <span className="file-action-menu-icon" aria-hidden="true">
-                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                          <rect x="8" y="8" width="11" height="11" rx="2" />
-                          <path d="M16 8V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h1" />
-                        </svg>
-                      </span>
-                      <span>{translate("contextPanel.copyPath")}</span>
-                    </button>
-                    <button type="button" role="menuitem" disabled={!activeFileTab} onClick={() => void copyActiveFileContent()}>
-                      <span className="file-action-menu-icon" aria-hidden="true">
-                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                          <rect x="8" y="8" width="11" height="11" rx="2" />
-                          <path d="M16 8V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h1" />
-                        </svg>
-                      </span>
-                      <span>{translate("contextPanel.copyContents")}</span>
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={!activeFileTab}
-                      onClick={() => {
-                        window.dispatchEvent(new Event("pi:file-toggle-wrap"));
-                        setFileActionsMenuOpen(false);
-                      }}
-                    >
-                      <span className="file-action-menu-icon" aria-hidden="true">
-                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M4 7h11a4 4 0 0 1 4 4v1" />
-                          <path d="m16 9 3 3-3 3" />
-                          <path d="M4 17h8" />
-                        </svg>
-                      </span>
-                      <span>{translate("contextPanel.wordWrap")}</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-              <button
-                type="button"
-                className={`file-workbench-icon-button${fileTreeOpen ? " is-active" : ""}`}
-                onClick={() => setFileTreeOpen((open) => !open)}
-                title={fileTreeOpen ? translate("contextPanel.hideFileList") : translate("contextPanel.showFileList")}
-                aria-label={fileTreeOpen ? translate("contextPanel.hideFileList") : translate("contextPanel.showFileList")}
-                aria-pressed={fileTreeOpen}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" /><path d="M15 7v10" /></svg>
-              </button>
-            </div>
-          </div>
         <PinnedSection visible={rightPanelOpen && rightPanelMode === "files"} sessionId={selectedSession?.id ?? null} leafId={branchActiveLeafId} expanded={pinnedExpanded} onExpandedChange={setPinnedExpanded} refreshKey={refreshKey} onOpen={path => handleOpenFile(path, getFileName(path), { sourceSessionId: selectedSession?.id })} onMessage={(entryId, leafId) => { if (leafId !== branchActiveLeafId) handleBranchLeafChange(leafId); window.dispatchEvent(new CustomEvent("pi-reveal-entry", { detail: { sessionId: selectedSession?.id, entryId } })); }} />
-        <ChangesSection visible={rightPanelOpen && rightPanelMode === "files"} cwd={activeCwdMissing ? null : activeCwd} expanded={changesExpanded} onExpandedChange={setChangesExpanded} selectedFilePath={reviewFilePath} refreshKey={explorerRefreshKey} />
         {/* Local files: project tree on the left, preview on the right (CSS order). */}
         <div className="file-panel-split">
           {/* Viewer column */}
           <div className="file-panel-viewer">
+            {/* Everything that acts on a file or on the tree sits here, one row
+                below the tabs: the viewer's own controls portal into the slot,
+                panel actions stay right-aligned. */}
+            <div className="file-panel-viewer-bar">
+            <ChangesSection visible={rightPanelOpen && rightPanelMode === "files"} cwd={activeCwdMissing ? null : activeCwd} expanded={changesExpanded} onExpandedChange={setChangesExpanded} selectedFilePath={reviewFilePath} refreshKey={explorerRefreshKey} />
+            <div className="file-viewer-controls-slot" ref={setViewerControlsSlot} />
+            <div className="file-workbench-actions">
+            <div className="file-actions-menu-anchor" ref={fileActionsMenuRef}>
+              <button
+                type="button"
+                className="file-workbench-icon-button"
+                onClick={() => {
+                  setFileActionsMenuOpen((open) => !open);
+                }}
+                title={translate("contextPanel.fileActions")}
+                aria-label={translate("contextPanel.fileActions")}
+                aria-haspopup="menu"
+                aria-expanded={fileActionsMenuOpen}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" /></svg>
+              </button>
+              {fileActionsMenuOpen && (
+                <div className="native-popover file-actions-menu" role="menu" aria-label={translate("contextPanel.fileActions")}>
+                  <button type="button" role="menuitem" disabled={!activeFileTab || !selectedSession} onClick={() => void pinActiveOutput()}>{translate("wb.pinOutputs")}</button>
+                  <button type="button" role="menuitem" disabled={!activeFileTab} onClick={() => void copyActiveFilePath()}>
+                    <span className="file-action-menu-icon" aria-hidden="true">
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="8" y="8" width="11" height="11" rx="2" />
+                        <path d="M16 8V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h1" />
+                      </svg>
+                    </span>
+                    <span>{translate("contextPanel.copyPath")}</span>
+                  </button>
+                  <button type="button" role="menuitem" disabled={!activeFileTab} onClick={() => void copyActiveFileContent()}>
+                    <span className="file-action-menu-icon" aria-hidden="true">
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="8" y="8" width="11" height="11" rx="2" />
+                        <path d="M16 8V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h1" />
+                      </svg>
+                    </span>
+                    <span>{translate("contextPanel.copyContents")}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={!activeFileTab}
+                    onClick={() => {
+                      window.dispatchEvent(new Event("pi:file-toggle-wrap"));
+                      setFileActionsMenuOpen(false);
+                    }}
+                  >
+                    <span className="file-action-menu-icon" aria-hidden="true">
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 7h11a4 4 0 0 1 4 4v1" />
+                        <path d="m16 9 3 3-3 3" />
+                        <path d="M4 17h8" />
+                      </svg>
+                    </span>
+                    <span>{translate("contextPanel.wordWrap")}</span>
+                  </button>
+                  {/* Native file actions used to sit in the viewer's own
+                      toolbar; they belong with the other file actions. */}
+                  {desktopMode && (
+                    <>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={!activeFileTab?.filePath}
+                        onClick={() => {
+                          const path = activeFileTab?.filePath;
+                          if (!path) return;
+                          setFileActionsMenuOpen(false);
+                          void import("@/lib/desktop-native").then(({ openPathNative }) => openPathNative(path));
+                        }}
+                      >
+                        <span className="file-action-menu-icon" aria-hidden="true">
+                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                            <polyline points="15 3 21 3 21 9" />
+                            <line x1="10" y1="14" x2="21" y2="3" />
+                          </svg>
+                        </span>
+                        <span>{translate("contextPanel.openExternally")}</span>
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={!activeFileTab?.filePath}
+                        onClick={() => {
+                          const path = activeFileTab?.filePath;
+                          if (!path) return;
+                          setFileActionsMenuOpen(false);
+                          void import("@/lib/desktop-native").then(({ revealItemInDirNative }) => revealItemInDirNative(path));
+                        }}
+                      >
+                        <span className="file-action-menu-icon" aria-hidden="true">
+                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+                          </svg>
+                        </span>
+                        <span>{translate("contextPanel.revealInFinder")}</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              className={`file-workbench-icon-button${fileTreeOpen ? " is-active" : ""}`}
+              onClick={() => setFileTreeOpen((open) => !open)}
+              title={fileTreeOpen ? translate("contextPanel.hideFileList") : translate("contextPanel.showFileList")}
+              aria-label={fileTreeOpen ? translate("contextPanel.hideFileList") : translate("contextPanel.showFileList")}
+              aria-pressed={fileTreeOpen}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" /><path d="M15 7v10" /></svg>
+            </button>
+            </div>
+            </div>
             <div className="file-panel-viewer-body">
               {activeFileTab?.filePath ? (
                 <FileViewer
@@ -1861,6 +1965,7 @@ export function AppShell() {
                   cwd={activeCwd ?? undefined}
                   sourceSessionId={activeFileTab.sourceSessionId}
                   gitRefreshKey={explorerRefreshKey}
+                  controlsSlot={viewerControlsSlot}
                   initialDisplayMode={activeFileTab.initialDisplayMode}
                   onReviewDiff={() => handleOpenFile(activeFileTab.filePath!, activeFileTab.label, { modeHint: "diff" })}
                   onMentionLines={rightPanelOpen ? handleFileLineMention : undefined}

@@ -945,34 +945,6 @@ pre, code {
 }
 
 /* File viewer toolbar */
-.file-viewer-toolbar {
-  min-width: 0;
-  min-height: 35px;
-}
-
-.file-viewer-path {
-  flex: 1 1 auto;
-  min-width: 48px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.file-viewer-meta {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.file-viewer-live-indicator {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex: 0 0 7px;
-}
-
 .file-viewer-controls {
   display: flex;
   align-items: center;
@@ -1062,18 +1034,7 @@ pre, code {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
-@media (max-width: 640px) {
-  .file-viewer-meta {
-    display: none;
-  }
-}
-
 @media (max-width: 380px) {
-  .file-viewer-toolbar {
-    gap: 6px !important;
-    padding-inline: 8px !important;
-  }
-
   .file-viewer-mode-button {
     padding-inline: 6px;
   }
