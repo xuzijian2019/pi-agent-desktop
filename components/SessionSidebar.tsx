@@ -8,6 +8,7 @@ import { ProjectPicker } from "./ProjectPicker";
 import { AnimatedDropdown, PathLabel, displayCwd, getRecentProjects } from "./path-ui";
 import { APP_PREF_KEYS, getPrefJson, removePref, setPrefJson } from "@/lib/app-prefs";
 import { groupByProject } from "@/lib/project-group";
+import { moveProject, orderProjects } from "@/lib/project-order";
 import { notifyDesktop } from "@/lib/desktop-notify";
 import { revealItemInDirNative } from "@/lib/desktop-native";
 import { isTauriDesktop } from "@/lib/desktop-updater";
@@ -174,6 +175,18 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       ? new Set(stored.filter((root): root is string => typeof root === "string"))
       : new Set();
   });
+  const [projectOrder, setProjectOrder] = useState<string[]>(() => {
+    const stored = getPrefJson<unknown>(APP_PREF_KEYS.projectOrder);
+    return Array.isArray(stored) ? [...new Set(stored.filter((root): root is string => typeof root === "string"))] : [];
+  });
+  const draggedProjectRef = useRef<string | null>(null);
+  const [draggedProject, setDraggedProject] = useState<string | null>(null);
+  const [projectDrop, setProjectDrop] = useState<{ root: string; edge: "before" | "after" } | null>(null);
+  const endProjectDrag = () => {
+    draggedProjectRef.current = null;
+    setDraggedProject(null);
+    setProjectDrop(null);
+  };
   const [projectMenu, setProjectMenu] = useState<{ root: string } | null>(null);
   const [projectMenuPos, setProjectMenuPos] = useState<{ top: number; left: number } | null>(null);
   // Full project path, shown on hover as a bar that extends the row past the
@@ -735,12 +748,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         || (session.projectRoot ?? session.cwd ?? "").toLowerCase().includes(trimmedSessionQuery)
         || (session.cwd ?? "").toLowerCase().includes(trimmedSessionQuery))
     : allSessions;
-  const allProjects = groupByProject(searchedSessions, { runningIds: runningSessionIds, unreadIds: unreadSessionIds });
+  const allProjects = orderProjects(groupByProject(searchedSessions, { runningIds: runningSessionIds, unreadIds: unreadSessionIds }), projectOrder);
   const activeProjects = allProjects.filter((group) => !archivedProjectRoots.has(group.projectRoot));
   useEffect(() => {
-    const projectRoots = groupByProject(allSessions).filter((group) => !archivedProjectRoots.has(group.projectRoot)).map((group) => group.projectRoot);
+    const projectRoots = orderProjects(groupByProject(allSessions), projectOrder).filter((group) => !archivedProjectRoots.has(group.projectRoot)).map((group) => group.projectRoot);
     onProjectsChange?.(projectRoots);
-  }, [allSessions, archivedProjectRoots, onProjectsChange]);
+  }, [allSessions, archivedProjectRoots, onProjectsChange, projectOrder]);
   // Sessions of every worktree in the selected project are shown together
   const selectedProject = projectRootFor(selectedCwd);
   const showWorktreeSwitcher = Boolean(
@@ -816,11 +829,56 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     };
 
     return (
-      <div key={group.projectRoot} className={`sidebar-project-tree-group${isCollapsed ? " is-collapsed" : ""}${isActive ? " is-active" : ""}`}>
+      <div
+        key={group.projectRoot}
+        data-project-root={group.projectRoot}
+        className={`sidebar-project-tree-group${isCollapsed ? " is-collapsed" : ""}${isActive ? " is-active" : ""}${draggedProject === group.projectRoot ? " is-dragging" : ""}${projectDrop?.root === group.projectRoot ? ` drop-${projectDrop.edge}` : ""}`}
+        onDragOver={(e) => {
+          if (!draggedProjectRef.current) return;
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = "move";
+          if (draggedProjectRef.current === group.projectRoot) {
+            setProjectDrop(null);
+            return;
+          }
+          const row = e.currentTarget.querySelector(".sidebar-project-tree-row")!.getBoundingClientRect();
+          const edge = e.clientY < row.top + row.height / 2 ? "before" : "after";
+          setProjectDrop((prev) => prev?.root === group.projectRoot && prev.edge === edge ? prev : { root: group.projectRoot, edge });
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setProjectDrop(null);
+        }}
+        onDrop={(e) => {
+          const source = draggedProjectRef.current;
+          if (!source) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const row = e.currentTarget.querySelector(".sidebar-project-tree-row")!.getBoundingClientRect();
+          const edge = e.clientY < row.top + row.height / 2 ? "before" : "after";
+          const roots = orderProjects(groupByProject(allSessions), projectOrder).map((project) => project.projectRoot);
+          // Retain temporarily missing projects so their positions survive a refresh.
+          const fullOrder = [...projectOrder, ...roots.filter((root) => !projectOrder.includes(root))];
+          const next = moveProject(fullOrder, source, group.projectRoot, edge);
+          setProjectOrder(next);
+          setPrefJson(APP_PREF_KEYS.projectOrder, next);
+          endProjectDrag();
+        }}
+      >
         <div className="sidebar-project-tree-row">
           <button
             type="button"
             className="sidebar-project-tree-row-main"
+            draggable
+            onDragStart={(e) => {
+              draggedProjectRef.current = group.projectRoot;
+              setDraggedProject(group.projectRoot);
+              hideProjectPathHint();
+              setProjectMenu(null);
+              e.dataTransfer.effectAllowed = "move";
+              e.dataTransfer.setData("application/x-pi-project", group.projectRoot);
+            }}
+            onDragEnd={endProjectDrag}
             onClick={() => { hideProjectPathHint(); toggleCollapse(); }}
             onMouseEnter={(e) => scheduleProjectPathHint(e.currentTarget, group.projectRoot, Boolean(group.cwdMissing))}
             onMouseLeave={hideProjectPathHint}
