@@ -77,7 +77,7 @@ const EXTRACTIONS = [
 ];
 
 const FORK_FEATURES = [
-  { name: "Shared right workbench", file: "components/AppShell.tsx", markers: ["PanelModeSelector", "TranscriptSearchPanel", "SavedTasksPanel", "SendPreview", "PinnedSection", "ChangesSection", "ActivityPanel", "panelMode: rightPanelMode"] },
+  { name: "Shared right workbench", file: "components/AppShell.tsx", markers: ["PanelModeSelector", "TranscriptSearchPanel", "SavedTasksPanel", "PinnedSection", "ChangesSection", "ActivityPanel", "panelMode: rightPanelMode"] },
   { name: "Composer preparation and branch metadata", file: "components/ChatInput.tsx", markers: ["prepareOutgoingMessage", "<BranchControl", "snapshotRef"] },
   { name: "Runtime activity and checkout admission", file: "lib/rpc-manager.ts", markers: ["beginActivity", "finishActivity", "withCheckoutGuard", "hasBusyCheckout"] },
   {
@@ -134,6 +134,18 @@ const FORK_FEATURES = [
  * a second entry point back. See docs/ui-refresh-plan.md decisions 7 and 8.
  */
 const REMOVED_UPSTREAM_UI = [
+  {
+    name: "Outgoing preview composer feature",
+    file: "components/AppShell.tsx",
+    markers: ["SendPreview", "sendPreview", "draftRevision"],
+    required: ["SavedTasksPanel"],
+  },
+  {
+    name: "Compact composer button",
+    file: "components/ChatInput.tsx",
+    markers: ["composer-compact-button", "sendPreview"],
+    required: ["ContextUsageRing", "prepareOutgoingMessage"],
+  },
   {
     name: "Full history toolbar button",
     file: "components/AppShell.tsx",

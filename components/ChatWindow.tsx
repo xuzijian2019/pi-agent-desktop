@@ -32,8 +32,6 @@ import { sessionVisibleCounts } from "@/lib/scroll-memory";
 interface Props {
   transcriptPreview?: TranscriptPreview;
   onCloseTranscript?: () => void;
-  onDraftChange?: () => void;
-  sendPreview?: ReactNode;
   /** Fork slot: rendered above the composer on the empty new-task screen. */
   emptyStateSlot?: ReactNode;
   onSideModeChange?: (open: boolean) => void;
@@ -238,7 +236,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t, entryId
   );
 }
 
-export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onSelectProject, projectOptions, onProjectChange, onOpenFile, onProjectFilesImported, onOpenModelsConfig, onDraftChange, sendPreview, emptyStateSlot, onOpenTasks, onBranchNavigate, onAppCommand, onSideModeChange }: Props) {
+export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onSelectProject, projectOptions, onProjectChange, onOpenFile, onProjectFilesImported, onOpenModelsConfig, emptyStateSlot, onOpenTasks, onBranchNavigate, onAppCommand, onSideModeChange }: Props) {
   const { t } = useI18n();
   const [commandDialog, setCommandDialog] = useState<"fork" | "hotkeys" | "session" | null>(null);
   const openStats = useCallback(() => { onSessionStatsPanelOpen?.(); setCommandDialog("session"); }, [onSessionStatsPanelOpen]);
@@ -265,7 +263,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
     loading, error, messages: liveMessages, entryIds: liveEntryIds, streamState: liveStreamState,
     agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
     retryInfo, contextUsage, forkingEntryId,
-    isCompacting, compactError, compactResult, displayModel: displayModelValue, sessionStats,
+    compactError, compactResult, displayModel: displayModelValue, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages,
     notices, extensionDialog, extensionCustomUi, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
     isAutoModelSelection,
@@ -275,7 +273,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
     sessionIdRef, messagesEndRef, scrollContainerRef,
     isNearBottomRef,
     applyTaskSetup, handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
-    handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
+    handleSteer, handleFollowUp, handlePromptWithStreamingBehavior,
     dismissModelScopeWarnings,
     handleRecallQueue,
     handleBuiltinSlashCommand, retryLoad,
@@ -853,8 +851,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
   const chatInputElement = (
     <ChatInput
       ref={chatInputRef}
-      onDraftChange={onDraftChange}
-      sendPreview={sendPreview}
+      showInputHints={isEmptyNew}
       onOpenTasks={onOpenTasks}
       onBranchNavigate={onBranchNavigate}
       onSetupChange={applyTaskSetup}
@@ -873,9 +870,6 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
       onDismissModelScopeWarnings={dismissModelScopeWarnings}
       onOpenModelsConfig={onOpenModelsConfig}
       onModelChange={handleModelChange}
-      onCompact={session || isNew ? handleCompact : undefined}
-      onAbortCompaction={handleAbortCompaction}
-      isCompacting={isCompacting}
       compactError={compactError}
       compactResult={compactResult}
       toolPreset={toolPreset}
@@ -899,7 +893,6 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
       onSelectProject={onSelectProject}
       projectOptions={projectOptions}
       onProjectChange={onProjectChange}
-      onSessionStatsPanelOpen={onSessionStatsPanelOpen}
       contextUsage={contextUsage}
       sessionStats={sessionStats}
     />

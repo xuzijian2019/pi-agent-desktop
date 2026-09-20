@@ -7,7 +7,6 @@ import { ActivityPanel } from "./workbench/ActivityPanel";
 import { SavedTasksPanel, type TaskSeed } from "./workbench/SavedTasksPanel";
 import { NewTaskGuide } from "./workbench/NewTaskGuide";
 import { PinnedSection } from "./workbench/PinnedSection";
-import { SendPreview } from "./workbench/SendPreview";
 import { ChangesSection } from "./workbench/ChangesSection";
 import { panelMode, type PanelMode } from "@/lib/panel-modes";
 import { loadDraft, setDraft, getDraftStatus, type ChatDraft } from "@/lib/draft-store";
@@ -136,8 +135,6 @@ export function AppShell() {
   const rightPanelModeRef = useRef(rightPanelMode); rightPanelModeRef.current = rightPanelMode;
   const [transcriptPreview, setTranscriptPreview] = useState<TranscriptPreview>();
   const closeTranscriptPreview = useCallback(() => setTranscriptPreview(undefined), []);
-  const [draftRevision, setDraftRevision] = useState(0);
-  const handleDraftChange = useCallback(() => setDraftRevision(v => v + 1), []);
   const [taskSeed, setTaskSeed] = useState<TaskSeed>();
   const [taskConflict, setTaskConflict] = useState<{ task: SavedTask; cwd: string; draft: ChatDraft; generation: number }>();
   const taskConflictRef = useRef<HTMLDivElement>(null);
@@ -1096,9 +1093,6 @@ export function AppShell() {
   }, [projectTrustBusy, projectTrustCwd]);
 
   const activeFileTab = fileTabs.find((t) => t.id === activeFileTabId) ?? null;
-  // The composer chip that replaced the Context panel mode; kept out of the
-  // ChatWindow call so that element stays one flat attribute list.
-  const sendPreview = <SendPreview inputRef={chatInputRef} revision={draftRevision} identity={selectedSession?.id ?? `new:${effectiveNewSessionCwd}`} systemPrompt={systemPrompt} />;
   const newTaskGuide = selectedSession ? undefined : <NewTaskGuide cwd={effectiveNewSessionCwd} onUseTask={handleGuideSavedTask} onOpenTasks={() => openMode("tasks")} />;
 
   const copyActiveFilePath = useCallback(async () => {
@@ -1702,8 +1696,6 @@ export function AppShell() {
               transcriptPreview={transcriptPreview}
               onCloseTranscript={closeTranscriptPreview}
               key={sessionKey}
-              onDraftChange={handleDraftChange}
-              sendPreview={sendPreview}
               onOpenTasks={() => openMode("tasks")}
               emptyStateSlot={newTaskGuide}
               onBranchNavigate={branchNavigate}

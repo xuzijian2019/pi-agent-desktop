@@ -26,7 +26,6 @@ import {
   filterFileEntries, filterSessionEntries,
   type AtQueryMatch, type FileIndexEntry, type HashQueryMatch, type SessionMentionEntry,
 } from "@/lib/file-fuzzy";
-import { SESSION_REFERENCE_PATTERN } from "@/lib/session-reference";
 import { prepareOutgoingMessage, type PreparedOutgoing, type ReferenceSelection } from "@/lib/prepare-outgoing";
 import type { ChatDraft } from "@/lib/draft-store";
 import type { TaskSetup } from "@/lib/task-types";
@@ -56,9 +55,9 @@ interface ModelOption {
 
 interface Props {
   onSend: (message: string, images?: AttachedImage[]) => void;
-  onDraftChange?: () => void;
+  /** Show onboarding hints only on a fresh new-task composer. */
+  showInputHints?: boolean;
   onSetupChange?: (setup: TaskSetup | undefined) => void;
-  sendPreview?: React.ReactNode;
   onOpenTasks?: () => void;
   onBranchNavigate?: (cwd: string) => void;
   onAbort: () => void;
@@ -78,9 +77,6 @@ interface Props {
   /** Open the provider/auth configuration modal (offered for unauthenticated-provider warnings). */
   onOpenModelsConfig?: () => void;
   onModelChange?: (provider: string, modelId: string) => void;
-  onCompact?: () => void;
-  onAbortCompaction?: () => void;
-  isCompacting?: boolean;
   compactError?: string | null;
   compactResult?: CompactResultInfo | null;
   toolPreset?: "none" | "default" | "full";
@@ -115,18 +111,13 @@ interface Props {
   extensionStatuses?: ExtensionStatusItem[];
   /** Live context-window usage (numerator) for the usage ring next to the model selector */
   contextUsage?: ContextUsage | null;
-  /** Session token summary shown when hovering the usage ring */
+  /** Session telemetry displayed in the usage popover. */
   sessionStats?: SessionStatsInfo | null;
-  /** Open the top-bar session-stats panel when the usage ring is clicked */
-  onSessionStatsPanelOpen?: () => void;
 }
 
 export interface ChatInputHandle {
   snapshot: () => ChatDraft;
   currentSetup: () => TaskSetup;
-  prepare: (refresh?: boolean) => Promise<PreparedOutgoing>;
-  removeContextItem: (kind: "paste" | "reference" | "image", id: string) => void;
-  selectReference: (label: string, selection: ReferenceSelection) => void;
   insertText: (text: string) => void;
   insertIfEmpty: (text: string) => void;
   replaceMessage: (message: UserMessage) => void;
@@ -469,7 +460,7 @@ function DraftSavingIndicator({ loading }: { loading: boolean }) {
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange,
-  onCompact, onAbortCompaction, isCompacting, compactError, compactResult, toolPreset, onToolPresetChange,
+  compactError, compactResult, toolPreset, onToolPresetChange,
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo, queuedMessages, inputHistory = [], onRecallQueue,
   slashCommands, slashCommandsLoading, onLoadSlashCommands,
@@ -485,7 +476,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   extensionStatuses = [],
   contextUsage,
   sessionStats,
-  onSessionStatsPanelOpen, onDraftChange, onSetupChange, onBranchNavigate, sendPreview,
+  showInputHints, onSetupChange, onBranchNavigate,
 }: Props, ref) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
@@ -524,8 +515,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   const isNarrow = composerTier === "narrow";
   const isCompact = composerTier === "compact" || isNarrow;
-  // Nothing to measure or compact before the session has a transcript.
   const hasTranscript = (sessionStats?.totalMessages ?? 0) > 0;
+  const showHints = showInputHints ?? !hasTranscript;
   const [value, setValue] = useState(() => (draftKey ? getDraft(draftKey)?.value ?? "" : ""));
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [modelDropdownRect, setModelDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -606,29 +597,21 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const preparationController = useRef<AbortController | null>(null);
   const snapshot = useCallback((): ChatDraft => ({ value: valueRef.current, images: attachedImagesRef.current.map(imageToDraftImage), texts: pastedTextsToDraftTexts(pastedTextsRef.current), setup: draftSetup, references: { ...Object.fromEntries([...sessionMentionTargetsRef.current].map(([label, id]) => [label, { id }])), ...referenceSelections } }), [draftSetup, referenceSelections]);
   const snapshotRef = useRef(snapshot); snapshotRef.current = snapshot;
-  const prepare = useCallback(async (refresh = false) => {
+  const prepare = useCallback(async () => {
     const draft = snapshotRef.current(); const owner = draftKeyRef.current;
     const key = JSON.stringify([owner, draft, model, thinkingLevel, toolPreset]);
-    if (!refresh && preparationRef.current?.key === key) return preparationRef.current.result;
+    if (preparationRef.current?.key === key) return preparationRef.current.result;
     preparationController.current?.abort();
     const controller = new AbortController(); preparationController.current = controller;
     const result = await prepareOutgoingMessage(draft, fetch, controller.signal);
-    if (owner !== draftKeyRef.current || refresh && JSON.stringify(snapshotRef.current()) !== JSON.stringify(draft)) throw new Error(t("wb.previewChanged"));
+    if (owner !== draftKeyRef.current) throw new Error(t("wb.draftChanged"));
     preparationRef.current = { key, result }; return result;
   }, [model, thinkingLevel, toolPreset, t]);
-  useEffect(() => { onDraftChange?.(); }, [value, attachedImages, pastedTexts, draftSetup, referenceSelections, model?.provider, model?.modelId, thinkingLevel, toolPreset, draftKey, onDraftChange]);
   useEffect(() => () => { preparationController.current?.abort(); }, [draftKey]);
 
   useImperativeHandle(ref, () => ({
     snapshot,
     currentSetup: () => ({ model: model ?? null, effort: thinkingLevel ?? "auto", tools: toolPreset ?? "default" }),
-    prepare,
-    selectReference(label, selection) { setReferenceSelections(prev => ({ ...prev, [label]: selection })); },
-    removeContextItem(kind, id) {
-      if (kind === "image") { setAttachedImages(prev => prev.filter((image, index) => { if (String(index) === id) { revokeImagePreview(image); return false; } return true; })); }
-      if (kind === "paste") { const paste = pastedTextsRef.current.find(p => String(p.id) === id); if (paste) { setValue(v => v.split(paste.token).join("")); setPastedTexts(p => p.filter(i => i.id !== paste.id)); } }
-      if (kind === "reference") { setValue(v => v.replace(SESSION_REFERENCE_PATTERN, (token, quoted, bare) => (quoted ?? bare) === id ? "" : token)); sessionMentionTargetsRef.current.delete(id); setReferenceSelections(prev => { const next = { ...prev }; delete next[id]; return next; }); }
-    },
     insertIfEmpty(text: string) {
       const ta = textareaRef.current;
       const current = ta ? ta.value : value;
@@ -1778,7 +1761,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 className="composer-completion-header"
               >
                  <span>{slashCommandsLoading ? t("chat.loadingCommands") : t("chat.slashCommands", { label: slashCommandCountLabel })}</span>
-                 <span className="composer-completion-hint">{t("chat.commandNavigation")}</span>
+                 {showHints && <span className="composer-completion-hint">{t("chat.commandNavigation")}</span>}
               </div>
               <div className="composer-completion-body is-slash" id={slashListId} role="listbox" aria-label={t("chat.commandList")}>
                 {displayedSlashCommands.length === 0 ? <div className="composer-slash-empty">{slashCommandsLoading ? t("chat.loadingCommands") : t("chat.noCommands")}</div> : displayedSlashCommands.map((command, index) => {
@@ -1813,7 +1796,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               >
                 <div className="composer-completion-header">
                   <span>{sessionIndex ? t("chat.sessions", { label: matchCountLabel }) : t("chat.loadingSessions")}</span>
-                  <span className="composer-completion-hint">{t("chat.tabEnter")}</span>
+                  {showHints && <span className="composer-completion-hint">{t("chat.tabEnter")}</span>}
                 </div>
                 <div className="composer-completion-body">
                   {!sessionIndex ? (
@@ -1869,7 +1852,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   <span>
                     {indexLoading ? t("chat.loadingFiles") : t("chat.files", { label: matchCountLabel, hint: truncatedHint })}
                   </span>
-                   <span className="composer-completion-hint">{t("chat.tabEnter")}</span>
+                   {showHints && <span className="composer-completion-hint">{t("chat.tabEnter")}</span>}
                 </div>
                 <div className="composer-completion-body">
                   {!indexLoading && atMatches.length === 0 ? (
@@ -2024,7 +2007,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             }}
             onInput={handleInput}
             onPaste={handlePaste}
-            placeholder={
+            aria-label={t("chat.messageLabel")}
+            placeholder={!showHints ? "" :
               isStreaming && (onSteer || onFollowUp)
                 ? t("chat.steerPlaceholder")
                 : isStreaming ? t("chat.agentPlaceholder")
@@ -2179,7 +2163,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 )}
               </div>
             )}
-            {cwd && onBranchNavigate && <BranchControl key={draftKey} cwd={cwd} onNavigate={onBranchNavigate} />}{sendPreview}
+            {cwd && onBranchNavigate && <BranchControl key={draftKey} cwd={cwd} onNavigate={onBranchNavigate} />}
             {/* Model selector — visible always, disabled during streaming */}
             {(modelOptions.length > 0 || currentName || modelError) && onModelChange && (
                 <div ref={dropdownRef} className={`composer-anchor composer-model-anchor${isNarrow ? " is-narrow" : ""}`}>
@@ -2279,7 +2263,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   })()}
                 </div>
             )}
-            {hasTranscript && <ContextUsageRing contextUsage={contextUsage} sessionStats={sessionStats} onOpenStats={onSessionStatsPanelOpen} />}
+            {hasTranscript && <ContextUsageRing key={draftKey} contextUsage={contextUsage} sessionStats={sessionStats} />}
             <ExtensionStatusBar statuses={extensionStatuses} />
           </div>
 
@@ -2392,32 +2376,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     </div>
                   </div>
                 )}
-              </div>
-            )}
-
-            {!isStreaming && onCompact && hasTranscript && (
-              <div className="composer-anchor">
-                {compactError && (
-                  <div className="composer-compact-error">
-                    {compactError}
-                  </div>
-                )}
-                <button
-                  className={`native-toolbar-button composer-compact-button${(isCompact && !controlsMenuOpen) ? " is-icon-only" : ""}${isCompacting ? " is-compacting" : ""}`}
-                  onClick={isCompacting ? onAbortCompaction : onCompact}
-                  disabled={isStreaming && !isCompacting}
-                   title={isCompacting ? t("chat.stopCompaction") : t("chat.compactContext")}
-                   aria-label={isCompacting ? t("chat.stopCompaction") : t("chat.compactContext")}
-                >
-                  {isCompacting ? (
-                    <><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="2" y="2" width="6" height="6" rx="1" fill="currentColor" /></svg>{(!isCompact || controlsMenuOpen) && <span className="composer-nowrap">{t("chat.compacting")}</span>}</>
-                  ) : (
-                    <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" />
-                      <line x1="10" y1="14" x2="3" y2="21" /><line x1="21" y1="3" x2="14" y2="10" />
-                    </svg>{(!isCompact || controlsMenuOpen) && <span className="composer-nowrap">{t("chat.compact")}</span>}</>
-                  )}
-                </button>
               </div>
             )}
 

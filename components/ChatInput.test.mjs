@@ -160,7 +160,6 @@ test("renders compact errors above the input as a wrapping alert", () => {
       React.createElement(ChatInput, {
         onSend() {},
         onAbort() {},
-        onCompact() {},
         isStreaming: false,
         compactError: error,
       }),
@@ -185,10 +184,8 @@ test("renders ChatInput controls with responsive container classes and accessibi
       React.createElement(ChatInput, {
         onSend() {},
         onAbort() {},
-        onCompact() {},
         isStreaming: false,
-        // Compact and the usage ring are hidden until the session has a
-        // transcript, so the toolbar needs one to render in full.
+        // Usage is shown once the session has a transcript.
         sessionStats: { totalMessages: 1 },
       }),
     ),
@@ -196,7 +193,8 @@ test("renders ChatInput controls with responsive container classes and accessibi
 
   assert.match(html, /class="chat-composer"/);
   assert.match(html, /class="chat-composer-controls"/);
-  assert.match(html, /aria-label="Compact context"/);
+  assert.doesNotMatch(html, /aria-label="Compact context"/);
+  assert.match(html, /aria-label="Context usage: —"/);
   assert.doesNotMatch(html, /completion sound/i);
 });
 
