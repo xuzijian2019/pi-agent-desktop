@@ -28,13 +28,29 @@ test("stopping and restarting an owned server preserves the browser draft", asyn
       try { return (await request.get(`${url}/api/home`, { timeout: 2_000 })).ok(); } catch { return false; }
     }, { timeout: 90_000 }).toBe(true);
   };
+  const listening = async () => {
+    try { await request.get(`${url}/api/home`, { timeout: 2_000 }); return true; } catch { return false; }
+  };
   const stop = async () => {
     if (!child?.pid || child.exitCode !== null) return;
+    const pid = child.pid;
     const exited = once(child, "exit");
-    process.kill(-child.pid, "SIGTERM");
-    const timer = setTimeout(() => { try { process.kill(-child!.pid!, "SIGKILL"); } catch { /* Already stopped. */ } }, 10_000);
+    const startedAt = Date.now();
+    process.kill(-pid, "SIGTERM");
+    const timer = setTimeout(() => { try { process.kill(-pid, "SIGKILL"); } catch { /* Already stopped. */ } }, 10_000);
     try { await exited; } finally { clearTimeout(timer); }
     child = undefined;
+    // `next dev` forks the real server. The wrapper can exit while that child
+    // is still draining, and the browser only notices an outage once the port
+    // is closed. Escalate to SIGKILL if the group keeps serving.
+    const killAt = Date.now() + 10_000;
+    const deadline = Date.now() + 30_000;
+    while (await listening()) {
+      if (Date.now() > deadline) throw new Error("owned server kept serving after SIGTERM and SIGKILL");
+      if (Date.now() > killAt) { try { process.kill(-pid, "SIGKILL"); } catch { /* Group already gone. */ } }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    logs += `\n[test] server stopped in ${Date.now() - startedAt}ms\n`;
   };
   try {
     await start(); await page.goto(`${url}/?cwd=${encodeURIComponent(cwd)}`);
