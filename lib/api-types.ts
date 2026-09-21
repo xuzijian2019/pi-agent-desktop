@@ -1,4 +1,19 @@
 import type { ResourceDiagnostic } from "@earendil-works/pi-coding-agent";
+import type { SubagentProfile } from "./subagents";
+
+export interface SubagentProfilesResponse {
+  profiles: SubagentProfile[];
+}
+
+export interface SubagentSettingsResponse {
+  enabled: boolean;
+  maxConcurrent: number;
+}
+
+export interface ShellToolSettingsResponse {
+  isWindows: boolean;
+  powerShellEnabled: boolean;
+}
 
 export interface SkillSearchResult {
   package: string;
@@ -61,6 +76,17 @@ export interface ProjectTrustStatus {
   cwdMissing?: boolean;
 }
 
+export interface AppUpdateResponse {
+  currentVersion: string;
+  latestVersion: string;
+  updateAvailable: boolean;
+  releaseUrl: string;
+}
+
+export interface PushConfigResponse {
+  publicKey: string;
+}
+
 export type PluginScope = "global" | "project";
 export type PluginResourceKind = "extension" | "skill" | "prompt" | "theme";
 
@@ -85,9 +111,31 @@ export interface PluginResourceInfo {
   relativePath: string;
 }
 
+export interface PluginStandaloneExtensionInfo extends PluginResourceInfo {
+  kind: "extension";
+  scope: PluginScope;
+  enabled: boolean;
+}
+
+export type PluginUpdateState =
+  | "update-available"
+  | "up-to-date"
+  | "unsupported"
+  | "error";
+
+export interface PluginUpdateResult {
+  source: string;
+  scope: PluginScope;
+  displayName: string;
+  type: "npm" | "git";
+  state: PluginUpdateState;
+  message?: string;
+}
+
 export interface PluginPackageInfo {
   source: string;
   scope: PluginScope;
+  canCheckForUpdates: boolean;
   filtered: boolean;
   disabled: boolean;
   installedPath?: string;
@@ -101,6 +149,7 @@ export interface PluginPackageInfo {
 
 export interface PluginsResponse {
   packages: PluginPackageInfo[];
+  standaloneExtensions: PluginStandaloneExtensionInfo[];
   totals: PluginResourceCounts;
   diagnostics: PluginDiagnostic[];
   projectResourcesLoaded: boolean;

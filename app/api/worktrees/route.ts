@@ -5,6 +5,7 @@ import { uiRouteError } from "@/lib/web-ui-route";
 import { NextResponse } from "next/server";
 import { existsSync } from "fs";
 import {
+  findCurrentWorktreePath,
   listLocalBranches,
   listRemoteBranches,
   listWorktrees,
@@ -13,6 +14,7 @@ import {
   resolveProject,
 } from "@/lib/worktree";
 import { allowFileRoot, isCwdAllowed } from "@/lib/file-access";
+import { projectIdentityKey } from "@/lib/project-identity";
 
 /** Same gate as /api/files: only session cwds / project roots / explicitly
  *  allowed dirs may be inspected or mutated through this endpoint. */
@@ -20,7 +22,7 @@ async function checkCwdAllowed(cwd: string): Promise<NextResponse | null> {
   return (await isCwdAllowed(cwd)) ? null : NextResponse.json({ error: "Access denied" }, { status: 403 });
 }
 
-// GET /api/worktrees?cwd=  →  { projectRoot, isGit, isTopLevel, worktrees }
+// GET /api/worktrees?cwd=  →  { projectRoot, projectKey, isGit, isTopLevel, currentWorktreePath, worktrees }
 //   &branches=1 additionally returns { branches (local), remoteBranches (remote-only) }
 export async function GET(req: Request) {
   try {
@@ -33,11 +35,13 @@ export async function GET(req: Request) {
 
     const project = await resolveProject(cwd);
     let worktrees: Awaited<ReturnType<typeof listWorktrees>> = [];
+    let currentWorktreePath: string | null = null;
     let isGit = true;
     try {
       // For a removed-worktree cwd (session of a deleted worktree), fall back
       // to the inferred project root so the switcher still shows the project.
       worktrees = await listWorktrees(existsSync(cwd) ? cwd : project.projectRoot);
+      currentWorktreePath = findCurrentWorktreePath(worktrees, cwd);
     } catch {
       isGit = false;
     }
@@ -62,8 +66,10 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       projectRoot: project.projectRoot,
+      projectKey: projectIdentityKey(project.projectRoot),
       isGit,
       isTopLevel: project.isTopLevel,
+      currentWorktreePath,
       worktrees,
       ...(includeBranches ? { branches, remoteBranches, branchInventory: isGit ? await branchInventory(cwd) : null } : {}),
     });

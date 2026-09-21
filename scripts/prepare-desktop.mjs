@@ -67,6 +67,35 @@ async function assembleServer() {
     await cp(source, destination, { recursive: true, force: true });
   }
 
+  // node-pty loads its native binding through a runtime-computed path
+  // (`prebuilds/${platform}-${arch}/*.node`), which Next's file tracer cannot
+  // follow — the standalone output ships only lib/ and package.json. Copy the
+  // full prebuilds tree (one signed build serves every platform it supports)
+  // and restore the executable bit macOS strips from spawn-helper.
+  const ptySource = join(rootDir, "node_modules", "node-pty");
+  const ptyDestination = join(serverResourcesDir, "node_modules", "node-pty");
+  const ptyPrebuildsSource = join(ptySource, "prebuilds");
+  let ptyPrebuildsPresent = false;
+  try {
+    await access(ptyPrebuildsSource, constants.R_OK);
+    ptyPrebuildsPresent = true;
+  } catch {
+    // node-pty without prebuilds (source build) — nothing to copy.
+  }
+  if (ptyPrebuildsPresent) {
+    await cp(ptyPrebuildsSource, join(ptyDestination, "prebuilds"), { recursive: true, force: true });
+    // macOS strips the executable bit from spawn-helper in every published
+    // prebuild (fix once upstream preserves it). Fix all darwin variants so a
+    // staged build works on either host architecture.
+    for (const variant of ["darwin-arm64", "darwin-x64"]) {
+      try {
+        await chmod(join(ptyDestination, "prebuilds", variant, "spawn-helper"), 0o755);
+      } catch {
+        // variant not present in this checkout — nothing to fix.
+      }
+    }
+  }
+
   await copyFile(
     join(rootDir, "desktop", "server-launcher.cjs"),
     join(serverResourcesDir, "desktop-server.cjs"),

@@ -1,10 +1,10 @@
 {
   "pi": {
-    "version": "0.84.4",
-    "reason": "Desktop stays on pi 0.84.4 while pi 0.85.x is verified."
+    "version": "0.86.1",
+    "reason": "Retained the fork Pi 0.86.1 upgrade while merging upstream/main."
   },
   "pi-web": {
-    "version": "0.8.7",
-    "reason": "The desktop fork intentionally remains on pi-web 0.8.7 while the v0.8.8 upstream merge is adapted and verified separately."
+    "version": "0.9.1+main974c8bb",
+    "reason": "Merged upstream through v0.9.1 and main@974c8bb (segments A-D); fork adaptations documented in merge commits 88285a4..0e36743."
   }
 }

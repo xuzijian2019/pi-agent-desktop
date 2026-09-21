@@ -8,6 +8,7 @@ export const WEB_SLASH_COMMANDS = [
   { name: "new", description: "chat.commandNew" },
   { name: "resume", description: "chat.commandResume" },
   { name: "tree", description: "chat.commandTree", idle: true },
+  { name: "clone", description: "chat.commandClone", idle: true },
   { name: "fork", description: "chat.commandFork", idle: true },
   { name: "compact", description: "chat.commandCompact", args: true, idle: true },
   { name: "copy", description: "chat.commandCopy" },

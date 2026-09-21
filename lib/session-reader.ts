@@ -1,31 +1,159 @@
-import {
-  SessionManager,
-  buildContextEntries as piBuildContextEntries,
-  getAgentDir,
-} from "@earendil-works/pi-coding-agent";
-import { closeSync, existsSync, openSync, readSync } from "fs";
-import { normalize as normalizePath } from "path";
-import type { AgentMessage, SessionEntry, SessionHeader, SessionInfo, SessionContext } from "./types";
-import type { SessionEntry as PiSessionEntry } from "@earendil-works/pi-coding-agent";
+import { SessionManager, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { closeSync, existsSync, type Dirent, fstatSync, openSync, readSync } from "fs";
+
+
+import { readdir } from "fs/promises";
+import { isAbsolute, join, normalize as normalizePath, relative, resolve as resolvePath, sep } from "path";
+import type { AgentMessage, ImageContent, SessionEntry, SessionHeader, SessionInfo, SessionContext } from "./types";
 import { normalizeToolCalls } from "./normalize";
+import { getThinkingPreview } from "./message-display";
+import { projectIdentityKey } from "./project-identity";
 import { sessionPathKey } from "./session-path";
-import { scanAllSessions } from "./session-scan";
+import { MAX_TOOL_RESULT_IMAGE_BYTES, TOOL_RESULT_IMAGE_MIMES } from "./tool-result-images";
 import { resolveProject, type ProjectInfo } from "./worktree";
+import { readSubagentRun, SUBAGENT_META_TYPE } from "./subagents";
+import { listSessionsIncremental } from "./session-list-scanner";
 
 export { getAgentDir };
 export { invalidateScannedSession } from "./session-scan";
 
-async function loadAllSessions(): Promise<SessionInfo[]> {
-  // Incremental scanner: same per-file semantics as SessionManager.listAll()
-  // but cached by mtime+size, so post-turn refreshes only re-parse the
-  // session that actually changed instead of every .jsonl on disk.
-  const piSessions = await scanAllSessions();
-  const pathToId = new Map<string, string>();
-  for (const s of piSessions) pathToId.set(sessionPathKey(s.path), s.id);
+const SESSION_HEADER_MAX_BYTES = 64 * 1024;
+const SESSION_RELATION_MAX_BYTES = 256 * 1024;
+const SESSION_RELATION_MAX_LINES = 2;
+const SESSION_RESULT_MAX_BYTES = 256 * 1024;
+// Bounded probe for the newest entry id; never reads a whole session file.
+const SESSION_TAIL_PROBE_MAX_BYTES = 64 * 1024;
 
-  // Resolve each unique cwd to its project root (main repo shared by all
-  // worktrees). resolveProject caches per-cwd, so this is cheap after warmup.
-  const uniqueCwds = [...new Set(piSessions.map((s) => s.cwd).filter(Boolean))];
+function readBoundedLines(filePath: string, maxBytes: number, maxLines: number): string[] {
+  const fd = openSync(filePath, "r");
+  try {
+    const chunks: Buffer[] = [];
+    let position = 0;
+    let newlineCount = 0;
+    let reachedEof = false;
+
+    while (position < maxBytes && newlineCount < maxLines) {
+      const buffer = Buffer.allocUnsafe(Math.min(4096, maxBytes - position));
+      const bytesRead = readSync(fd, buffer, 0, buffer.length, position);
+      if (bytesRead === 0) {
+        reachedEof = true;
+        break;
+      }
+      position += bytesRead;
+      const data = buffer.subarray(0, bytesRead);
+      let end = data.length;
+      for (let index = 0; index < data.length; index += 1) {
+        if (data[index] !== 0x0a) continue;
+        newlineCount += 1;
+        if (newlineCount === maxLines) {
+          end = index + 1;
+          break;
+        }
+      }
+      chunks.push(data.subarray(0, end));
+    }
+
+    const source = Buffer.concat(chunks).toString("utf8");
+    const lines = source.split("\n");
+    if (!reachedEof && !source.endsWith("\n")) lines.pop();
+    if (lines.at(-1) === "") lines.pop();
+    return lines.map((line) => line.endsWith("\r") ? line.slice(0, -1) : line);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function readBoundedTailLines(filePath: string, maxBytes: number): string[] {
+  const fd = openSync(filePath, "r");
+  try {
+    const fileSize = fstatSync(fd).size;
+    const start = Math.max(0, fileSize - maxBytes);
+    const buffer = Buffer.allocUnsafe(fileSize - start);
+    const bytesRead = readSync(fd, buffer, 0, buffer.length, start);
+    if (bytesRead === 0) return [];
+
+    const lines = buffer.subarray(0, bytesRead).toString("utf8").split("\n");
+    if (start > 0) {
+      const previousByte = Buffer.allocUnsafe(1);
+      readSync(fd, previousByte, 0, 1, start - 1);
+      if (previousByte[0] !== 0x0a) lines.shift();
+    }
+    if (lines.at(-1) === "") lines.pop();
+    return lines.map((line) => line.endsWith("\r") ? line.slice(0, -1) : line);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function parseSessionEntries(lines: readonly string[]): SessionEntry[] {
+  return lines.flatMap((line) => {
+    try {
+      const entry = JSON.parse(line) as SessionEntry;
+      return [entry];
+    } catch {
+      return [];
+    }
+  });
+}
+
+/**
+ * Entry id carried by one serialized JSONL line, or undefined when the line is
+ * the session header, malformed, or a torn trailing write mid-append.
+ *
+ * The header carries the session id rather than an entry id, and the SDK's entry
+ * index excludes it — treating it as an entry would evict a fresh wrapper.
+ */
+function readEntryId(line: string): string | undefined {
+  try {
+    const entry = JSON.parse(line) as { type?: unknown; id?: unknown };
+    if (entry.type === "session") return undefined;
+    return typeof entry.id === "string" && entry.id ? entry.id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Newest entry id recorded on disk, read from a bounded tail so large sessions
+ * stay cheap. Undefined when the file is absent (a wrapper that has not flushed
+ * its first assistant turn yet) or unreadable.
+ *
+ * Used only on ?force=1 session reads (mount / page refresh). An id the
+ * in-memory wrapper never saw means another pi process appended to the file.
+ */
+export function readLatestSessionEntryId(filePath: string | undefined): string | undefined {
+  if (!filePath) return undefined;
+  let lines: string[];
+  try {
+    lines = readBoundedTailLines(filePath, SESSION_TAIL_PROBE_MAX_BYTES);
+  } catch {
+    return undefined;
+  }
+  // Walk backwards so a torn trailing line falls back to the previous entry.
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const entryId = readEntryId(lines[index]);
+    if (entryId) return entryId;
+  }
+  return undefined;
+}
+
+function readSessionRelationEntries(filePath: string): SessionEntry[] {
+  const prefixEntries = parseSessionEntries(
+    readBoundedLines(filePath, SESSION_RELATION_MAX_BYTES, SESSION_RELATION_MAX_LINES).slice(1),
+  );
+  const isSubagent = prefixEntries.some((entry) => (
+    entry.type === "custom" && entry.customType === SUBAGENT_META_TYPE
+  ));
+  if (!isSubagent) return prefixEntries;
+
+  return [
+    ...prefixEntries,
+    ...parseSessionEntries(readBoundedTailLines(filePath, SESSION_RESULT_MAX_BYTES)),
+  ];
+}
+
+export async function attachSessionProjectInfo(sessions: SessionInfo[]): Promise<SessionInfo[]> {
+  const uniqueCwds = [...new Set(sessions.map((s) => s.cwd).filter(Boolean))];
   const projectByCwd = new Map<string, ProjectInfo>();
   await Promise.all(uniqueCwds.map(async (cwd) => {
     projectByCwd.set(cwd, await resolveProject(cwd));
@@ -34,27 +162,70 @@ async function loadAllSessions(): Promise<SessionInfo[]> {
   // sessions whose directory was deleted since they ran.
   const cwdMissingByCwd = new Map(uniqueCwds.map((cwd) => [cwd, !existsSync(cwd)]));
 
-  return piSessions.map((s) => {
+  return sessions.map((session) => {
+    const project = session.cwd ? projectByCwd.get(session.cwd) : undefined;
+    const projectRoot = project?.projectRoot ?? session.cwd;
+    return {
+      ...session,
+      projectRoot,
+      projectKey: projectIdentityKey(projectRoot),
+      ...(project?.branch ? { worktreeBranch: project.branch } : {}),
+      ...(session.cwd && cwdMissingByCwd.get(session.cwd) ? { cwdMissing: true } : {}),
+
+      ...(project?.branch ? { branch: project.branch } : {}),
+      ...(project?.isWorktree ? { isWorktree: true } : {}),
+    };
+  });
+}
+
+export function mergeSessionLists(
+  persistedSessions: SessionInfo[],
+  supplementalSessions: SessionInfo[],
+): SessionInfo[] {
+  const byId = new Map(supplementalSessions.map((session) => [session.id, session]));
+  // A disk scan is authoritative once the JSONL exists. In particular, this
+  // replaces a transient registry snapshot without briefly rendering two rows.
+  for (const session of persistedSessions) byId.set(session.id, session);
+  return [...byId.values()].sort((a, b) => b.modified.localeCompare(a.modified));
+}
+
+async function loadAllSessions(): Promise<SessionInfo[]> {
+  const scanned = await listSessionsIncremental();
+  const pathToId = new Map<string, string>();
+  for (const s of scanned) pathToId.set(sessionPathKey(s.path), s.id);
+
+  const sessions = scanned.map((s) => {
     cacheSessionPath(s.id, s.path);
-    const project = s.cwd ? projectByCwd.get(s.cwd) : undefined;
+    const originSessionId = s.parentSessionPath ? pathToId.get(sessionPathKey(s.parentSessionPath)) : undefined;
+    let subagent = null;
+    if (s.parentSessionPath) {
+      try {
+        subagent = readSubagentRun(readSessionRelationEntries(s.path), s.id, s.path);
+      } catch { /* malformed or concurrently removed session */ }
+    }
     return {
       path: s.path,
       id: s.id,
       cwd: s.cwd,
       name: s.name,
-      created: s.created instanceof Date ? s.created.toISOString() : String(s.created),
-      modified: s.modified instanceof Date ? s.modified.toISOString() : String(s.modified),
+      created: s.created.toISOString(),
+      modified: s.modified.toISOString(),
       messageCount: s.messageCount,
       firstMessage: s.firstMessage || "(no messages)",
-      parentSessionId: s.parentSessionPath ? pathToId.get(sessionPathKey(s.parentSessionPath)) : undefined,
-      projectRoot: project?.projectRoot ?? s.cwd,
-      ...(project?.branch ? { worktreeBranch: project.branch } : {}),
-      ...(s.cwd && cwdMissingByCwd.get(s.cwd) ? { cwdMissing: true } : {}),
+      parentSessionId: originSessionId,
+      ...(subagent
+        ? { relation: { kind: "subagent" as const, parentSessionId: subagent.parentSessionId, profile: subagent.profile, description: subagent.description, status: subagent.status } }
+        : s.parentSessionPath
+          ? { relation: { kind: "fork" as const, ...(originSessionId ? { originSessionId } : {}) } }
+          : {}),
+      transient: false,
     };
   });
+  return attachSessionProjectInfo(sessions);
 }
 
-export async function listAllSessions(): Promise<SessionInfo[]> {
+export async function listAllSessions(options: { force?: boolean } = {}): Promise<SessionInfo[]> {
+  if (options.force) invalidateSessionListCache();
   const generation = globalThis.__piSessionListGeneration ?? 0;
 
   // Return cached result if still fresh (avoids re-scanning session files
@@ -70,11 +241,13 @@ export async function listAllSessions(): Promise<SessionInfo[]> {
   }
 
   const loadPromise = loadAllSessions().then((data) => {
-    // An invalidation may happen while the scan is in flight. Do not let that
-    // older result repopulate the cache after a session mutation.
-    if ((globalThis.__piSessionListGeneration ?? 0) === generation) {
-      globalThis.__piSessionListCache = { data, ts: Date.now() };
+    // If a mutation invalidated this scan, make this caller join (or start) a
+    // scan for the current generation. Returning the stale result here made a
+    // refresh race indistinguishable from a successful refresh.
+    if ((globalThis.__piSessionListGeneration ?? 0) !== generation) {
+      return listAllSessions();
     }
+    globalThis.__piSessionListCache = { data, ts: Date.now() };
     return data;
   });
   const trackedPromise = loadPromise.finally(() => {
@@ -102,10 +275,99 @@ declare global {
 }
 
 const SESSION_LIST_CACHE_TTL_MS = 30_000;
+const SESSION_ID_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
+
+function defaultSessionsDir(): string {
+  return join(getAgentDir(), "sessions");
+}
+
+function resolvePathWithinDefaultSessions(
+  filePath: string,
+  sessionsDir = resolvePath(defaultSessionsDir()),
+): string | null {
+  const candidatePath = resolvePath(filePath);
+  const relativePath = relative(sessionsDir, candidatePath);
+  return relativePath !== ""
+    && relativePath !== ".."
+    && !relativePath.startsWith(`..${sep}`)
+    && !isAbsolute(relativePath)
+    ? candidatePath
+    : null;
+}
+
+async function findSessionPathById(sessionId: string): Promise<string | null> {
+  // The filename is only a candidate hint; the bounded header check remains
+  // authoritative so future layouts and malformed files use the full fallback.
+  if (!SESSION_ID_PATTERN.test(sessionId)) return null;
+
+  let projectDirs: Dirent[];
+  const sessionsDir = resolvePath(defaultSessionsDir());
+  try {
+    projectDirs = await readdir(sessionsDir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+
+  const suffix = `_${sessionId}.jsonl`;
+  let match: string | undefined;
+  for (const projectDir of projectDirs) {
+    if (!projectDir.isDirectory() && !projectDir.isSymbolicLink()) continue;
+    const projectPath = resolvePathWithinDefaultSessions(
+      join(sessionsDir, projectDir.name),
+      sessionsDir,
+    );
+    if (!projectPath) continue;
+
+    let files: string[];
+    try {
+      files = await readdir(projectPath);
+    } catch {
+      continue;
+    }
+
+    for (const file of files) {
+      if (!file.endsWith(suffix)) continue;
+      const candidate = resolvePathWithinDefaultSessions(
+        join(projectPath, file),
+        sessionsDir,
+      );
+      if (!candidate) continue;
+      try {
+        if (readSessionHeader(candidate)?.id !== sessionId) continue;
+      } catch {
+        continue;
+      }
+      // Do not choose between duplicate candidates; retain the existing
+      // catalogue fallback for its current resolution semantics.
+      if (match && match !== candidate) return null;
+      match = candidate;
+    }
+  }
+
+  return match ?? null;
+}
+
+function findSessionIdByPath(filePath: string): string | undefined {
+  if (!filePath.endsWith(".jsonl")) return undefined;
+  const candidate = resolvePathWithinDefaultSessions(filePath);
+  if (!candidate) return undefined;
+  try {
+    const sessionId = readSessionHeader(candidate)?.id;
+    if (!sessionId) return undefined;
+    cacheSessionPath(sessionId, candidate);
+    return sessionId;
+  } catch {
+    return undefined;
+  }
+}
 
 export function invalidateSessionListCache(): void {
   globalThis.__piSessionListGeneration = (globalThis.__piSessionListGeneration ?? 0) + 1;
   globalThis.__piSessionListCache = undefined;
+}
+
+export function getSessionListVersion(): number {
+  return globalThis.__piSessionListGeneration ?? 0;
 }
 
 function getPathCache(): Map<string, string> {
@@ -122,7 +384,14 @@ export async function resolveSessionPath(sessionId: string): Promise<string | nu
   const cached = getPathCache().get(sessionId);
   if (cached) return cached;
 
-  // Cache miss: scan all sessions to populate cache, then retry
+  const targetedPath = await findSessionPathById(sessionId);
+  if (targetedPath) {
+    cacheSessionPath(sessionId, targetedPath);
+    return getPathCache().get(sessionId) ?? null;
+  }
+
+  // Unknown layouts, malformed candidates, and duplicate IDs retain the
+  // existing authoritative catalogue scan instead of negative-caching a miss.
   await listAllSessions();
   return getPathCache().get(sessionId) ?? null;
 }
@@ -131,6 +400,9 @@ export async function resolveSessionIdByPath(filePath: string): Promise<string |
   const pathKey = sessionPathKey(filePath);
   const cached = getPathToIdCache().get(pathKey);
   if (cached) return cached;
+
+  const targetedId = findSessionIdByPath(filePath);
+  if (targetedId) return targetedId;
 
   await listAllSessions();
   return getPathToIdCache().get(pathKey);
@@ -172,35 +444,13 @@ export function invalidateSessionPathCache(sessionId: string): void {
 }
 
 export function readSessionHeader(filePath: string): SessionHeader | null {
-  const fd = openSync(filePath, "r");
+  const firstLine = readBoundedLines(filePath, SESSION_HEADER_MAX_BYTES, 1)[0]?.trimEnd();
+  if (!firstLine) return null;
   try {
-    const chunks: Buffer[] = [];
-    const maxHeaderBytes = 64 * 1024;
-    let position = 0;
-    let foundNewline = false;
-
-    while (position < maxHeaderBytes && !foundNewline) {
-      const buffer = Buffer.allocUnsafe(Math.min(4096, maxHeaderBytes - position));
-      const bytesRead = readSync(fd, buffer, 0, buffer.length, position);
-      if (bytesRead === 0) break;
-      const data = buffer.subarray(0, bytesRead);
-      const newlineIndex = data.indexOf(0x0a);
-      chunks.push(newlineIndex === -1 ? data : data.subarray(0, newlineIndex));
-      position += bytesRead;
-      foundNewline = newlineIndex !== -1;
-    }
-
-    if (!foundNewline && position >= maxHeaderBytes) return null;
-    const firstLine = Buffer.concat(chunks).toString("utf8").trimEnd();
-    if (!firstLine) return null;
-    try {
-      const header = JSON.parse(firstLine) as SessionHeader;
-      return header.type === "session" ? header : null;
-    } catch {
-      return null;
-    }
-  } finally {
-    closeSync(fd);
+    const header = JSON.parse(firstLine) as SessionHeader;
+    return header.type === "session" ? header : null;
+  } catch {
+    return null;
   }
 }
 
@@ -209,83 +459,141 @@ export function getSessionEntries(filePath: string): SessionEntry[] {
   return entries as unknown as SessionEntry[];
 }
 
-// Mirror of the SDK's (unexported) buildSessionPath + getSessionContextSettings.
-// The SDK's buildSessionContext would walk the tree path a second time AND
-// project every entry into LLM messages we immediately discard — for multi-MB
-// sessions that doubled the cost of every detail load just to read
-// thinkingLevel/model.
-function getContextSettings(
-  entries: SessionEntry[],
-  leafId: string | null | undefined,
-  byId: Map<string, SessionEntry>,
-): { thinkingLevel: string; model: { provider: string; modelId: string } | null } {
-  const path: SessionEntry[] = [];
-  let current: SessionEntry | undefined;
-  if (leafId !== null) {
-    current = (leafId ? byId.get(leafId) : undefined) ?? entries[entries.length - 1];
+export function getLatestModelChange(entries: SessionEntry[]): SessionContext["model"] {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    if (entry.type === "model_change") {
+      return { provider: entry.provider, modelId: entry.modelId };
+    }
   }
-  while (current) {
-    path.push(current);
-    current = current.parentId ? byId.get(current.parentId) : undefined;
-  }
-  path.reverse();
+  return null;
+}
 
-  let thinkingLevel = "off";
-  let model: { provider: string; modelId: string } | null = null;
-  for (const entry of path) {
-    const raw = entry as unknown as Record<string, unknown>;
-    if (raw.type === "thinking_level_change" && typeof raw.thinkingLevel === "string") {
-      thinkingLevel = raw.thinkingLevel;
-    } else if (raw.type === "model_change" && typeof raw.provider === "string" && typeof raw.modelId === "string") {
-      model = { provider: raw.provider, modelId: raw.modelId };
-    } else if (entry.type === "message" && entry.message.role === "assistant") {
-      const message = entry.message as unknown as { provider?: string; model?: string };
+function getSessionSettings(entries: SessionEntry[], leafId?: string | null): Pick<SessionContext, "thinkingLevel" | "model"> {
+  if (leafId === null) return { thinkingLevel: "off", model: null };
+  const branch = sliceActiveBranch(entries, leafId ?? null, entries.length);
+  let thinkingLevel: string | undefined;
+  let responseModel: SessionContext["model"] | undefined;
+
+  for (let i = branch.length - 1; i >= 0 && (thinkingLevel === undefined || responseModel === undefined); i--) {
+    const entry = branch[i];
+    if (thinkingLevel === undefined && entry.type === "thinking_level_change") {
+      thinkingLevel = entry.thinkingLevel;
+    }
+    if (responseModel === undefined && entry.type === "message" && entry.message.role === "assistant") {
+      const message = entry.message as { provider?: unknown; model?: unknown };
       if (typeof message.provider === "string" && typeof message.model === "string") {
-        model = { provider: message.provider, modelId: message.model };
+        responseModel = { provider: message.provider, modelId: message.model };
       }
     }
   }
-  return { thinkingLevel, model };
+
+  return {
+    thinkingLevel: thinkingLevel ?? "off",
+    model: getLatestModelChange(branch) ?? responseModel ?? null,
+  };
+}
+
+export interface BuildSessionContextOptions {
+  deferThinking?: boolean;
+  deferToolResultImages?: boolean;
+  tail?: number;
+  excludeLeaf?: boolean;
+  /** Session id used to build lazy URLs for historical tool-result images. */
+  sessionId?: string;
 }
 
 export function buildSessionContext(
   entries: SessionEntry[],
   leafId?: string | null,
-  options: { deferThinking?: boolean; deferToolResultImages?: boolean } = {},
+  options: BuildSessionContextOptions = {},
 ): SessionContext {
-  const byId = new Map<string, SessionEntry>();
-  for (const e of entries) byId.set(e.id, e);
-
-  const piEntries = entries as unknown as PiSessionEntry[];
-  const settings = getContextSettings(entries, leafId, byId);
-
-  const contextEntries = piBuildContextEntries(
-    piEntries,
-    leafId,
-    byId as unknown as Map<string, PiSessionEntry>,
+  const { tail, excludeLeaf } = options;
+  // History pages retain the original branch order, including compacted messages.
+  // SDK context filtering can drop a page's messages when firstKeptEntryId is outside it.
+  const sliced = leafId === null ? [] : sliceActiveBranch(
+    entries, leafId ?? null, tail && tail > 0 ? tail : entries.length, excludeLeaf,
   );
+  const hasMore = Boolean(tail && tail > 0 && sliced[0]?.parentId);
 
-  // Convert the SDK-selected context entries and their IDs together. This keeps
-  // fork/navigation targets aligned while preserving pi's compaction ordering.
+  // Convert messages and their IDs together to keep fork/navigation targets aligned.
   const messages: AgentMessage[] = [];
   const entryIds: string[] = [];
-  for (const entry of contextEntries) {
-    const localEntry = entry as unknown as SessionEntry;
-    const m = entryToUiMessage(localEntry, options);
+  for (const entry of sliced) {
+    const m = entryToUiMessage(entry, options);
     if (m) {
       messages.push(m);
-      entryIds.push(localEntry.id);
+      entryIds.push(entry.id);
     }
   }
 
   return {
     messages,
     entryIds,
-    thinkingLevel: settings.thinkingLevel,
-    model: settings.model,
+    oldestEntryId: sliced[0]?.id ?? null,
+    hasMore,
+    ...getSessionSettings(entries, leafId),
   };
 }
 
+/**
+ * Entry that renders as a standalone visible message in the chat window:
+ * user / assistant messages plus the compaction divider. toolResult entries,
+ * hidden custom messages and session meta render as attachments or nothing,
+ * so they must not consume the `tail` budget — counting raw entries starves
+ * user messages out of the window in agent-heavy sessions (a 50-entry window
+ * over a tool-heavy session can hold a single user message).
+ */
+function countsTowardTail(entry: SessionEntry): boolean {
+  if (entry.type === "compaction") return true;
+  if (entry.type !== "message") return false;
+  const role = (entry as { message?: { role?: string } }).message?.role;
+  return role === "user" || role === "assistant";
+}
+
+/**
+ * Raw-entry ceiling for one page, so a span of tool traffic with few visible
+ * anchors cannot balloon the payload. Scaled with `tail`; older history still
+ * pages in via `before`.
+ */
+const MIN_RAW_WINDOW_ENTRIES = 200;
+const rawWindowCap = (tail: number) => Math.max(MIN_RAW_WINDOW_ENTRIES, tail * 6);
+
+/**
+ * Extract the ancestor chain from `leafId` back toward the root, capped at
+ * `tail` visible entries (most-recent first after the final reverse).
+ * Iterative: a linear session's chain length equals its entry count, so a
+ * recursive walk would overflow the stack. The result is still a valid prefix
+ * of the active branch — older history is loaded on demand via pagination.
+ */
+export function sliceActiveBranch(
+  entries: SessionEntry[],
+  leafId: string | null,
+  tail: number,
+  excludeLeaf = false,
+): SessionEntry[] {
+  if (tail <= 0) return entries;
+  const byId = new Map<string, SessionEntry>();
+  for (const e of entries) byId.set(e.id, e);
+
+  let leaf = leafId ? byId.get(leafId) : entries[entries.length - 1];
+  // Pagination: `before` is the oldest entry already loaded, so the next page
+  // must start at its parent to avoid duplicating `before` when prepended.
+  if (excludeLeaf) leaf = leaf?.parentId ? byId.get(leaf.parentId) : undefined;
+  if (!leaf) return [];
+  const chain: SessionEntry[] = [];
+  let current: SessionEntry | undefined = leaf;
+  let visible = 0;
+  const rawCap = rawWindowCap(tail);
+  while (current) {
+    chain.push(current);
+    if (countsTowardTail(current)) visible++;
+    if (visible >= tail || chain.length >= rawCap) break;
+    current = current.parentId ? byId.get(current.parentId) : undefined;
+  }
+  chain.reverse();
+  return chain;
+}
 function parseEntryTimestamp(timestamp: string): number | undefined {
   const parsed = Date.parse(timestamp);
   return Number.isNaN(parsed) ? undefined : parsed;
@@ -313,21 +621,44 @@ function base64ImageInfo(block: unknown): { bytes: number; mime?: string } | nul
   return { bytes: Math.max(0, Math.floor(data.length * 3 / 4) - padding), mime };
 }
 
-function omitToolResultBase64Images(message: AgentMessage): AgentMessage {
+function deferToolResultBase64Images(
+  message: AgentMessage,
+  sessionId: string | undefined,
+  entryId: string,
+): AgentMessage {
   if (message.role !== "toolResult") return message;
 
   let omitted = 0;
   let bytes = 0;
   const mimes = new Set<string>();
-  const content = message.content.filter((block) => {
+  const content = message.content.flatMap((block, blockIndex) => {
     const image = base64ImageInfo(block);
-    if (!image) return true;
+    if (!image) return [block];
+
+    // Keep the initial history response small, but preserve an image block that
+    // the browser can load only when its collapsed tool result is expanded.
+    if (
+      sessionId &&
+      image.mime &&
+      TOOL_RESULT_IMAGE_MIMES.has(image.mime) &&
+      image.bytes > 0 &&
+      image.bytes <= MAX_TOOL_RESULT_IMAGE_BYTES
+    ) {
+      const source: ImageContent["source"] = {
+        type: "url",
+        media_type: image.mime,
+        url: `/api/sessions/${encodeURIComponent(sessionId)}/entries/${encodeURIComponent(entryId)}/tool-result-image?blockIndex=${blockIndex}`,
+      };
+      return [{ type: "image", source } satisfies ImageContent];
+    }
+
+    // Retain the old bounded fallback for callers that do not have a session id.
     omitted += 1;
     bytes += image.bytes;
     if (image.mime) mimes.add(image.mime);
-    return false;
+    return [];
   });
-  if (omitted === 0) return message;
+  if (omitted === 0) return { ...message, content };
 
   const mimeText = mimes.size > 0 ? `: ${[...mimes].join(", ")}` : "";
   content.push({
@@ -341,7 +672,7 @@ function omitToolResultBase64Images(message: AgentMessage): AgentMessage {
 // Returns null for entries that do not map to chat history (metadata, non-message types).
 function entryToUiMessage(
   entry: SessionEntry,
-  options: { deferThinking?: boolean; deferToolResultImages?: boolean },
+  options: BuildSessionContextOptions,
 ): AgentMessage | null {
   // Supported message roles: user, assistant, toolResult, bashExecution.
   // bashExecution messages enter the case "message" branch (entry.type === "message").
@@ -350,15 +681,20 @@ function entryToUiMessage(
   // normalizeToolCalls is a secondary guard (returns non-assistant messages as-is).
   switch (entry.type) {
     case "message": {
-      const message = options.deferToolResultImages
-        ? omitToolResultBase64Images(normalizeToolCalls(entry.message))
+      let message = options.deferToolResultImages
+        ? deferToolResultBase64Images(normalizeToolCalls(entry.message), options.sessionId, entry.id)
         : normalizeToolCalls(entry.message);
+      const legacyContent = message.role === "assistant" ? (message as { content: unknown }).content : undefined;
+      if (typeof legacyContent === "string") {
+        message = { ...message, content: [{ type: "text", text: legacyContent }] } as AgentMessage;
+      }
       if (!options.deferThinking || message.role !== "assistant") return message;
+      const content = message.content;
       return {
         ...message,
-        content: message.content.map((block) => (
+        content: content.map((block) => (
           block.type === "thinking" && block.thinking.trim() !== ""
-            ? { ...block, thinking: "", deferred: true }
+            ? { ...block, thinking: getThinkingPreview(block.thinking), deferred: true }
             : block
         )),
       };

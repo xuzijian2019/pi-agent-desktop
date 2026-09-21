@@ -13,7 +13,7 @@ async function project(page: Page, git = false) {
     await writeFile(path.join(cwd, "readme.md"), "# Base\n"); run("add", "."); run("commit", "-m", "base");
   }
   await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);
-  await expect(page.getByPlaceholder("Message…", { exact: false })).toBeEditable();
+  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toBeEditable();
   return cwd;
 }
 async function mode(page: Page, value: string) {
@@ -26,7 +26,7 @@ async function mode(page: Page, value: string) {
 /** The Changes / Pinned sections inside Files: a header button and its region. */
 function section(page: Page, name: "Changes" | "Pinned") {
   const region = page.getByRole("region", { name, exact: true });
-  return { region, toggle: region.getByRole("button", { name: new RegExp(`^${name}`) }) };
+  return { region, toggle: name === "Changes" ? page.locator(".workbench-changes > button") : region.getByRole("button", { name: new RegExp(`^${name}`) }) };
 }
 
 // Runs before anything saves a task, so the empty-library case is the real one.
@@ -50,7 +50,7 @@ test("a new task shows the guidance line, then its recent saved tasks", async ({
   await expect(chip).toBeVisible();
   await expect(guide.getByRole("button", { name: "All saved tasks", exact: true })).toBeVisible();
   await chip.click();
-  const composer = page.getByPlaceholder("Message…", { exact: false });
+  const composer = page.getByRole("textbox", { name: "Message", exact: true });
   await expect(composer).toHaveValue("Audit the dependencies.");
   // The guidance goes away with the empty state once a message is sent.
   await composer.fill("!printf guided"); await composer.press("Enter");
@@ -72,7 +72,7 @@ test("saved task applies to a draft, preserves settings and restores the panel w
   await panel.getByLabel("Tools", { exact: true }).selectOption("none");
   await panel.getByRole("button", { name: "Save", exact: true }).click();
   await panel.getByRole("button", { name: "Use", exact: true }).click();
-  const composer = page.getByPlaceholder("Message…", { exact: false });
+  const composer = page.getByRole("textbox", { name: "Message", exact: true });
   await expect(composer).toHaveValue("Review this project carefully.");
   await page.reload();
   await expect(composer).toHaveValue("Review this project carefully.");
@@ -86,7 +86,7 @@ test("saved task applies to a draft, preserves settings and restores the panel w
 
 test("loading a remotely saved draft restores references and setup atomically", async ({ page }) => {
   const cwd = await project(page);
-  const composer = page.getByPlaceholder("Message…", { exact: false });
+  const composer = page.getByRole("textbox", { name: "Message", exact: true });
   await composer.fill('stale #"Source A"');
   await expect(page.getByText("Saving draft…", { exact: true })).toHaveCount(0);
 
@@ -151,7 +151,9 @@ test("loading a remotely saved draft restores references and setup atomically", 
   await expect(conflict).toBeVisible();
   await conflict.getByRole("button", { name: "Load saved version" }).click();
   await expect(composer).toHaveValue(plainDraft.value);
-  await expect(page.getByRole("button", { name: "Change reasoning level", exact: true })).toHaveAttribute("title", /auto/i);
+  await page.getByRole("button", { name: "Change reasoning level", exact: true }).click();
+  await expect(page.locator(".is-thinking .composer-option-row.is-active")).toContainText("auto");
+  await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "Change tool preset", exact: true })).toHaveAttribute("title", /default/);
   await expect.poll(readSavedDraft).toEqual({ ...plainDraft, references: {} });
 });
@@ -166,7 +168,7 @@ test("recent task chips reveal draft choices from closed and different panels", 
   const cwd = path.join(WORK_ROOT, `task-chip-${randomUUID()}`);
   await mkdir(cwd, { recursive: true });
   await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);
-  const composer = page.getByPlaceholder("Message…", { exact: false });
+  const composer = page.getByRole("textbox", { name: "Message", exact: true });
   await expect(composer).toBeEditable();
   await composer.fill("KEEP THIS DRAFT");
   const chip = page.getByRole("button", { name: "Recent conflict task Visible conflict choices", exact: true });
@@ -195,9 +197,9 @@ test("recent task chips reveal draft choices from closed and different panels", 
   expect(removed.ok()).toBe(true);
 });
 
-test("the composer send preview keeps the reference snapshot and goes stale after edits", async ({ page, request }) => {
+test("session references are prepared on send without restoring the removed preview UI", async ({ page, request }) => {
   await project(page);
-  const input = page.getByPlaceholder("Message…", { exact: false });
+  const input = page.getByRole("textbox", { name: "Message", exact: true });
   await input.fill("!printf context-seed"); await input.press("Enter");
   await expect(page).toHaveURL(/session=/);
   const sessionId = new URL(page.url()).searchParams.get("session");
@@ -205,24 +207,8 @@ test("the composer send preview keeps the reference snapshot and goes stale afte
   const id = randomUUID(); let text = "Original reference snapshot";
   await page.route("**/api/sessions", route => route.fulfill({ json: { sessions: [{ id, name: "Reference", firstMessage: "Reference", cwd: WORK_ROOT, created: new Date().toISOString(), modified: new Date().toISOString(), messageCount: 1 }] } }));
   await page.route(`**/api/sessions/${id}/reference?*`, route => route.fulfill({ json: { reference: text, revision: text, entries: [], leafId: "leaf" } }));
-  const composer = page.getByPlaceholder("Message…", { exact: false }); await composer.fill('Use #"Reference"');
-  // The preview is a composer chip now, not a right-panel mode.
-  await expect(page.locator("#file-panel").getByRole("tab", { name: "Context" })).toHaveCount(0);
-  const chip = page.getByRole("button", { name: "Preview outgoing message", exact: true });
-  await chip.click();
-  const panel = page.getByRole("dialog", { name: "Preview outgoing message", exact: true });
-  // It floats just above its chip, clamped inside the composer's width.
-  await expect(panel).toBeVisible();
-  await panel.evaluate(el => Promise.all(el.getAnimations({ subtree: true }).map(a => a.finished)));
-  const panelBox = (await panel.boundingBox())!;
-  const chipBox = (await chip.boundingBox())!;
-  const composerBox = (await page.locator(".chat-composer").boundingBox())!;
-  expect(Math.abs(panelBox.y + panelBox.height - (chipBox.y - 6))).toBeLessThan(2);
-  expect(panelBox.x).toBeGreaterThanOrEqual(composerBox.x);
-  expect(panelBox.x + panelBox.width).toBeLessThanOrEqual(composerBox.x + composerBox.width);
-  await expect(panel.locator("details[open]").filter({ has: page.getByText("Final outgoing text", { exact: true }) }).locator("pre")).toContainText("Original reference snapshot");
-  text = "New source revision";
-  // Capture the actual command POST; no model call reaches the server.
+  const composer = page.getByRole("textbox", { name: "Message", exact: true }); await composer.fill('Use #"Reference"');
+  await expect(page.getByRole("button", { name: "Preview outgoing message", exact: true })).toHaveCount(0);
   let sent: { message?: string } | undefined;
   await page.route(`**/api/agent/${sessionId}`, route => {
     if (route.request().method() === "POST" && route.request().postDataJSON().type === "prompt") {
@@ -232,14 +218,11 @@ test("the composer send preview keeps the reference snapshot and goes stale afte
   });
   await composer.press("Enter");
   await expect.poll(() => sent?.message).toBe("Use Original reference snapshot");
+  await expect(page.getByRole("button", { name: "Stop agent", exact: true })).toHaveCount(0);
+  text = "New source revision";
   await composer.fill('Changed #"Reference"');
-  await expect(panel.getByText("Out of date — refresh before inspecting")).toBeVisible();
-  await panel.getByRole("button", { name: "Refresh", exact: true }).click();
-  await expect(panel.locator("details[open]").filter({ has: page.getByText("Final outgoing text", { exact: true }) }).locator("pre")).toContainText("Changed New source revision");
-  // Escape closes it without disturbing the draft.
-  await panel.press("Escape");
-  await expect(panel).toHaveCount(0);
-  await expect(composer).toHaveValue('Changed #"Reference"');
+  await composer.press("Enter");
+  await expect.poll(() => sent?.message).toBe("Changed New source revision");
 });
 
 test("pinned outputs use real files, open in place, and persist shelf metadata", async ({ page, request }) => {
@@ -330,7 +313,7 @@ test("branch creation and real Bash activity work without a model", async ({ pag
   await dialog.getByRole("button", { name: "Review operation" }).click();
   await dialog.getByRole("button", { name: "Create and switch" }).click();
   await expect.poll(() => execFileSync("git", ["-C", cwd, "branch", "--show-current"], { encoding: "utf8" }).trim()).toBe("feature/workbench");
-  const composer = page.getByPlaceholder("Message…", { exact: false });
+  const composer = page.getByRole("textbox", { name: "Message", exact: true });
   await composer.fill("!sleep 20"); await composer.press("Enter");
   await mode(page, "activity");
   const panel = page.getByRole("region", { name: "Activity", exact: true });
@@ -345,7 +328,7 @@ test("composer metadata and rounded panel remain uncluttered at desktop and phon
   await page.route("**/api/models?*", route => route.fulfill({ json: { models: { "test:model": "Example model" }, modelList: [{ provider: "test", id: "model", name: "Example model" }], defaultModel: { provider: "test", modelId: "model" }, thinkingLevels: { "test:model": ["off"] } } }));
   await project(page, true);
   const controls = page.locator(".chat-composer-controls");
-  await expect(controls.getByRole("button", { name: "Preview outgoing message", exact: true })).toHaveCount(1);
+  await expect(controls.getByRole("button", { name: "Preview outgoing message", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Saved Tasks", exact: true })).toHaveCount(0);
   const folder = controls.locator(".chat-project-context");
   const branch = controls.getByRole("button", { name: "⑂ main", exact: true });
@@ -373,7 +356,7 @@ test("the Changes section expands patches inline without opening file tabs", asy
   await writeFile(path.join(cwd, "readme.md"), "# Updated\nNew review content\n");
   await writeFile(path.join(cwd, "second.txt"), "Second file content\n");
   await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);
-  await expect(page.getByPlaceholder("Message…", { exact: false })).toBeEditable();
+  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toBeEditable();
   await mode(page, "files");
   await expect(page.locator("#file-panel").getByRole("tab", { name: "Diff" })).toHaveCount(0);
   const { region: review, toggle } = section(page, "Changes");
@@ -408,7 +391,7 @@ test("the Changes section expands patches inline without opening file tabs", asy
 test("a clean Changes section can refresh after an external edit", async ({ page, request }) => {
   const cwd = await realpath(await project(page, true));
   await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);
-  await expect(page.getByPlaceholder("Message…", { exact: false })).toBeEditable();
+  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toBeEditable();
   await mode(page, "files");
   const { region: changes, toggle } = section(page, "Changes");
   await toggle.click();
@@ -447,11 +430,13 @@ test("transcript search jumps to an inactive branch, reveals output, and preserv
   await expect.poll(async () => (await (await request.get("/api/sessions")).json()).sessions.some((s: { id: string }) => s.id === id), { timeout: 60000 }).toBe(true);
   const mutations: string[] = [];
   page.on("request", req => { if (req.method() === "POST" && req.url().includes("/api/agent/")) { const type = req.postDataJSON()?.type; if (["navigate_tree", "prompt"].includes(type)) mutations.push(type); } });
-  const startup = page.waitForResponse(response => response.url().endsWith(`/api/agent/${id}`) && response.request().method() === "POST" && response.request().postDataJSON()?.type === "get_tools");
+  // Opening a session loads its transcript without booting the agent runtime;
+  // wait for that session detail load before counting mutations.
+  const startup = page.waitForResponse(response => response.url().includes(`/api/sessions/${id}?`) && response.request().method() === "GET");
   await page.goto(`/?session=${id}`);
-  await startup; // Exclude normal runtime initialization from the search mutation check.
+  await startup;
   await expect(page.getByText("Current branch answer", { exact: true })).toBeVisible();
-  const composer = page.getByPlaceholder("Message…", { exact: false }); await composer.fill("Preserve my draft");
+  const composer = page.getByRole("textbox", { name: "Message", exact: true }); await composer.fill("Preserve my draft");
   const before = await readFile(file, "utf8");
   await mode(page, "search");
   const panel = page.getByRole("region", { name: "Search transcripts", exact: true });
@@ -460,7 +445,8 @@ test("transcript search jumps to an inactive branch, reveals output, and preserv
   await panel.locator(".transcript-hit").filter({ hasText: "OAuth sentinel" }).click();
   await expect(page.getByText("Historical search result · read-only", { exact: true })).toBeVisible();
   await expect(page.locator('[data-entry-id="tool0001"] .transcript-exact-match mark')).toHaveText("OAuth sentinel");
-  await expect(page.locator('[data-entry-id="tool0001"]')).toContainText("token rejected");
+  // The entry wrapper and the message inside it both carry data-entry-id.
+  await expect(page.locator('[data-entry-id="tool0001"]').first()).toContainText("token rejected");
   await expect(page.getByText("Current branch answer", { exact: true })).toHaveCount(0);
   await expect(page.getByTitle("Edit from here — branches within this session", { exact: true })).toHaveCount(0);
   await expect(page.getByTitle("New session — creates an independent copy from here", { exact: true })).toHaveCount(0);

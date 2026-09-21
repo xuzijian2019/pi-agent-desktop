@@ -60,7 +60,7 @@ test("an idle new task in a healthy project stays near-silent", async ({ page })
   test.setTimeout(180_000);
   const cwd = await gitProject();
   await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);
-  await expect(page.getByPlaceholder("Message…", { exact: false })).toBeEditable();
+  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toBeEditable();
   const urls = await idleApiRequests(page);
   expect(urls.length, `idle requests in 60 s:\n${byRoute(urls)}`).toBeLessThanOrEqual(20);
 });

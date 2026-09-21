@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { stat } from "fs/promises";
 import { getSessionEntries, listAllSessions, buildSessionContext } from "./session-reader";
-import { getRpcSession, getLiveSessionSnapshots } from "./rpc-manager";
+import { getRpcSession, getRpcSessionInfos } from "./rpc-manager";
 import { resolveProject } from "./worktree";
 import { UiError } from "./web-ui-store";
 import type { SessionEntry, SessionInfo } from "./types";
@@ -67,7 +67,7 @@ async function documentsFor(session: SessionInfo): Promise<TranscriptDocument[]>
 }
 export async function searchableSessions(): Promise<SessionInfo[]> {
   const stored = await listAllSessions();
-  const live = getLiveSessionSnapshots(new Set(stored.map(s => s.id)));
+  const live = getRpcSessionInfos().filter(session => !stored.some(s => s.id === session.id));
   return [...stored, ...await Promise.all(live.map(async s => ({ ...s, projectRoot: (await resolveProject(s.cwd)).projectRoot })))] as SessionInfo[];
 }
 export async function searchTranscripts(query: string, project: string | null, sessionId: string | null, cursor: string | null, signal: AbortSignal) {

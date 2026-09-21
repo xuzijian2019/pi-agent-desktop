@@ -1,7 +1,9 @@
 "use client";
 
-import { parseAnsiLine, stripAnsi } from "@/lib/ansi";
-import type { ExtensionStatusItem } from "@/lib/types";
+import { stripAnsi } from "@/lib/ansi";
+import type { ExtensionStatusItem, ExtensionWidgetItem } from "@/lib/types";
+import { AnsiText } from "./AnsiText";
+import { ExtensionWidgets } from "./ExtensionWidgets";
 
 /** Leading decorative bullets some CLI extensions prepend (e.g. green ●). */
 const LEADING_STATUS_MARKER_RE =
@@ -9,10 +11,10 @@ const LEADING_STATUS_MARKER_RE =
 
 export function sanitizeExtensionStatusText(text: string): string {
   return text
-    .replace(/[\r\n\t]/g, " ")
-    .replace(/ +/g, " ")
-    .trim()
-    .replace(LEADING_STATUS_MARKER_RE, "")
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/\t/g, " ").replace(/ +/g, " ").trim())
+    .join("\n")
     .trim();
 }
 
@@ -24,8 +26,14 @@ export function formatExtensionStatusLine(statuses: ExtensionStatusItem[]): stri
     .join(" ");
 }
 
-export function ExtensionStatusBar({ statuses }: { statuses: ExtensionStatusItem[] }) {
-  if (statuses.length === 0) return null;
+export function ExtensionStatusBar({
+  statuses,
+  widgets = [],
+}: {
+  statuses: ExtensionStatusItem[];
+  widgets?: ExtensionWidgetItem[];
+}) {
+  if (statuses.length === 0 && widgets.length === 0) return null;
 
   const statusLine = formatExtensionStatusLine(statuses);
   if (!statusLine) return null;
@@ -33,34 +41,21 @@ export function ExtensionStatusBar({ statuses }: { statuses: ExtensionStatusItem
 
   return (
     <div
-      role="status"
-      aria-label={plainStatusLine}
-      title={plainStatusLine}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        flex: "0 1 auto",
-        minWidth: 0,
-        maxWidth: "min(42vw, 340px)",
-        height: 32,
-        padding: "0 6px",
-      }}
+      className={`extension-status-shelf${widgets.length > 0 ? " has-widgets" : ""}${statuses.length > 0 ? " has-status" : ""}`}
     >
-      <span
-        style={{
-          minWidth: 0,
-          overflow: "hidden",
-          color: "var(--text-muted)",
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {parseAnsiLine(statusLine).map((segment, index) => (
-          <span key={index} style={segment.style}>{segment.text}</span>
-        ))}
-      </span>
+      {widgets.length > 0 && <ExtensionWidgets widgets={widgets} />}
+      {statuses.length > 0 && (
+        <div
+          role="status"
+          className="extension-status-line"
+          aria-label={plainStatusLine}
+          title={plainStatusLine}
+        >
+          <span className="extension-status-text">
+            <AnsiText text={statusLine} />
+          </span>
+        </div>
+      )}
     </div>
   );
 }

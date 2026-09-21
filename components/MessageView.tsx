@@ -2,34 +2,149 @@
 import { useTranscriptExpansion } from "./workbench/TranscriptHighlight";
 
 import { memo, useState, useRef, useEffect, useMemo } from "react";
+
 import { MarkdownBody } from "./MarkdownBody";
+import { ImagePreview } from "./ImagePreview";
+
 import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
 import { useDiffViewMode } from "@/hooks/useDiffViewMode";
 import { useTheme } from "@/hooks/useTheme";
 import { SyntaxHighlighter, vs, vscDarkPlus } from "@/lib/syntax-highlighting";
-import { getWrittenFile, sourceLanguageFromPath, type WrittenFile } from "@/lib/write-tool-display";
+import { getWrittenFile, sourceLanguageFromPath, type WrittenFile as ToolWrittenFile } from "@/lib/write-tool-display";
 import { ImageLightbox } from "./ImageLightbox";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
-import { getAssistantErrorMessage, isDisplayableAssistantBlock } from "@/lib/message-display";
-import { parseUnifiedPatch, type SplitDiffCell } from "@/lib/patch";
+import { getAssistantErrorMessage, isDisplayableAssistantBlock, getThinkingPreview } from "@/lib/message-display";
+import { parseUnifiedPatch, type SplitDiffCell, type SplitDiffFile } from "@/lib/patch";
+import { applyPatchPreviewToFiles, applyPatchResultHasFailures, extractApplyPatchPaths, getApplyPatchInputText, parseApplyPatchInput } from "@/lib/apply-patch";
+import { isApplyPatchToolName, isEditToolName } from "@/lib/tool-names";
+import { isToolCallExpanded, setToolCallExpanded } from "@/lib/tool-call-expansion";
+import { isThinkingExpandedByDefault, THINKING_EXPANDED_EVENT } from "@/lib/thinking-expansion-preference";
+import { TurnWrittenFiles } from "./TurnWrittenFiles";
+import type { WrittenFile } from "@/lib/turn-written-files";
 import { skillExpansionToCommand } from "@/lib/slash-display";
-import type {
-  AgentMessage,
-  UserMessage,
-  AssistantMessage,
-  CustomMessage,
-  ToolResultMessage,
-  BashExecutionMessage,
-  AssistantContentBlock,
-  TextContent,
-  ImageContent,
-  ToolCallContent,
-  ThinkingContent,
-} from "@/lib/types";
+import type { SubagentToolDetails } from "@/lib/subagent-extension";
+import type { AgentMessage, UserMessage, AssistantMessage, CustomMessage, ToolResultMessage, BashExecutionMessage, AssistantContentBlock, TextContent, ImageContent, ToolCallContent, ThinkingContent } from "@/lib/types";
+
+// CJK chars ~1 token each (GLM/DeepSeek/GPT-o200k); other chars ~4 chars/token.
+const CJK_PATTERN = /[\u3000-\u30ff\u3400-\u9fff\uf900-\ufaff\u{20000}-\u{2fa1f}\uac00-\ud7af]/u;
+function estimateTokens(text: string): number {
+  let cjk = 0;
+  let rest = 0;
+  for (const ch of text) {
+    if (CJK_PATTERN.test(ch)) cjk++;
+    else rest++;
+  }
+  return cjk + rest / 4;
+}
+
+interface TokenEstimateCacheEntry {
+  text: string;
+  tokens: number;
+}
+
+export function getTokenEstimateText(block: AssistantContentBlock): string | null {
+  if (block.type === "text") return block.text;
+  if (block.type === "thinking") return block.thinking;
+  if (block.type === "toolCall") return block.rawInput ?? JSON.stringify(block.input ?? {}) ?? "";
+  return null;
+}
+
+function isHighSurrogate(codeUnit: number): boolean {
+  return codeUnit >= 0xd800 && codeUnit <= 0xdbff;
+}
+
+function isLowSurrogate(codeUnit: number): boolean {
+  return codeUnit >= 0xdc00 && codeUnit <= 0xdfff;
+}
+
+function estimateUpdatedTokens(previous: TokenEstimateCacheEntry | undefined, text: string): number {
+  if (!previous || !text.startsWith(previous.text)) return estimateTokens(text);
+
+  let baseTokens = previous.tokens;
+  let suffixStart = previous.text.length;
+  // A streamed delta can complete a surrogate pair that was counted as two
+  // non-CJK code points in the previous update.
+  if (
+    suffixStart > 0
+    && suffixStart < text.length
+    && isHighSurrogate(previous.text.charCodeAt(suffixStart - 1))
+    && isLowSurrogate(text.charCodeAt(suffixStart))
+  ) {
+    baseTokens -= 1 / 4;
+    suffixStart--;
+  }
+  return baseTokens + estimateTokens(text.slice(suffixStart));
+}
 
 const MAX_THINKING_CACHE_ENTRIES = 100;
 const thinkingContentCache = new Map<string, Promise<string>>();
+
+// Messages larger than this skip markdown rendering entirely. react-markdown +
+// KaTeX + syntax highlighting on multi-hundred-KB payloads (e.g. pasted HAR or
+// log dumps) freezes the browser main thread.
+const MAX_MARKDOWN_CHARS = 100_000;
+
+function formatMessageBytes(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)} MB`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)} KB`;
+  return `${n} B`;
+}
+
+/**
+ * MarkdownBody with an oversized-content guard: huge messages render as a
+ * click-to-reveal plain-text <pre> instead of running the markdown pipeline.
+ */
+function SafeMarkdownBody({ children, className, ...props }: React.ComponentProps<typeof MarkdownBody>) {
+  const { t } = useI18n();
+  const [showRaw, setShowRaw] = useState(false);
+
+  if (children.length <= MAX_MARKDOWN_CHARS) {
+    return <MarkdownBody className={className} {...props}>{children}</MarkdownBody>;
+  }
+  if (!showRaw) {
+    return (
+      <button
+        onClick={() => setShowRaw(true)}
+        style={{
+          display: "block",
+          width: "100%",
+          margin: "4px 0",
+          padding: "7px 10px",
+          border: "1px solid var(--border)",
+          borderRadius: 6,
+          background: "var(--bg-panel)",
+          color: "var(--text-muted)",
+          cursor: "pointer",
+          fontSize: 12,
+          textAlign: "left",
+        }}
+      >
+        ⚠ {t("i18n.largeMessageReveal", { size: formatMessageBytes(children.length) })}
+      </button>
+    );
+  }
+  return (
+    <div className={className} style={{ maxHeight: 420, overflow: "auto", fontSize: "calc(12px + var(--chat-font-size-offset, 0px))", lineHeight: 1.5 }}>
+      <pre
+        style={{
+          margin: 0,
+          padding: "8px 10px",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          fontFamily: "var(--font-mono)",
+          color: "var(--text-muted)",
+        }}
+      >
+        {children}
+      </pre>
+    </div>
+  );
+}
+
+// Cap the user "sent" bubble's height so an abnormally long message does not
+// push the conversation off screen; overflow scrolls inside the bubble.
+const USER_BUBBLE_MAX_HEIGHT = 300;
 
 function loadThinkingContent(sessionId: string, entryId: string, blockIndex: number): Promise<string> {
   const key = `${sessionId}:${entryId}:${blockIndex}`;
@@ -67,15 +182,43 @@ interface Props {
   modelNames?: Record<string, string>;
   cwd?: string;
   onOpenFile?: (filePath: string) => void;
+  onOpenSession?: (sessionId: string) => void;
   entryId?: string;
+  searchBlock?: AssistantContentBlock;
   onFork?: (entryId: string) => void;
   forking?: boolean;
-  onNavigate?: (entryId: string) => void;
-  prevAssistantEntryId?: string;
+  onNavigate?: (entryId: string) => Promise<boolean>;
+  prevAssistantEntryId?: string | null;
   onEditContent?: (message: UserMessage) => void;
   showTimestamp?: boolean;
   prevTimestamp?: number;
   sessionId?: string;
+  /**
+   * Files this turn wrote, derived by the caller from the whole turn's
+   * successful write/edit tool calls. ChatWindow computes this because the
+   * saved-message path splits tool calls into their own entries, leaving the
+   * final answer text-only.
+   */
+  writtenFiles?: WrittenFile[];
+}
+
+export function getModelDisplayName(
+  provider: string,
+  responseModel: string,
+  modelNames?: Record<string, string>,
+): string {
+  const normalizedProvider = provider.toLowerCase();
+  const normalizedResponse = responseModel.toLowerCase();
+  const configured = Object.entries(modelNames ?? {}).flatMap(([key, name]) => {
+    const separator = key.indexOf(":");
+    return separator > 0 && key.slice(0, separator).toLowerCase() === normalizedProvider
+      ? [{ id: key.slice(separator + 1).toLowerCase(), name }]
+      : [];
+  });
+  return configured.find((model) => model.id === normalizedResponse)?.name
+    ?? configured.find((model) => normalizedResponse.endsWith(`/${model.id}`))?.name
+    ?? Object.entries(modelNames ?? {}).find(([key]) => key.toLowerCase() === normalizedResponse)?.[1]
+    ?? `${provider}/${responseModel}`;
 }
 
 function formatTime(ts?: number): string | null {
@@ -124,12 +267,12 @@ function haveSameRelevantToolResults(
   return true;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp, sessionId }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenSession, entryId, searchBlock, onFork, forking, onNavigate, onEditContent, showTimestamp, prevTimestamp, sessionId, writtenFiles }: Props) {
   if (message.role === "user") {
-    return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} prevAssistantEntryId={prevAssistantEntryId} onEditContent={onEditContent} />;
+    return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} onEditContent={onEditContent} />;
   }
   if (message.role === "assistant") {
-    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} />;
+    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} />;
   }
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
@@ -152,14 +295,16 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     && prev.modelNames === next.modelNames
     && prev.cwd === next.cwd
     && prev.onOpenFile === next.onOpenFile
+    && prev.onOpenSession === next.onOpenSession
     && prev.entryId === next.entryId
+    && prev.searchBlock === next.searchBlock
     && prev.onFork === next.onFork
     && prev.forking === next.forking
     && prev.onNavigate === next.onNavigate
-    && prev.prevAssistantEntryId === next.prevAssistantEntryId
     && prev.onEditContent === next.onEditContent
     && prev.showTimestamp === next.showTimestamp
     && prev.prevTimestamp === next.prevTimestamp
+    && prev.writtenFiles === next.writtenFiles
     && prev.sessionId === next.sessionId;
 });
 
@@ -208,15 +353,14 @@ function CollapsibleUserText({ text, cwd, onOpenFile }: {
   );
 }
 
-function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent }: {
+function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, onNavigate, onEditContent }: {
   message: UserMessage;
   cwd?: string;
   onOpenFile?: (filePath: string) => void;
   entryId?: string;
   onFork?: (entryId: string) => void;
   forking?: boolean;
-  onNavigate?: (entryId: string) => void;
-  prevAssistantEntryId?: string;
+  onNavigate?: (entryId: string) => Promise<boolean>;
   onEditContent?: (message: UserMessage) => void;
 }) {
   const { t } = useI18n();
@@ -281,7 +425,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
       })}
     </div>
   );
-  const canNavigate = !!prevAssistantEntryId && !!onNavigate;
+  const canNavigate = !!entryId && !!onNavigate;
 
   const copyContent = () => {
     copyText(copyTarget).then(() => {
@@ -377,7 +521,9 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
             <div className="user-msg-actions msg-actions" data-visible={hovered || forking}>
               {canNavigate && (
                 <button
-                  onClick={() => { onNavigate!(prevAssistantEntryId!); onEditContent?.(editTarget); }}
+                  onClick={() => void onNavigate!(entryId!).then((navigated) => {
+                    if (navigated) onEditContent?.(editTarget);
+                  })}
                    title={t("i18n.editFromHereTitle")}
                   className="msg-action"
                 >
@@ -420,10 +566,13 @@ function AssistantMessageView({
   modelNames,
   cwd,
   onOpenFile,
+  onOpenSession,
   showTimestamp,
   prevTimestamp,
   sessionId,
   entryId,
+  searchBlock,
+  writtenFiles,
 }: {
   message: AssistantMessage;
   isStreaming?: boolean;
@@ -431,19 +580,20 @@ function AssistantMessageView({
   modelNames?: Record<string, string>;
   cwd?: string;
   onOpenFile?: (filePath: string) => void;
+  onOpenSession?: (sessionId: string) => void;
   showTimestamp?: boolean;
   prevTimestamp?: number;
   sessionId?: string;
   entryId?: string;
+  searchBlock?: AssistantContentBlock;
+  writtenFiles?: WrittenFile[];
 }) {
   const { t } = useI18n();
   const time = showTimestamp ? formatTime(message.timestamp) : null;
-  const blockItems = (message.content as Array<AssistantContentBlock | null | undefined>)
+  const blockItems = useMemo(() => (message.content ?? [])
     .map((block, originalIndex) => ({ block, originalIndex }))
-    .filter((item): item is { block: AssistantContentBlock; originalIndex: number } =>
-      isDisplayableAssistantBlock(item.block, { isStreaming }),
-    );
-  const blocks = blockItems.map(({ block }) => block);
+    .filter(({ block }) => isDisplayableAssistantBlock(block, { isStreaming })), [message.content, isStreaming]);
+  const blocks = useMemo(() => blockItems.map(({ block }) => block), [blockItems]);
   const providerError = getAssistantErrorMessage(message, { isStreaming });
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -451,6 +601,26 @@ function AssistantMessageView({
   const [tps, setTps] = useState<number | null>(null);
   const blockItemsRef = useRef(blockItems);
   blockItemsRef.current = blockItems;
+  const tokenEstimateCacheRef = useRef<Map<number, TokenEstimateCacheEntry>>(new Map());
+  const estimatedTokens = useMemo(() => {
+    if (!isStreaming) {
+      tokenEstimateCacheRef.current = new Map();
+      return 0;
+    }
+    const nextCache = new Map<number, TokenEstimateCacheEntry>();
+    let total = 0;
+    for (const { block, originalIndex } of blockItems) {
+      const text = getTokenEstimateText(block);
+      if (text === null) continue;
+      const tokens = estimateUpdatedTokens(tokenEstimateCacheRef.current.get(originalIndex), text);
+      nextCache.set(originalIndex, { text, tokens });
+      total += tokens;
+    }
+    tokenEstimateCacheRef.current = nextCache;
+    return total;
+  }, [blockItems, isStreaming]);
+  const estimatedTokensRef = useRef(estimatedTokens);
+  estimatedTokensRef.current = estimatedTokens;
 
   // Streaming-based timing for thinking blocks
   const blockStartTimesRef = useRef<Map<number, number>>(new Map());
@@ -512,7 +682,6 @@ function AssistantMessageView({
     }
     const tick = () => {
       const items = blockItemsRef.current;
-      const bs = items.map(({ block }) => block);
       const now = Date.now();
 
       // Record start time for each block the first time we see it
@@ -537,16 +706,11 @@ function AssistantMessageView({
         return changed ? next : prev;
       });
 
-      let chars = 0;
-      for (const b of bs) {
-        if (b.type === "text") chars += (b as TextContent).text?.length ?? 0;
-        else if (b.type === "thinking") chars += (b as ThinkingContent).thinking?.length ?? 0;
-        else if (b.type === "toolCall") chars += JSON.stringify((b as ToolCallContent).input ?? {}).length;
-      }
-      if (chars === 0) return;
+      const tokens = estimatedTokensRef.current;
+      if (tokens === 0) return;
       if (streamStartRef.current === null) streamStartRef.current = now;
       const elapsed = (now - streamStartRef.current) / 1000;
-      if (elapsed > 0.5) setTps(chars / 4 / elapsed);
+      if (elapsed > 0.5) setTps(tokens / elapsed);
     };
     const id = setInterval(tick, 300);
     return () => clearInterval(id);
@@ -557,6 +721,8 @@ function AssistantMessageView({
   return (
     <div
       className="message-assistant"
+      data-message-role="assistant"
+      data-entry-id={entryId}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -566,16 +732,10 @@ function AssistantMessageView({
         className="message-assistant-model"
       >
         {message.provider && (
-          <span>{modelNames?.[`${message.provider}:${message.model}`] ?? modelNames?.[message.model] ?? message.model}</span>
+          <span>{getModelDisplayName(message.provider, message.model, modelNames)}</span>
         )}
         {isStreaming && (() => {
-          let chars = 0;
-          for (const b of blocks) {
-            if (b.type === "text") chars += (b as TextContent).text?.length ?? 0;
-            else if (b.type === "thinking") chars += (b as ThinkingContent).thinking?.length ?? 0;
-            else if (b.type === "toolCall") chars += JSON.stringify((b as ToolCallContent).input ?? {}).length;
-          }
-          const est = Math.round(chars / 4);
+          const est = Math.round(estimatedTokens);
           return (
             <>
 
@@ -605,7 +765,7 @@ function AssistantMessageView({
 
       <div className="message-assistant-content">
         {blockItems.map(({ block, originalIndex }) => (
-          <BlockView key={`${entryId ?? "stream"}-${originalIndex}`} block={block} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(originalIndex) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} cwd={cwd} onOpenFile={onOpenFile} sessionId={sessionId} entryId={entryId} blockIndex={originalIndex} />
+          <BlockView key={`${entryId ?? "stream"}-${originalIndex}`} block={block} searchTarget={block === searchBlock} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(originalIndex) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} sessionId={sessionId} entryId={entryId} blockIndex={originalIndex} />
         ))}
       </div>
 
@@ -616,6 +776,10 @@ function AssistantMessageView({
         >
           Error: {providerError}
         </div>
+      )}
+
+      {writtenFiles && writtenFiles.length > 0 && (
+        <TurnWrittenFiles files={writtenFiles} onOpenFile={onOpenFile} />
       )}
 
       <div className="message-assistant-footer">
@@ -651,9 +815,9 @@ function AssistantMessageView({
   );
 }
 
-function BlockView({ block, toolResults, isStreaming, streamingDuration, toolCallDurations, cwd, onOpenFile, sessionId, entryId, blockIndex }: { block: AssistantContentBlock; toolResults?: Map<string, ToolResultMessage>; isStreaming?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number>; cwd?: string; onOpenFile?: (filePath: string) => void; sessionId?: string; entryId?: string; blockIndex: number }) {
+function BlockView({ block, searchTarget, toolResults, isStreaming, streamingDuration, toolCallDurations, cwd, onOpenFile, onOpenSession, sessionId, entryId, blockIndex }: { block: AssistantContentBlock; searchTarget?: boolean; toolResults?: Map<string, ToolResultMessage>; isStreaming?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number>; cwd?: string; onOpenFile?: (filePath: string) => void; onOpenSession?: (sessionId: string) => void; sessionId?: string; entryId?: string; blockIndex: number }) {
   if (block.type === "text") {
-    return <TextBlock block={block as TextContent} isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} />;
+    return <div data-message-text data-search-target={searchTarget || undefined}><TextBlock block={block as TextContent} isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} /></div>;
   }
   if (block.type === "thinking") {
     return <ThinkingBlock block={block as ThinkingContent} duration={streamingDuration} sessionId={sessionId} entryId={entryId} blockIndex={blockIndex} />;
@@ -662,16 +826,16 @@ function BlockView({ block, toolResults, isStreaming, streamingDuration, toolCal
     const tc = block as ToolCallContent;
     const result = toolResults?.get(tc.toolCallId);
     const duration = toolCallDurations?.get(tc.toolCallId);
-    return <ToolCallBlock block={tc} result={result} duration={duration} />;
+    return <ToolCallBlock block={tc} result={result} duration={duration} onOpenSession={onOpenSession} />;
   }
   return null;
 }
 
 function TextBlock({ block, isStreaming, cwd, onOpenFile }: { block: TextContent; isStreaming?: boolean; cwd?: string; onOpenFile?: (filePath: string) => void }) {
-  return <MarkdownBody isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile}>{block.text}</MarkdownBody>;
+  return <SafeMarkdownBody isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile}>{block.text}</SafeMarkdownBody>;
 }
 
-function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
+export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
   block: ThinkingContent;
   duration?: number;
   sessionId?: string;
@@ -679,40 +843,64 @@ function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
   blockIndex: number;
 }) {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useTranscriptExpansion();
+  const [expanded, setExpanded] = useTranscriptExpansion(isThinkingExpandedByDefault());
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const tRef = useRef(t);
+  tRef.current = t;
+  const preview = getThinkingPreview(block.thinking);
 
-  const toggle = async () => {
-    const nextExpanded = !expanded;
-    setExpanded(nextExpanded);
-    if (!nextExpanded || !block.deferred || content !== null) return;
+  // Keep already-mounted blocks in sync when the preference changes.
+  useEffect(() => {
+    const onChange = () => setExpanded(isThinkingExpandedByDefault());
+    window.addEventListener(THINKING_EXPANDED_EVENT, onChange);
+    return () => window.removeEventListener(THINKING_EXPANDED_EVENT, onChange);
+  }, [setExpanded]);
+
+  // Load deferred history content whenever the block is expanded.
+  // loadThinkingContent() memoizes in-flight promises and drops failed ones
+  // from its cache, so re-running this effect is cheap and a failed load can
+  // be retried by collapsing and expanding the block again.
+  useEffect(() => {
+    if (!expanded || !block.deferred || content !== null) return;
     if (!sessionId || !entryId) {
-      setError(t("i18n.thinkingUnavailable"));
+      setError(tRef.current("i18n.thinkingUnavailable"));
       return;
     }
-
+    let cancelled = false;
     setLoading(true);
     setError(null);
-    try {
-      setContent(await loadThinkingContent(sessionId, entryId, blockIndex));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  };
+    loadThinkingContent(sessionId, entryId, blockIndex)
+      .then((value) => {
+        if (!cancelled) {
+          setContent(value);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : String(err));
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [expanded, block.deferred, content, sessionId, entryId, blockIndex]);
 
   return (
     <div
       className="msg-thinking"
     >
       <button
-        onClick={() => void toggle()}
+        onClick={() => setExpanded(value => !value)}
         className="msg-thinking-toggle"
+        type="button"
+        aria-expanded={expanded}
+        aria-label={`${t("i18n.thinking")}${preview ? `: ${preview}` : ""}`}
       >
-         <span>{t("i18n.thinking")}</span>
+         <span>{expanded ? t("i18n.thinking") : preview || t("i18n.thinking")}</span>
         {duration !== undefined && (
           <span className="msg-duration">{duration}s</span>
         )}
@@ -724,24 +912,46 @@ function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
            {loading ? t("i18n.loadingThinking") : error ?? (block.deferred ? content : block.thinking)}
         </div>
       )}
+      {duration !== undefined && (
+        <span style={{ flexShrink: 0, color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
+      )}
     </div>
   );
 }
 
+function isSubagentToolDetails(value: unknown): value is SubagentToolDetails {
+  if (!value || typeof value !== "object") return false;
+  const details = value as Partial<SubagentToolDetails>;
+  return details.kind === "pi-web-subagent" && typeof details.sessionId === "string";
+}
 
-function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number }) {
-  const [expanded, setExpanded] = useTranscriptExpansion();
-  const inputStr = JSON.stringify(block.input, null, 2);
+function ToolCallBlock({ block, result, duration, onOpenSession }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number; onOpenSession?: (sessionId: string) => void }) {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useTranscriptExpansion(isToolCallExpanded(block.toolCallId));
+  const toggleExpanded = () => {
+    const next = !expanded;
+    setToolCallExpanded(block.toolCallId, next);
+    setExpanded(next);
+  };
+  const inputStr = getToolCallInputText(block);
+  const isStreamingInput = block.rawInput !== undefined;
   const isEditTool = isEditToolName(block.toolName);
   const writtenFile = getWrittenFile(block.toolName, block.input);
   const resultDiff = result && !result.isError ? getResultDiff(result) : null;
+  const patchFiles = getApplyPatchFiles(block, result);
+  const patchLabel = isApplyPatchToolName(block.toolName)
+    ? summarizeApplyPatchInput(block)
+    : null;
 
   // Result display
   const resultText = result
     ? result.content.filter((b): b is { type: "text"; text: string } => b.type === "text").map((b) => b.text).join("\n")
     : null;
+  const resultImages = getMessageImages(result?.content ?? []);
   const resultIsEmpty = resultText === null ? false : (resultText.trim() === "(no output)" || resultText.trim() === "");
-  const isError = result?.isError ?? false;
+  const isError = (result?.isError ?? false)
+    || (isApplyPatchToolName(block.toolName) && applyPatchResultHasFailures(result?.details));
+  const subagent = isSubagentToolDetails(result?.details) ? result.details : null;
 
   return (
     <div
@@ -749,14 +959,14 @@ function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; re
     >
       {/* ── Tool call header ── */}
       <button
-        onClick={() => setExpanded((v) => !v)}
+        onClick={toggleExpanded}
         className="msg-tool-header"
       >
         <span className="msg-tool-name">
           {block.toolName}
         </span>
         <span className="msg-tool-preview">
-          {getToolPreview(block)}
+          {isStreamingInput ? t("chat.generatingToolInput") : (patchLabel ?? getToolPreview(block))}
         </span>
         {duration !== undefined && (
           <span className="msg-tool-duration">{duration}s</span>
@@ -766,8 +976,20 @@ function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; re
         </svg>
       </button>
 
+        {subagent && onOpenSession && (
+          <button
+            type="button"
+            onClick={() => onOpenSession(subagent.sessionId)}
+            title={t("subagent.open")}
+            aria-label={t("subagent.open")}
+            style={{ width: 32, display: "grid", placeItems: "center", border: "none", borderLeft: "1px solid var(--border)", background: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
+          </button>
+        )}
+
       {/* ── Expanded: input args ── */}
-      {expanded && !isEditTool && (
+      {expanded && (isStreamingInput || !isEditTool) && !patchFiles && (
         writtenFile ? (
           <WrittenFileView file={writtenFile} isError={isError} />
         ) : (
@@ -775,8 +997,23 @@ function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; re
         )
       )}
 
+      {/* ── Expanded: applied-patch split diff ── */}
+      {expanded && patchFiles && (
+        <div style={{ borderTop: "1px solid rgba(34,197,94,0.15)", background: "var(--bg)" }}>
+          <ApplyPatchDiffView files={patchFiles} />
+        </div>
+      )}
+
       {/* ── Paired result — only shown when expanded ── */}
-      {expanded && result && (
+      {expanded && result && patchFiles && isError && (
+        <PairedResult
+          text={resultText ?? ""}
+          images={resultImages}
+          isEmpty={resultIsEmpty}
+          isError={isError}
+        />
+      )}
+      {expanded && result && !patchFiles && (
         resultDiff ? (
           <PairedDiffResult
             diff={resultDiff}
@@ -784,6 +1021,7 @@ function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; re
         ) : (
           <PairedResult
             text={resultText ?? ""}
+            images={resultImages}
             isEmpty={resultIsEmpty}
             isError={isError}
           />
@@ -793,7 +1031,7 @@ function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; re
   );
 }
 
-function WrittenFileView({ file, isError }: { file: WrittenFile; isError: boolean }) {
+function WrittenFileView({ file, isError }: { file: ToolWrittenFile; isError: boolean }) {
   const { isDark } = useTheme();
   return (
     <div className={isError ? "msg-pane msg-file is-error" : "msg-pane msg-file"}>
@@ -849,11 +1087,21 @@ function PairedDiffResult({ diff }: {
   );
 }
 
+function ApplyPatchDiffView({ files }: { files: SplitDiffFile[] }) {
+  const { mode } = useDiffViewMode();
+  return <SplitFilesView files={files} mode={mode} />;
+}
+
 function SplitPatchView({ text }: { text: string }) {
   const { t } = useI18n();
   const { mode } = useDiffViewMode();
   const files = useMemo(() => parseUnifiedPatch(text), [text]);
   if (!files) return <PatchTextView text={text} />;
+  return <SplitFilesView files={files} mode={mode} />;
+}
+
+function SplitFilesView({ files, mode = "split" }: { files: SplitDiffFile[]; mode?: "split" | "unified" }) {
+  const { t } = useI18n();
   const showFileHeaders = files.length > 1;
   const unified = mode === "unified";
 
@@ -1040,6 +1288,37 @@ function PatchTextView({ text }: { text: string }) {
   );
 }
 
+/**
+ * Split diff rows for an apply_patch-style tool call.
+ *
+ * Prefers parsing the V4A patch document from the call input. The extension's
+ * applied result preview contains the complete old/new file with unchanged
+ * lines, so it is only used as a fallback when the call input is unavailable.
+ * A single call may contain several file operations — each becomes its own
+ * file section.
+ */
+function getApplyPatchFiles(block: ToolCallContent, result?: ToolResultMessage): SplitDiffFile[] | null {
+  if (!isApplyPatchToolName(block.toolName)) return null;
+
+  const fromInput = parseApplyPatchInput(getApplyPatchInputText(block.input, block.rawInput));
+  if (fromInput) return fromInput;
+
+  const details = result && !result.isError ? (result as ToolResultMessage & { details?: unknown }).details : undefined;
+  if (isRecord(details)) {
+    const fromPreview = applyPatchPreviewToFiles(details.preview);
+    if (fromPreview) return fromPreview;
+  }
+
+  return null;
+}
+
+/** Header label listing the files targeted by an apply_patch call. */
+function summarizeApplyPatchInput(block: ToolCallContent): string | null {
+  const paths = extractApplyPatchPaths(getApplyPatchInputText(block.input, block.rawInput));
+  if (paths.length === 0) return null;
+  return paths.join(", ").slice(0, 120);
+}
+
 function getResultDiff(result: ToolResultMessage): ResultDiff | null {
   const details = (result as ToolResultMessage & { details?: unknown }).details;
   if (!isRecord(details)) return null;
@@ -1053,35 +1332,72 @@ function getResultDiff(result: ToolResultMessage): ResultDiff | null {
   return null;
 }
 
-function isEditToolName(toolName: string): boolean {
-  const name = toolName.toLowerCase();
-  return name === "edit" ||
-    name.startsWith("edit_") ||
-    name.endsWith(".edit") ||
-    name.endsWith("_edit") ||
-    name.includes("str_replace") ||
-    name.includes("replace_editor");
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function PairedResult({ text, isEmpty, isError }: {
+function PairedResult({ text, images, isEmpty, isError }: {
   text: string;
+  images: ImageContent[];
   isEmpty: boolean;
   isError: boolean;
 }) {
   const { t } = useI18n();
+  const showText = !isEmpty || images.length === 0;
   return (
     <div
       className={isError ? "msg-pane msg-tool-result is-error" : "msg-pane msg-tool-result"}
     >
-      <pre
-        className={isEmpty ? "msg-tool-output is-empty" : "msg-tool-output"}
-      >
-         {isEmpty ? t("i18n.noOutput") : text}
-      </pre>
+      {images.length > 0 && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "10px", background: "var(--bg)" }}>
+          {images.map((image, index) => {
+            const src = imageSource(image);
+            if (!src) return null;
+            return (
+              <ImagePreview
+                key={`${src}-${index}`}
+                src={src}
+                style={{ maxWidth: "100%" }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={src}
+                  alt=""
+                  loading="lazy"
+                  style={{
+                    display: "block",
+                    maxWidth: "min(100%, 720px)",
+                    maxHeight: 520,
+                    borderRadius: 6,
+                    objectFit: "contain",
+                    border: "1px solid var(--border)",
+                  }}
+                />
+              </ImagePreview>
+            );
+          })}
+        </div>
+      )}
+      {showText && (
+        <pre
+          style={{
+            margin: 0,
+            padding: "8px 10px",
+            color: isError ? "var(--danger)" : (isEmpty ? "var(--text-dim)" : "var(--text-muted)"),
+            fontSize: "calc(12px + var(--chat-font-size-offset, 0px))",
+            lineHeight: 1.5,
+            overflow: "auto",
+            maxHeight: 400,
+            background: "var(--bg)",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-all",
+            fontStyle: isEmpty ? "italic" : "normal",
+            opacity: isEmpty ? 0.6 : 1,
+          }}
+        >
+           {isEmpty ? t("i18n.noOutput") : text}
+        </pre>
+      )}
     </div>
   );
 }
@@ -1199,13 +1515,14 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
                   const src = imageSource(img);
                   if (!src) return null;
                   return (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      key={i}
-                      src={src}
-                      alt=""
-                      className="msg-attachment-image"
-                    />
+                    <ImagePreview key={i} src={src}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={src}
+                        alt=""
+                        style={{ maxWidth: 240, maxHeight: 240, borderRadius: 6, objectFit: "contain", display: "block", border: "1px solid var(--border)" }}
+                      />
+                    </ImagePreview>
                   );
                 })}
               </div>
@@ -1288,6 +1605,10 @@ function safeJson(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+export function getToolCallInputText(block: ToolCallContent): string {
+  return block.rawInput ?? JSON.stringify(block.input, null, 2);
 }
 
 function formatCustomType(type: string): string {

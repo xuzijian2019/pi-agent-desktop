@@ -1,25 +1,186 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import React from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, {
   jsx: { runtime: "automatic" },
   tsconfigPaths: true,
 });
-const { MessageView, replaceUserMessageText } = await jiti.import("./MessageView.tsx");
-const { I18nProvider } = await jiti.import("../hooks/useI18n.tsx");
+const React = await jiti.import("react");
+const { renderToStaticMarkup } = await jiti.import("react-dom/server");
+const {
+  MessageView,
+  ThinkingBlock,
+  getModelDisplayName,
+  getTokenEstimateText,
+  getToolCallInputText,
+  replaceUserMessageText,
+} = await jiti.import("./MessageView.tsx");
+const { I18nProvider } = await jiti.import("@/hooks/useI18n");
+const { splitFinalAssistantBlocks } = await jiti.import("@/lib/message-display");
 
-function renderMessage(message) {
+function renderMessage(message, props = {}) {
   return renderToStaticMarkup(
     React.createElement(
       I18nProvider,
       null,
-      React.createElement(MessageView, { message }),
+      React.createElement(MessageView, { message, ...props }),
     ),
   );
 }
+
+test("updates a reused message when its written files change", () => {
+  const props = { message: { role: "assistant", content: [] } };
+  assert.equal(MessageView.compare(props, props), true);
+  assert.equal(MessageView.compare(props, { ...props, writtenFiles: [{ path: "/tmp/result.txt" }] }), false);
+});
+
+test("matches response model aliases and otherwise includes the provider", () => {
+  const names = {
+    "gateway:claude-sonnet-5": "Sonnet 5",
+    "custom-api:GLM-5.3": "GLM 5.3",
+  };
+
+  assert.equal(getModelDisplayName("gateway", "anthropic/claude-sonnet-5", names), "Sonnet 5");
+  assert.equal(getModelDisplayName("CUSTOM-API", "glm-5.3", names), "GLM 5.3");
+  assert.equal(getModelDisplayName("gateway", "unknown-model", names), "gateway/unknown-model");
+});
+
+test("previews the first thinking line and reveals the full text with the saved default", () => {
+  const previousWindow = globalThis.window;
+  try {
+    for (const expanded of [false, true]) {
+      globalThis.window = { localStorage: { getItem: () => String(expanded) } };
+      const html = renderToStaticMarkup(React.createElement(
+        I18nProvider,
+        null,
+        React.createElement(ThinkingBlock, {
+          block: { type: "thinking", thinking: "**Independent reasoning**\n\nDetailed second line." },
+          blockIndex: 2,
+          duration: 3,
+        }),
+      ));
+      assert.match(html, new RegExp(`aria-expanded="${expanded}"`));
+      assert.equal((html.match(/>[^<]*Independent reasoning[^<]*</g) ?? []).length, 1);
+      assert.equal(html.includes("Detailed second line."), expanded);
+      assert.match(html, /aria-label="Thinking: /);
+      assert.match(html, /3s/);
+    }
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
+});
+
+test("shows deferred thinking previews without loading the full content", () => {
+  const html = renderMessage({
+    role: "assistant",
+    content: [{ type: "thinking", thinking: "Historical first line", deferred: true }],
+  });
+  assert.match(html, />Historical first line<\/span>/);
+  assert.match(html, /aria-expanded="false"/);
+});
+
+test("marks only the matched text block after splitting thinking and the final answer", () => {
+  const message = {
+    role: "assistant",
+    content: [
+      { type: "thinking", thinking: "" },
+      { type: "thinking", thinking: "Thinking about the result" },
+      { type: "text", text: "Process text" },
+      { type: "toolCall", toolCallId: "read-1", toolName: "read", input: {} },
+      { type: "text", text: "First answer" },
+      { type: "text", text: "Matched pi-cwd-spark answer" },
+    ],
+  };
+  const { processBlocks, answerBlocks } = splitFinalAssistantBlocks(message);
+  for (const index of [2, 4, 5]) {
+    const searchBlock = message.content[index];
+    for (const content of [processBlocks, answerBlocks]) {
+      const html = renderMessage({ ...message, content }, { searchBlock });
+      assert.equal((html.match(/data-search-target="true"/g) ?? []).length, content.includes(searchBlock) ? 1 : 0);
+      if (content.includes(searchBlock)) {
+        assert.match(html, new RegExp(`data-search-target="true">(?:(?!data-message-text)[\\s\\S])*${searchBlock.text}`));
+      }
+    }
+  }
+});
+
+test("keeps streamed tool input out of collapsed markup while counting it", () => {
+  const block = {
+    type: "toolCall",
+    toolCallId: "call-write-1",
+    toolName: "write",
+    input: {},
+    rawInput: '{"path":"/tmp/file","content":"secret-stream-fragment',
+  };
+  const html = renderMessage({
+    role: "assistant",
+    provider: "anthropic",
+    model: "claude-test",
+    content: [block],
+  }, { isStreaming: true });
+
+  assert.match(html, /write/);
+  assert.match(html, /Generating parameters/);
+  assert.doesNotMatch(html, /secret-stream-fragment/);
+  assert.equal(getToolCallInputText(block), block.rawInput);
+  assert.equal(getTokenEstimateText(block), block.rawInput);
+});
+
+test("renders subagents as standard tool calls with only an extra session button", () => {
+  const block = {
+    type: "toolCall",
+    toolCallId: "call-agent-1",
+    toolName: "Agent",
+    input: {
+      subagent_type: "Explore",
+      prompt: "Find the parser",
+      description: "Find parser",
+    },
+  };
+  const result = {
+    role: "toolResult",
+    toolCallId: block.toolCallId,
+    content: [{ type: "text", text: "Parser is in lib/parser.ts" }],
+    details: {
+      kind: "pi-web-subagent",
+      sessionId: "child-session",
+      profile: "Explore",
+      description: "Find parser",
+      status: "completed",
+      runInBackground: false,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    },
+  };
+  const html = renderMessage({
+    role: "assistant",
+    provider: "anthropic",
+    model: "claude-test",
+    content: [block],
+  }, {
+    toolResults: new Map([[block.toolCallId, result]]),
+    onOpenSession() {},
+  });
+
+  assert.match(html, /data-status="ok"/);
+  assert.match(html, />Agent</);
+  assert.match(html, />Explore</);
+  assert.match(html, /aria-label="Open sub-agent session"/);
+  assert.doesNotMatch(html, />completed</);
+  assert.doesNotMatch(html, />Find parser</);
+
+  const ordinaryHtml = renderMessage({
+    role: "assistant",
+    provider: "anthropic",
+    model: "claude-test",
+    content: [{ ...block, toolCallId: "call-extension-1", toolName: "extension_tool" }],
+  }, {
+    toolResults: new Map(),
+    onOpenSession() {},
+  });
+  assert.doesNotMatch(ordinaryHtml, /Open sub-agent session/);
+});
 
 const COMPLETE_SKILL_EXPANSION = `<skill name="review" location="/skills/review/SKILL.md">
 References are relative to /skills/review.
@@ -76,6 +237,18 @@ test("renders a streaming assistant message with a transient empty block", () =>
   );
 
   assert.match(html, /Partial response/);
+});
+
+test("marks persisted assistant messages with their source entry", () => {
+  const html = renderMessage({
+    role: "assistant",
+    provider: "openai",
+    model: "gpt-test",
+    content: [{ type: "text", text: "Select this response" }],
+  }, { entryId: "assistant-entry" });
+
+  assert.match(html, /data-message-role="assistant"/);
+  assert.match(html, /data-entry-id="assistant-entry"/);
 });
 
 test("renders a complete SDK skill expansion as a compact command", () => {
@@ -149,4 +322,59 @@ test("process-only assistant messages hide the model label while answers keep it
   });
   assert.match(withAnswer, /message-assistant-model/);
   assert.match(withAnswer, /gpt-test/);
+});
+
+test("renders user-message images as buttons that open a larger preview", () => {
+  const html = renderMessage({
+    role: "user",
+    content: [
+      { type: "text", text: "inspect this" },
+      { type: "image", data: "YWJj", mimeType: "image/png" },
+    ],
+    timestamp: Date.now(),
+  });
+
+  assert.match(html, /<button[^>]+aria-label="(?:Preview|View) image"[^>]*>/);
+  assert.match(html, /<img[^>]+src="data:image\/png;base64,YWJj"/);
+});
+
+test("marks apply_patch returned failures as errors even when isError is unset", () => {
+  const block = {
+    type: "toolCall",
+    toolCallId: "call-patch-1",
+    toolName: "apply_patch",
+    input: {
+      input: "*** Begin Patch\n*** Update File: src/a.ts\n-old\n+new\n*** End Patch",
+    },
+  };
+  const failed = {
+    role: "toolResult",
+    toolCallId: block.toolCallId,
+    content: [{ type: "text", text: "apply_patch failed.\nRecovery: MUST read src/a.ts before retrying." }],
+    details: {
+      result: { appliedFiles: [], failures: [{ filePath: "src/a.ts", message: "context mismatch" }] },
+    },
+  };
+  const html = renderMessage({
+    role: "assistant",
+    provider: "openai",
+    model: "gpt-test",
+    content: [block],
+  }, { toolResults: new Map([[block.toolCallId, failed]]) });
+
+  assert.match(html, /data-status="error"/);
+  assert.match(html, />apply_patch</);
+  assert.doesNotMatch(html, /data-status="ok"/);
+});
+
+test("renders custom-message images as buttons that open a larger preview", () => {
+  const html = renderMessage({
+    role: "custom",
+    customType: "extension",
+    content: [{ type: "image", data: "YWJj", mimeType: "image/png" }],
+    timestamp: Date.now(),
+  });
+
+  assert.match(html, /<button[^>]+aria-label="(?:Preview|View) image"[^>]*>/);
+  assert.match(html, /<img[^>]+src="data:image\/png;base64,YWJj"/);
 });

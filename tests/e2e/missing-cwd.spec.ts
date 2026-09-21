@@ -40,7 +40,7 @@ test("deleted project folder: the + is disabled and the chat area explains why",
 
   // A bash command is enough to make pi record a session for this cwd.
   await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);
-  const composer = page.getByPlaceholder("Message…", { exact: false });
+  const composer = page.getByRole("textbox", { name: "Message", exact: true });
   await expect(composer).toBeVisible();
   await composer.fill(`!printf '%s\\n' ${marker}`);
   await composer.press("Enter");
@@ -76,7 +76,7 @@ test("deleted project folder: the + is disabled and the chat area explains why",
   await expect(page.getByText(cwd, { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Remove project" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Pick a new folder" })).toBeVisible();
-  await expect(page.getByPlaceholder("Message…", { exact: false })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveCount(0);
 
   // The whole point: no 403 leaking into the interface.
   await expect(page.getByText("Access denied")).toHaveCount(0);

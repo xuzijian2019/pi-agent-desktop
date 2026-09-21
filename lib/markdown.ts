@@ -1,7 +1,8 @@
-import type { Options as ReactMarkdownOptions } from "react-markdown";
+import { defaultUrlTransform, type Options as ReactMarkdownOptions } from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import remarkFrontmatter from "remark-frontmatter";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 
@@ -11,8 +12,27 @@ const markdownSanitizeSchema = {
     ...defaultSchema.attributes,
     code: [["className", /^language-./, "math-inline", "math-display"]],
   },
+  protocols: {
+    ...defaultSchema.protocols,
+    href: [...(defaultSchema.protocols?.href ?? []), "file"],
+  },
   strip: [...(defaultSchema.strip || []), "iframe", "object", "style", "form"],
 };
+
+export function markdownUrlTransform(value: string): string {
+  return /^file:/i.test(value) ? value : defaultUrlTransform(value);
+}
+
+const escapedInlineCodePattern = /(?<![\\`])`((?:[^`\n]|\\`)+?)(?<![\\`])`(?!`)/g;
+
+function rewriteEscapedInlineCodeBackticks(line: string): string {
+  return line.replace(escapedInlineCodePattern, (match, content: string) => {
+    const code = content.replace(/\\`/g, "`");
+    if (code === content) return match;
+    const marker = "`".repeat(Math.max(...(code.match(/`+/g)?.map((run) => run.length) ?? [0])) + 1);
+    return `${marker}${code}${marker}`;
+  });
+}
 
 export function normalizeDisplayMath(markdown: string): string {
   const lineBreak = markdown.includes("\r\n") ? "\r\n" : "\n";
@@ -24,7 +44,7 @@ export function normalizeDisplayMath(markdown: string): string {
   const unmatchedDisplayMathUntil = new Map<string, number>();
 
   for (let index = 0; index < lines.length; index++) {
-    const line = lines[index];
+    let line = lines[index];
 
     if (rawCodeTag) {
       normalized.push(line);
@@ -64,6 +84,8 @@ export function normalizeDisplayMath(markdown: string): string {
       continue;
     }
 
+    if (!inlineCodeMarkerSize) line = rewriteEscapedInlineCodeBackticks(line);
+
     if (inlineCodeMarkerSize || line.includes("`")) {
       inlineCodeMarkerSize = updateInlineCodeMarker(line, inlineCodeMarkerSize);
       normalized.push(line);
@@ -83,6 +105,19 @@ export function normalizeDisplayMath(markdown: string): string {
           `${bracketDisplayOneLine[1]}$$`,
           `${bracketDisplayOneLine[1]}${math}`,
           `${bracketDisplayOneLine[1]}$$`,
+        );
+        continue;
+      }
+    }
+
+    const looseBracketDisplayOneLine = line.match(/^([ ]{0,3})\[[ \t]*(.+?)[ \t]*\][ \t]*$/);
+    if (looseBracketDisplayOneLine) {
+      const math = looseBracketDisplayOneLine[2].trim();
+      if (isLikelyMathExpression(math)) {
+        normalized.push(
+          `${looseBracketDisplayOneLine[1]}$$`,
+          `${looseBracketDisplayOneLine[1]}${math}`,
+          `${looseBracketDisplayOneLine[1]}$$`,
         );
         continue;
       }
@@ -314,6 +349,10 @@ function normalizeInlineLatexMath(line: string): string {
   );
 }
 
+function isLikelyMathExpression(value: string): boolean {
+  return /\\[A-Za-z]+/.test(value) && !/\b(?:https?|file|mailto):|\b[A-Za-z]:\\|^\\\\/i.test(value);
+}
+
 /**
  * GFM autolink literals greedily include non-ASCII characters (e.g. CJK) as part of a URL,
  * so `https://foo.com/x中文` becomes one giant link. Split trailing non-ASCII runs back out
@@ -356,8 +395,26 @@ function remarkTrimAutolinkTrailingUnicode() {
   };
 }
 
-export const markdownRemarkPlugins: ReactMarkdownOptions["remarkPlugins"] = [remarkGfm, remarkMath, remarkTrimAutolinkTrailingUnicode];
-export const markdownPreviewRemarkPlugins: ReactMarkdownOptions["remarkPlugins"] = [remarkGfm, remarkMath, remarkTrimAutolinkTrailingUnicode];
+// Parse YAML frontmatter into a `yaml` node before the math/GFM plugins run, so
+// the raw metadata never leaks into the rendered output (without it, the opening
+// `---` becomes an <hr> and the closing `---` turns the YAML into a setext heading).
+// singleTilde:false requires ~~double~~ tildes for strikethrough. A single `~`
+// is the standard CJK numeric-range separator (e.g. "5~7U", "100~200倍"), and
+// GFM's default single-tilde strikethrough silently mangled such ranges (#385).
+const remarkGfmOptions = { singleTilde: false } as const;
+
+export const markdownRemarkPlugins: ReactMarkdownOptions["remarkPlugins"] = [
+  [remarkFrontmatter, ["yaml"]],
+  [remarkGfm, remarkGfmOptions],
+  remarkMath,
+  remarkTrimAutolinkTrailingUnicode,
+];
+export const markdownPreviewRemarkPlugins: ReactMarkdownOptions["remarkPlugins"] = [
+  [remarkFrontmatter, ["yaml"]],
+  [remarkGfm, remarkGfmOptions],
+  remarkMath,
+  remarkTrimAutolinkTrailingUnicode,
+];
 
 export const markdownRehypePlugins: ReactMarkdownOptions["rehypePlugins"] = [
   rehypeRaw,

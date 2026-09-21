@@ -1,3 +1,4 @@
+import { registerEventStreamCloser } from "@/lib/agent-event-stream";
 import { activitySnapshot, subscribeActivity } from "@/lib/activity";
 export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
@@ -9,7 +10,8 @@ export async function GET(req: Request) {
       const send = () => { if (!closed) { try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(activitySnapshot())}\n\n`)); } catch { cleanup(); } } };
       const unsubscribe = subscribeActivity(send);
       const timer = setInterval(() => { if (!closed) { try { controller.enqueue(encoder.encode(": heartbeat\n\n")); } catch { cleanup(); } } }, 15000);
-      cleanup = () => { if (closed) return; closed = true; unsubscribe(); clearInterval(timer); req.signal.removeEventListener("abort", cleanup); try { controller.close(); } catch {} };
+      const unregisterClose = registerEventStreamCloser(() => cleanup());
+      cleanup = () => { if (closed) return; closed = true; unregisterClose(); unsubscribe(); clearInterval(timer); req.signal.removeEventListener("abort", cleanup); try { controller.close(); } catch {} };
       req.signal.addEventListener("abort", cleanup);
       if (req.signal.aborted) cleanup(); else send();
     }, cancel() { cleanup(); },

@@ -1,9 +1,9 @@
 "use client";
 import { createContext, useContext, useState } from "react";
 export const TranscriptReveal = createContext(false);
-export function useTranscriptExpansion(): [boolean, React.Dispatch<React.SetStateAction<boolean>>] {
+export function useTranscriptExpansion(defaultExpanded = false): [boolean, React.Dispatch<React.SetStateAction<boolean>>] {
   const reveal = useContext(TranscriptReveal);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   return [reveal || expanded, setExpanded];
 }
 export function HighlightedSnippet({ text, query }: { text: string; query: string }) {

@@ -29,7 +29,7 @@ export function resolveInitialNavigation(
   const fromUrl = getInitialNavigation(searchParams);
   if (fromUrl.sessionId || fromUrl.requestedCwd) return fromUrl;
   if (workspace?.sessionId) {
-    return { requestedCwd: null, sessionId: workspace.sessionId };
+    return { requestedCwd: null, sessionId: workspace.sessionId, sidebarCollapsed: false };
   }
   return fromUrl;
 }

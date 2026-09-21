@@ -7,25 +7,10 @@ import type { BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, Slas
 import type { SkillsResponse } from "@/lib/api-types";
 import type { ModelScopeWarning } from "@/lib/model-scope-warnings";
 import type { TextContent, UserMessage } from "@/lib/types";
-import { clearDraft, getDraft, setDraft, loadDraft, subscribeDrafts, getDraftStatus, retryDraft, type ChatDraftImage } from "@/lib/draft-store";
-import {
-  buildPasteToken,
-  normalizePastedText,
-  shouldChipPastedText,
-  splicePastedTexts,
-  type ChatDraftText,
-  type PastedTextChip,
-} from "@/lib/pasted-text";
-import {
-  MAX_ATTACHED_IMAGE_BYTES,
-  MAX_ATTACHED_IMAGES,
-  isBase64ImageWithinLimits,
-} from "@/lib/image-attachments";
-import {
-  buildEntriesFromFiles, buildAtInsertText, buildSessionMentionText, extractAtQuery, extractHashQuery,
-  filterFileEntries, filterSessionEntries,
-  type AtQueryMatch, type FileIndexEntry, type HashQueryMatch, type SessionMentionEntry,
-} from "@/lib/file-fuzzy";
+import { mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft as rekeyStoredDraft, clearDraft, getDraft, setDraft, loadDraft, subscribeDrafts, getDraftStatus, retryDraft, type ChatDraftImage } from "@/lib/draft-store";
+import { buildPasteToken, normalizePastedText, shouldChipPastedText, splicePastedTexts, type ChatDraftText, type PastedTextChip } from "@/lib/pasted-text";
+import { MAX_ATTACHED_IMAGE_BYTES, MAX_ATTACHED_IMAGES, isBase64ImageWithinLimits } from "@/lib/image-attachments";
+import { buildEntriesFromFiles, buildAtInsertText, buildSessionMentionText, extractAtQuery, extractHashQuery, filterFileEntries, filterSessionEntries, type AtQueryMatch, type FileIndexEntry, type HashQueryMatch, type SessionMentionEntry } from "@/lib/file-fuzzy";
 import { prepareOutgoingMessage, type PreparedOutgoing, type ReferenceSelection } from "@/lib/prepare-outgoing";
 import type { ChatDraft } from "@/lib/draft-store";
 import type { TaskSetup } from "@/lib/task-types";
@@ -34,23 +19,23 @@ import { selectableThinkingLevels } from "@/lib/thinking-level-options";
 import { ImageLightbox } from "./ImageLightbox";
 import type { SessionInfo } from "@/lib/types";
 import { FolderIcon, getFileIcon } from "./FileIcons";
+
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
+
 import type { ExtensionStatusItem } from "@/lib/types";
 import type { ContextUsage, SessionStatsInfo } from "@/lib/pi-types";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { ContextUsageRing } from "./ContextUsageRing";
+import { useChatAppearance } from "@/hooks/useChatAppearance";
+import type { ToolPreset } from "@/lib/tool-presets";
+
+
 
 export interface AttachedImage {
   data: string;   // base64, no prefix
   mimeType: string;
   previewUrl: string; // object URL for display
-}
-
-interface ModelOption {
-  provider: string;
-  modelId: string;
-  name: string;
 }
 
 interface Props {
@@ -65,10 +50,12 @@ interface Props {
   onFollowUp?: (message: string, images?: AttachedImage[]) => void;
   onPromptWithStreamingBehavior?: (message: string, behavior: "steer" | "followUp", images?: AttachedImage[]) => void;
   isStreaming: boolean;
+  /** Text-only composer without the session controls or outer spacing. */
+  compact?: boolean;
   model?: { provider: string; modelId: string } | null;
   isAutoModelSelection?: boolean;
   modelNames?: Record<string, string>;
-  modelList?: { id: string; name: string; provider: string }[];
+  modelList?: { id: string; name: string; provider: string; input?: string[] }[];
   modelError?: string | null;
   /** Diagnostics from resolving `enabledModels`, e.g. a pattern that matched nothing. */
   modelScopeWarnings?: ModelScopeWarning[];
@@ -77,11 +64,17 @@ interface Props {
   /** Open the provider/auth configuration modal (offered for unauthenticated-provider warnings). */
   onOpenModelsConfig?: () => void;
   onModelChange?: (provider: string, modelId: string) => void;
+  modelSwitching?: boolean;
+  onCompact?: () => void;
+  onAbortCompaction?: () => void;
+  isCompacting?: boolean;
   compactError?: string | null;
   compactResult?: CompactResultInfo | null;
-  toolPreset?: "none" | "default" | "full";
-  onToolPresetChange?: (preset: "none" | "default" | "full") => void;
+  toolPreset?: ToolPreset;
+  onToolPresetChange?: (preset: ToolPreset) => void;
   thinkingLevel?: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+  /** New session has not committed a thinking level; the button still shows the resolved default. */
+  isAutoThinkingSelection?: boolean;
   onThinkingLevelChange?: (level: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max") => void;
   availableThinkingLevels?: string[] | null;
   thinkingLevelMap?: Record<string, string | null> | null;
@@ -124,11 +117,78 @@ export interface ChatInputHandle {
   prependText: (text: string) => void;
   addImages: (files: File[]) => void;
   focus: () => void;
+  rekeyDraft: (previousKey: string, nextKey: string) => void;
+  restoreSubmission: (text: string, images?: ChatDraftImage[], targetDraftKey?: string) => void;
 }
 
-const TOOL_PRESETS = ["off", "default", "full"] as const;
-const TOOL_PRESET_MAP: Record<"off" | "default" | "full", "none" | "default" | "full"> = { off: "none", default: "default", full: "full" };
+const TOOL_PRESETS = ["chat-only", "read-only", "default", "full"] as const;
+type ToolPresetLabel = typeof TOOL_PRESETS[number];
+const TOOL_PRESET_MAP: Record<ToolPresetLabel, ToolPreset> = {
+  "chat-only": "none",
+  "read-only": "read-only",
+  default: "default",
+  full: "full",
+};
 const COMPOSITION_END_ENTER_GRACE_MS = 100;
+const TEXT_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+const ANCHORED_MENU_GAP = 8;
+
+export function getUpwardMenuMaxHeight(menuBottom: number, visibleTop: number, gap = ANCHORED_MENU_GAP): number {
+  return Math.max(0, Math.floor(menuBottom - visibleTop - gap));
+}
+
+export function cycleListIndex(index: number, length: number, delta: number): number {
+  if (length <= 0) return 0;
+  return ((index + delta) % length + length) % length;
+}
+
+export function replaceLinksWithMarkdown(
+  text: string,
+  links: Iterable<{ label: string; href: string; occurrence: number }>,
+): string | null {
+  let result = "";
+  let searchFrom = 0;
+  let replaced = false;
+
+  for (const { label, href, occurrence } of links) {
+    if (!label || !href) continue;
+    let index = 0;
+    for (let match = 0; match <= occurrence; match++) {
+      index = text.indexOf(label, match ? index + label.length : 0);
+      if (index < 0) break;
+    }
+    if (index < searchFrom) continue;
+    const escapedLabel = label.replace(/([\\[\]])/g, "\\$1");
+    const escapedHref = href.replace(/([\\()])/g, "\\$1");
+    result += `${text.slice(searchFrom, index)}[${escapedLabel}](${escapedHref})`;
+    searchFrom = index + label.length;
+    replaced = true;
+  }
+
+  return replaced ? result + text.slice(searchFrom) : null;
+}
+
+function getVisibleTopBoundary(element: HTMLElement): number {
+  let visibleTop = window.visualViewport?.offsetTop ?? 0;
+
+  for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+    const overflowY = window.getComputedStyle(parent).overflowY;
+    if (overflowY === "auto" || overflowY === "scroll" || overflowY === "hidden" || overflowY === "clip") {
+      visibleTop = Math.max(visibleTop, parent.getBoundingClientRect().top + parent.clientTop);
+    }
+  }
+
+  return visibleTop;
+}
+
+type ComposerTier = "normal" | "compact" | "narrow";
+
+interface ModelOption {
+  provider: string;
+  modelId: string;
+  name: string;
+}
+
 const MODEL_FILTER_THRESHOLD = 8;
 const MODEL_OPTION_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
@@ -149,7 +209,46 @@ export function filterModelOptions(options: ModelOption[], query: string): Model
   ));
 }
 
-type ComposerTier = "normal" | "compact" | "narrow";
+function subscribeUpwardMenuMaxHeight(
+  menu: HTMLElement,
+  onChange: (height: number) => void,
+): () => void {
+  let frameId: number | null = null;
+  const update = () => {
+    frameId = null;
+    onChange(getUpwardMenuMaxHeight(
+      menu.getBoundingClientRect().bottom,
+      getVisibleTopBoundary(menu),
+    ));
+  };
+  const scheduleUpdate = () => {
+    if (frameId !== null) cancelAnimationFrame(frameId);
+    frameId = requestAnimationFrame(update);
+  };
+
+  update();
+  const parent = menu.parentElement;
+  const layoutContainer = parent?.parentElement;
+  const anchorObserver = typeof ResizeObserver === "undefined" || !parent
+    ? null
+    : new ResizeObserver(scheduleUpdate);
+  if (parent) anchorObserver?.observe(parent);
+  if (layoutContainer) anchorObserver?.observe(layoutContainer);
+  const viewport = window.visualViewport;
+  viewport?.addEventListener("resize", scheduleUpdate);
+  viewport?.addEventListener("scroll", scheduleUpdate);
+  window.addEventListener("resize", scheduleUpdate);
+  window.addEventListener("scroll", scheduleUpdate, true);
+
+  return () => {
+    anchorObserver?.disconnect();
+    viewport?.removeEventListener("resize", scheduleUpdate);
+    viewport?.removeEventListener("scroll", scheduleUpdate);
+    window.removeEventListener("resize", scheduleUpdate);
+    window.removeEventListener("scroll", scheduleUpdate, true);
+    if (frameId !== null) cancelAnimationFrame(frameId);
+  };
+}
 
 const THINKING_LEVELS = ["auto", "off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 const THINKING_LEVEL_DESC_KEYS: Record<typeof THINKING_LEVELS[number], string> = {
@@ -169,15 +268,37 @@ function formatTokenCount(tokens: number): string {
   return tokens.toLocaleString();
 }
 
-type SlashCommandPaletteItem = SlashCommandInfo | {
+type BuiltinSlashCommand = {
   name: string;
   description: string;
   source: "builtin";
+  availableWhileStreaming?: boolean;
 };
+
+type SlashCommandPaletteItem = SlashCommandInfo | BuiltinSlashCommand;
 
 type SlashCommandSource = SlashCommandPaletteItem["source"];
 
-const BUILTIN_SLASH_COMMANDS: SlashCommandPaletteItem[] = WEB_SLASH_COMMANDS;
+const BUILTIN_SLASH_COMMANDS: SlashCommandPaletteItem[] = WEB_SLASH_COMMANDS.map(command => ({ ...command, availableWhileStreaming: !command.idle }));
+
+function getBuiltinSlashCommand(message: string): SlashCommandPaletteItem | undefined {
+  const match = message.trim().match(/^\/([^\s]+)(?:\s|$)/);
+  if (!match) return undefined;
+  return BUILTIN_SLASH_COMMANDS.find((command) => command.name === match[1]);
+}
+
+export function canRunBuiltinSlashCommandWhileStreaming(message: string): boolean {
+  const command = getBuiltinSlashCommand(message);
+  return command?.source === "builtin" && command.availableWhileStreaming === true;
+}
+
+export function isExactSlashCommand(message: string, command: SlashCommandPaletteItem): boolean {
+  return command.source === "builtin" && message.trim() === `/${command.name}`;
+}
+
+export function canClearBuiltinCommandInput(message: string, imageCount: number, submittedMessage: string): boolean {
+  return imageCount === 0 && message.trim() === submittedMessage;
+}
 
 const SLASH_SOURCES: SlashCommandSource[] = ["builtin", "extension", "prompt", "skill"];
 
@@ -241,6 +362,58 @@ export function buildSlashCommandLayout(
     commands: groups.flatMap((group) => group.items.map(({ command }) => command)),
     groups,
   };
+}
+
+const CLIENT_IMAGE_COMPRESSION_THRESHOLD_BYTES = 1024 * 1024;
+const CLIENT_MAX_IMAGE_SIDE = 1024;
+const CLIENT_JPEG_QUALITY = 0.85;
+
+export function shouldCompressImageFile(file: Pick<File, "size" | "type">): boolean {
+  return file.size > CLIENT_IMAGE_COMPRESSION_THRESHOLD_BYTES && file.type !== "image/gif";
+}
+
+function readImageFile(file: Blob, mimeType: string): Promise<{ data: string; mimeType: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const data = typeof reader.result === "string" ? reader.result.split(",")[1] : undefined;
+      if (!data) {
+        reject(new Error("Failed to read image"));
+        return;
+      }
+      resolve({ data, mimeType });
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+export async function compressImageFile(file: File): Promise<{ data: string; mimeType: string }> {
+  const original = () => readImageFile(file, file.type);
+  if (!shouldCompressImageFile(file) || typeof createImageBitmap !== "function") return original();
+
+  const bitmap = await createImageBitmap(file).catch(() => null);
+  if (!bitmap) return original();
+
+  try {
+    const scale = Math.min(1, CLIENT_MAX_IMAGE_SIDE / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return original();
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const data = canvas.toDataURL("image/jpeg", CLIENT_JPEG_QUALITY).split(",")[1];
+    return data && data.length < Math.ceil(file.size / 3) * 4
+      ? { data, mimeType: "image/jpeg" }
+      : original();
+  } catch {
+    return original();
+  } finally {
+    bitmap.close();
+  }
 }
 
 function imageToDraftImage(image: AttachedImage): ChatDraftImage {
@@ -381,6 +554,7 @@ function ModelNoticeBanner({
         </div>
         <div className="composer-notice-body">{body}</div>
       </div>
+
     </div>
   );
 }
@@ -391,11 +565,18 @@ export function ModelErrorBanner({ error }: { error?: string | null }) {
   return <ModelNoticeBanner tone="error" title={t("chat.modelError")} body={error} />;
 }
 
-/**
- * Surfaces `enabledModels` patterns that matched nothing (#307) and patterns
- * whose provider has no usable credentials (#48), with an in-conversation
- * dismiss so a stale warning never becomes permanent wallpaper.
- */
+/** True when the selected model is known to accept image input (#584). Unknown modality info never blocks the user. */
+export function modelSupportsImageInput(
+  model: { provider: string; modelId: string } | null | undefined,
+  modelList: { id: string; name: string; provider: string; input?: string[] }[] | undefined
+): boolean {
+  if (!model) return true;
+  const entry = modelList?.find((m) => m.provider === model.provider && m.id === model.modelId);
+  if (!entry || !entry.input) return true;
+  return entry.input.includes("image");
+}
+
+/** Surfaces `enabledModels` patterns that matched nothing, so a typo is visible (#307). */
 export function ModelScopeWarningBanner({
   warnings,
   onDismiss,
@@ -459,9 +640,9 @@ function DraftSavingIndicator({ loading }: { loading: boolean }) {
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
-  onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange,
+  onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange, modelSwitching,
   compactError, compactResult, toolPreset, onToolPresetChange,
-  thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
+  thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo, queuedMessages, inputHistory = [], onRecallQueue,
   slashCommands, slashCommandsLoading, onLoadSlashCommands,
   onBuiltinCommand, onViewCommand,
@@ -477,8 +658,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   contextUsage,
   sessionStats,
   showInputHints, onSetupChange, onBranchNavigate,
+  compact = false,
 }: Props, ref) {
   const { t } = useI18n();
+  const { fontSize } = useChatAppearance();
   const isMobile = useIsMobile();
   const slashListId = useId();
   const [slashMaxHeight, setSlashMaxHeight] = useState(300);
@@ -543,12 +726,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [slashActiveIndex, setSlashActiveIndex] = useState(0);
   const [atQuery, setAtQuery] = useState<AtQueryMatch | null>(null);
   const [atMenuOpen, setAtMenuOpen] = useState(false);
+  const [atMenuMaxHeight, setAtMenuMaxHeight] = useState<number | null>(null);
   const [atActiveIndex, setAtActiveIndex] = useState(0);
   const [hashQuery, setHashQuery] = useState<HashQueryMatch | null>(null);
   const [hashMenuOpen, setHashMenuOpen] = useState(false);
   const [hashActiveIndex, setHashActiveIndex] = useState(0);
+  const [imageWarningDismissed, setImageWarningDismissed] = useState(false);
   const [historyMenuOpen, setHistoryMenuOpen] = useState(false);
   const [historyActiveIndex, setHistoryActiveIndex] = useState(0);
+  const [builtinCommandPending, setBuiltinCommandPending] = useState(false);
+  const builtinCommandPendingRef = useRef(false);
   const [fileIndex, setFileIndex] = useState<{ cwd: string; entries: FileIndexEntry[]; truncated: boolean } | null>(null);
   const [fileIndexLoading, setFileIndexLoading] = useState(false);
   const [atServerResult, setAtServerResult] = useState<{ cwd: string; query: string; matches: FileIndexEntry[] } | null>(null);
@@ -572,7 +759,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const isComposingRef = useRef(false);
   const lastCompositionEndAtRef = useRef(0);
   const slashCommandsRequestedRef = useRef(false);
+  const slashMenuRef = useRef<HTMLDivElement>(null);
   const slashItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const atMenuRef = useRef<HTMLDivElement>(null);
   const atItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const hashItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const historyItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -616,6 +805,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       const ta = textareaRef.current;
       const current = ta ? ta.value : value;
       if (current.trim()) return;
+      valueRef.current = text;
       setValue(text);
       setAtQuery(null);
       setHashQuery(null);
@@ -631,13 +821,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       const current = ta ? ta.value : value;
       if (!canRestoreUserMessage(current, attachedImagesRef.current.length, pendingImageCountRef.current)) return;
 
-      setValue(getUserMessageText(message));
+      const restoredText = getUserMessageText(message);
+      const restoredImages = draftImagesToAttachedImages(getUserMessageDraftImages(message));
+      valueRef.current = restoredText;
+      attachedImagesRef.current = restoredImages;
+      setValue(restoredText);
       setAtQuery(null);
       setHashQuery(null);
       setHistoryMenuOpen(false);
       setAttachedImages((prev) => {
         prev.forEach(revokeImagePreview);
-        return draftImagesToAttachedImages(getUserMessageDraftImages(message));
+        return restoredImages;
       });
       requestAnimationFrame(() => {
         if (!ta) return;
@@ -653,6 +847,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       // Mirrors the TUI's queue restore: queued text first, then whatever
       // the user already typed, separated by a blank line.
       const combined = [text, current].filter((t) => t.trim()).join("\n\n");
+      valueRef.current = combined;
       setValue(combined);
       setAtQuery(null);
       setHashQuery(null);
@@ -660,6 +855,102 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         if (!ta) return;
         ta.focus();
         ta.setSelectionRange(combined.length, combined.length);
+        ta.style.height = "auto";
+        ta.style.height = `${ta.scrollHeight}px`;
+      });
+    },
+    rekeyDraft(previousKey: string, nextKey: string) {
+      if (previousKey === nextKey) return;
+      if (draftKeyRef.current !== previousKey) {
+        rekeyStoredDraft(previousKey, nextKey);
+        return;
+      }
+
+      const currentDraft = {
+        value: valueRef.current,
+        images: attachedImagesRef.current.map(imageToDraftImage),
+      };
+      const moved = rekeyStoredDraft(previousKey, nextKey, currentDraft) ?? { value: "", images: [] };
+      const unchanged = moved.value === currentDraft.value
+        && moved.images.length === currentDraft.images.length
+        && moved.images.every((image, index) => (
+          image.data === currentDraft.images[index]?.data
+          && image.mimeType === currentDraft.images[index]?.mimeType
+        ));
+      draftKeyRef.current = nextKey;
+      if (unchanged) return;
+
+      const movedImages = draftImagesToAttachedImages(moved.images);
+      valueRef.current = moved.value;
+      attachedImagesRef.current = movedImages;
+      setValue(moved.value);
+      setAttachedImages((current) => {
+        current.forEach(revokeImagePreview);
+        return movedImages;
+      });
+      setAtQuery(null);
+      setHistoryMenuOpen(false);
+    },
+    restoreSubmission(text: string, images?: ChatDraftImage[], targetDraftKey?: string) {
+      if (!text.trim() && !images?.length) return;
+
+      // clearInput is queued before the submission handler runs. Compose with
+      // that queued state so a fast rejection cannot observe stale DOM text and
+      // then get overwritten by the clear.
+      const currentDraftKey = draftKeyRef.current;
+      const destinationDraftKey = targetDraftKey ?? currentDraftKey;
+      const targetsCurrentComposer = destinationDraftKey === currentDraftKey;
+      const storedDraft = !targetsCurrentComposer && destinationDraftKey
+        ? getDraft(destinationDraftKey)
+        : null;
+      const restoredDraft = mergeRestoredSubmissionDraft(
+        text,
+        images,
+        targetsCurrentComposer ? valueRef.current : (storedDraft?.value ?? ""),
+        targetsCurrentComposer
+          ? attachedImagesRef.current.map(imageToDraftImage)
+          : (storedDraft?.images ?? []),
+      );
+      // The first optimistic message switches ChatWindow out of its empty-state
+      // layout and remounts this component. Persist synchronously so recovery is
+      // not lost if this instance is the one being unmounted.
+      if (destinationDraftKey) setDraft(destinationDraftKey, restoredDraft);
+      if (!targetsCurrentComposer) return;
+      const restoredImages = images?.length
+        ? [
+            ...draftImagesToAttachedImages(images).slice(
+              0,
+              Math.max(0, MAX_ATTACHED_IMAGES - attachedImagesRef.current.length),
+            ),
+            ...attachedImagesRef.current,
+          ].slice(0, MAX_ATTACHED_IMAGES)
+        : attachedImagesRef.current;
+      // Session promotion can rekey this composer before React flushes the
+      // functional updates below, so update the imperative snapshot first.
+      valueRef.current = restoredDraft.value;
+      attachedImagesRef.current = restoredImages;
+      setValue((current) => {
+        const restored = mergeRestoredSubmissionText(text, current);
+        valueRef.current = restored;
+        return restored;
+      });
+      setAtQuery(null);
+      setHistoryMenuOpen(false);
+      if (images?.length) {
+        setAttachedImages((current) => {
+          const available = Math.max(0, MAX_ATTACHED_IMAGES - current.length);
+          const restored = draftImagesToAttachedImages(images)
+            .slice(0, available);
+          const next = restored.length > 0 ? [...restored, ...current] : current;
+          attachedImagesRef.current = next;
+          return next;
+        });
+      }
+      requestAnimationFrame(() => {
+        const ta = textareaRef.current;
+        if (!ta) return;
+        ta.focus();
+        ta.setSelectionRange(ta.value.length, ta.value.length);
         ta.style.height = "auto";
         ta.style.height = `${ta.scrollHeight}px`;
       });
@@ -676,6 +967,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       const after = ta.value.slice(end);
       const sep = before.length > 0 && !before.endsWith(" ") ? " " : "";
       const newVal = before + sep + text + after;
+      valueRef.current = newVal;
       setValue(newVal);
       setAtQuery(null);
       setHashQuery(null);
@@ -716,7 +1008,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, []);
 
   const processImageFiles = useCallback(async (files: File[]) => {
-    if (isStreaming) return;
+    if (compact) return;
     const remaining = Math.max(
       0,
       MAX_ATTACHED_IMAGES - attachedImagesRef.current.length - pendingImageCountRef.current,
@@ -728,37 +1020,29 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     pendingImageCountRef.current += imageFiles.length;
     try {
       const newImages = await Promise.all(
-        imageFiles.map(
-          (file) =>
-            new Promise<AttachedImage>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => {
-                const result = reader.result as string;
-                // result is "data:<mime>;base64,<data>"
-                const base64 = result.split(",")[1];
-                resolve({ data: base64, mimeType: file.type, previewUrl: URL.createObjectURL(file) });
-              };
-              reader.onerror = reject;
-              reader.readAsDataURL(file);
-            })
-        )
+        imageFiles.map(async (file) => ({
+          ...await compressImageFile(file),
+          previewUrl: URL.createObjectURL(file),
+        }))
       );
       appendAttachedImages(newImages);
     } finally {
       pendingImageCountRef.current -= imageFiles.length;
     }
-  }, [appendAttachedImages, isStreaming]);
+  }, [compact]);
 
   const removeImage = useCallback((index: number) => {
     setAttachedImages((prev) => {
       const next = [...prev];
       const [removed] = next.splice(index, 1);
       if (removed) revokeImagePreview(removed);
+      attachedImagesRef.current = next;
       return next;
     });
   }, []);
 
   const clearImages = useCallback(() => {
+    attachedImagesRef.current = [];
     setAttachedImages((prev) => {
       prev.forEach(revokeImagePreview);
       return [];
@@ -802,6 +1086,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, []);
 
   const clearInput = useCallback(() => {
+    valueRef.current = "";
     setValue("");
     setAtQuery(null);
     setHashQuery(null);
@@ -888,11 +1173,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, []);
 
   const dispatchBuiltin = useCallback(async (msg: string): Promise<boolean> => {
+    if (builtinCommandPendingRef.current) return true;
     const command = parseWebSlashCommand(msg);
     if (!command) return false;
     const original = JSON.stringify(snapshotRef.current());
     const key = draftKeyRef.current;
     setPreparationError("");
+    builtinCommandPendingRef.current = true;
+    setBuiltinCommandPending(true);
     try {
       if (attachedImages.length) throw new Error(t("chat.commandTextOnly"));
       if (command.idle && isStreaming) throw new Error(t("chat.commandWait"));
@@ -918,7 +1206,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           setDraftSetup(previous => previous ? { ...previous, effort: level } : previous);
           onThinkingLevelChange(level);
         } else { setThinkingDropdownOpen(true); setControlsMenuOpen(true); setModelDropdownOpen(false); }
-      } else if (["compact", "reload", "name", "session", "copy", "side", "btw", "recap"].includes(command.name)) {
+      } else if (["compact", "reload", "name", "session", "copy", "clone", "side", "btw", "recap"].includes(command.name)) {
         const result = await onBuiltinCommand?.(`/${command.name}${command.argument ? ` ${command.argument}` : ""}`);
         if (!result?.handled) throw new Error(t("chat.commandUnavailable"));
         if (result.error) throw new Error(result.error);
@@ -932,6 +1220,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     } catch (error) {
       if (draftKeyRef.current === key) setPreparationError(error instanceof Error ? error.message : String(error));
     }
+    finally { builtinCommandPendingRef.current = false; setBuiltinCommandPending(false); }
     return true;
   }, [attachedImages.length, isStreaming, onModelChange, modelList, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap, onBuiltinCommand, onViewCommand, clearInput, t]);
 
@@ -960,7 +1249,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     } catch (e) { setPreparationError(String(e)); } finally { preparingRef.current = false; }
   }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, isStreaming, onBuiltinCommand, onSend, clearInput, prepare, dispatchBuiltin]);
 
-  const slashQuery = value.startsWith("/") && !/\s/.test(value.slice(1))
+  const slashQuery = !compact && value.startsWith("/") && !/\s/.test(value.slice(1))
     ? value.slice(1).toLowerCase()
     : null;
 
@@ -977,7 +1266,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         const rankDelta = slashMatchRank(a, slashQuery, t) - slashMatchRank(b, slashQuery, t);
         if (rankDelta !== 0) return rankDelta;
         return SLASH_SOURCE_ORDER[a.source] - SLASH_SOURCE_ORDER[b.source]
-          || MODEL_OPTION_COLLATOR.compare(a.name, b.name);
+          || TEXT_COLLATOR.compare(a.name, b.name);
       });
   })();
 
@@ -990,7 +1279,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     ? t(slashQuery ? "chat.match" : "chat.command")
     : t(slashQuery ? "chat.matches" : "chat.commands", { count: filteredSlashCommands.length });
   const hasInputText = Boolean(value.trim());
-  const canQueueStreamingMessage = hasInputText && attachedImages.length === 0;
+  const canQueueStreamingMessage = hasInputText || attachedImages.length > 0;
+  // Warn when images are attached but the selected model is known not to accept
+  // image input (#584), including a resolved default. Unknown models stay silent.
+  const showImageUnsupportedWarning = (
+    attachedImages.length > 0
+    && !modelSupportsImageInput(model, modelList)
+    && !imageWarningDismissed
+  );
+  useEffect(() => {
+    if (attachedImages.length === 0) setImageWarningDismissed(false);
+  }, [attachedImages.length]);
 
   // ── @ file autocomplete ──────────────────────────────────────────────────
   // Recomputed from the text before the caret on every change/caret move.
@@ -1298,17 +1597,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       if (JSON.stringify(snapshotRef.current()) === original) clearInput();
     } catch (e) { setPreparationError(String(e)); } finally { preparingRef.current = false; }
   }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput, prepare, dispatchBuiltin]);
-
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
       const nativeEvent = e.nativeEvent;
+      const sendShortcut = e.key === "Enter" && !e.shiftKey;
       const recentlyComposed = Date.now() - lastCompositionEndAtRef.current < COMPOSITION_END_ENTER_GRACE_MS;
       const isComposing =
         isComposingRef.current ||
         nativeEvent.isComposing ||
         nativeEvent.keyCode === 229;
 
-      if (e.key === "Enter" && !e.shiftKey && (isComposing || recentlyComposed)) {
+      if (sendShortcut && (isComposing || recentlyComposed)) {
         if (recentlyComposed) e.preventDefault();
         return;
       }
@@ -1329,7 +1628,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           setHistoryMenuOpen(false);
           return;
         }
-        if ((e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) && inputHistory[historyActiveIndex]) {
+        if ((e.key === "Tab" || sendShortcut) && inputHistory[historyActiveIndex]) {
           e.preventDefault();
           applyHistoryInput(inputHistory[historyActiveIndex]);
           return;
@@ -1352,11 +1651,21 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           setSlashMenuOpen(false);
           return;
         }
-        if ((e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) && displayedSlashCommands[slashActiveIndex]) {
+        const selectedCommand = displayedSlashCommands[slashActiveIndex];
+        if (e.key === "Tab" && selectedCommand) {
           e.preventDefault();
-          applySlashCommand(displayedSlashCommands[slashActiveIndex], e.key === "Enter");
+          applySlashCommand(selectedCommand, false);
           return;
         }
+      }
+
+      if (slashMenuOpen && slashQuery !== null && !isComposing && sendShortcut && displayedSlashCommands[slashActiveIndex]) {
+        e.preventDefault();
+        const command = displayedSlashCommands[slashActiveIndex];
+        if (isExactSlashCommand(value, command) && (!isStreaming || (command.source === "builtin" && command.availableWhileStreaming))) {
+          setSlashMenuOpen(false); void handleSend();
+        } else applySlashCommand(command, true);
+        return;
       }
 
       // @ file menu — skip while composing so IME candidate navigation
@@ -1387,12 +1696,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       if (atMenuOpen && atQuery !== null && !isComposing) {
         if (e.key === "ArrowDown") {
           e.preventDefault();
-          setAtActiveIndex((i) => Math.min(Math.max(0, atMatches.length - 1), i + 1));
+          setAtActiveIndex((i) => cycleListIndex(i, atMatches.length, 1));
           return;
         }
         if (e.key === "ArrowUp") {
           e.preventDefault();
-          setAtActiveIndex((i) => Math.max(0, i - 1));
+          setAtActiveIndex((i) => cycleListIndex(i, atMatches.length, -1));
           return;
         }
         if (e.key === "Escape") {
@@ -1400,7 +1709,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           setAtMenuOpen(false);
           return;
         }
-        if ((e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) && atMatches[atActiveIndex]) {
+        if ((e.key === "Tab" || sendShortcut) && atMatches[atActiveIndex]) {
           e.preventDefault();
           applyAtCompletion(atMatches[atActiveIndex]);
           return;
@@ -1424,7 +1733,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         return;
       }
 
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (sendShortcut) {
         e.preventDefault();
         if (isStreaming && (onSteer || onFollowUp)) {
           // Enter queues a non-interrupting follow-up; Ctrl/Cmd+Enter is the
@@ -1446,10 +1755,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     ta.style.height = `${ta.scrollHeight}px`;
   }, []);
 
-  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const items = Array.from(e.clipboardData?.items ?? []);
     const imageItems = items.filter((item) => item.type.startsWith("image/"));
-    if (imageItems.length) {
+    if (!compact && imageItems.length) {
       e.preventDefault();
       const files = imageItems.map((item) => item.getAsFile()).filter((f): f is File => f !== null);
       processImageFiles(files);
@@ -1458,27 +1767,44 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     // Large plain-text pastes become a compact chip so the composer stays
     // readable; spliced back as a fenced block on send. Skipped in bash mode:
     // a fence glued into a shell command would corrupt it.
-    const text = e.clipboardData?.getData("text/plain") ?? "";
+    const html = e.clipboardData.getData("text/html");
+    const text = e.clipboardData.getData("text/plain");
     if (!bashMode && shouldChipPastedText(text)) {
-      e.preventDefault();
-      insertPastedTextChip(normalizePastedText(text));
-      return;
+      e.preventDefault(); insertPastedTextChip(normalizePastedText(text)); return;
     }
-    // WebKitGTK (Linux) delivers an empty clipboardData.items list on paste
-    // even when the clipboard holds an image (WebKit bug 320303). Fall back to
-    // the Tauri clipboard-manager readImage() only in the desktop shell, and
-    // only when the browser gave us nothing — so plain-text paste is untouched.
-    if (items.length === 0) {
+    if (items.length === 0 && !text) {
       e.preventDefault();
-      void import("@/lib/desktop-native").then(({ readClipboardImageFileNative }) =>
-        readClipboardImageFileNative(),
-      ).then((file) => {
-        if (file) processImageFiles([file]);
-      }).catch(() => {
-        /* ignore — nothing to paste */
-      });
+      void import("@/lib/desktop-native").then(({ readClipboardImageFileNative }) => readClipboardImageFileNative()).then(file => { if (file) processImageFiles([file]); }).catch(() => {});
     }
-  }, [processImageFiles, bashMode, insertPastedTextChip]);
+    if (!html || !text) return;
+    const document = new DOMParser().parseFromString(html, "text/html");
+    const links = Array.from(document.querySelectorAll("a[href]"), (link) => {
+      const label = link.textContent ?? "";
+      const range = document.createRange();
+      range.setStart(document.body, 0);
+      range.setEndBefore(link);
+      return {
+        label,
+        href: link.getAttribute("href")?.trim() ?? "",
+        occurrence: label ? range.toString().split(label).length - 1 : 0,
+      };
+    });
+    const markdown = replaceLinksWithMarkdown(text, links);
+    if (markdown === null) return;
+
+    const ta = e.currentTarget;
+    const start = ta.selectionStart;
+    const nextValue = ta.value.slice(0, start) + markdown + ta.value.slice(ta.selectionEnd);
+    e.preventDefault();
+    valueRef.current = nextValue;
+    setValue(nextValue);
+    setHistoryMenuOpen(false);
+    updateAtQuery(nextValue, start + markdown.length);
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.setSelectionRange(start + markdown.length, start + markdown.length);
+    });
+  }, [compact, processImageFiles, updateAtQuery, bashMode, insertPastedTextChip]);
 
   useEffect(() => {
     if (slashQuery === null) {
@@ -1579,29 +1905,37 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     : null;
   const currentName = displayModelName;
 
+  useLayoutEffect(() => {
+    if (!atMenuOpen || atQuery === null) {
+      setAtMenuMaxHeight(null);
+      return;
+    }
+    const menu = atMenuRef.current;
+    if (!menu) return;
+    return subscribeUpwardMenuMaxHeight(menu, (nextHeight) => {
+      setAtMenuMaxHeight((current) => current === nextHeight ? current : nextHeight);
+    });
+  }, [atMenuOpen, atQuery]);
+
+
   const compactSavedTokens = compactResult
     ? Math.max(0, compactResult.tokensBefore - compactResult.estimatedTokensAfter)
     : 0;
   const compactResultText = compactResult
     ? `${compactResult.reason && compactResult.reason !== "manual" ? `${compactResult.reason[0].toUpperCase()}${compactResult.reason.slice(1)} ` : t("chat.compacted")} ${formatTokenCount(compactResult.tokensBefore)} -> ${formatTokenCount(compactResult.estimatedTokensAfter)} tokens (${t("chat.tokensSaved", { saved: formatTokenCount(compactSavedTokens) })})`
     : null;
+  const resolvedThinkingLevel = thinkingLevel && thinkingLevel !== "auto" ? thinkingLevel : null;
   const thinkingDisplayLabel = (() => {
-    const lvl = thinkingLevel ?? "auto";
+    const lvl = resolvedThinkingLevel ?? "auto";
     if (lvl === "auto" || !thinkingLevelMap) return lvl;
     return thinkingLevelMap[lvl] ?? lvl;
   })();
-  const toolPresetLabel = Object.entries(TOOL_PRESET_MAP).find(([, v]) => v === (toolPreset ?? "default"))?.[0] ?? "default";
+  const rawToolPresetLabel = Object.entries(TOOL_PRESET_MAP).find(([, v]) => v === (toolPreset ?? "default"))?.[0] ?? "default";
+  const toolPresetLabel = rawToolPresetLabel === "chat-only" ? t("chat.chatOnly") : rawToolPresetLabel;
 
   // Close dropdowns on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (
-        dropdownRef.current && !dropdownRef.current.contains(e.target as Node) &&
-        modelDropdownPanelRef.current && !modelDropdownPanelRef.current.contains(e.target as Node)
-      ) {
-        setModelDropdownOpen(false);
-        setModelFilter("");
-      }
       if (toolDropdownRef.current && !toolDropdownRef.current.contains(e.target as Node)) {
         setToolDropdownOpen(false);
       }
@@ -1624,23 +1958,36 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, []);
 
   useEffect(() => {
-    if (!isNarrow) setControlsMenuOpen(false);
-  }, [isNarrow]);
+    if (!isStreaming) return;
+    setThinkingDropdownOpen(false);
+    setToolDropdownOpen(false);
+  }, [isStreaming]);
+
+  useEffect(() => {
+    if (!isMobile) setControlsMenuOpen(false);
+  }, [isMobile]);
 
 
 
   return (
     <div
       className="chat-input-shell"
+      aria-busy={builtinCommandPending || undefined}
     >
-      <div className="chat-composer-wrap">
+      <div className="chat-composer-wrap" style={{ maxWidth: showHints ? undefined : "var(--chat-content-max-width, 820px)" }}>
         <ModelErrorBanner error={modelError} />
-        <ModelScopeWarningBanner
-          warnings={modelScopeWarnings}
-          onDismiss={onDismissModelScopeWarnings}
-          dismissLabel={t("chat.modelScopeDismiss")}
-          onOpenModelsConfig={onOpenModelsConfig}
-        />
+        <ModelScopeWarningBanner warnings={modelScopeWarnings} onDismiss={onDismissModelScopeWarnings} dismissLabel={t("chat.modelScopeDismiss")} onOpenModelsConfig={onOpenModelsConfig} />
+        {showImageUnsupportedWarning && (() => {
+          const entry = modelList?.find((m) => m.provider === model?.provider && m.id === model?.modelId);
+          return (
+            <ModelNoticeBanner
+              tone="warning"
+              title={t("chat.imageNotSupportedTitle")}
+              body={t("chat.imageNotSupportedBody", { model: entry?.name || model?.modelId || "" })}
+              onDismiss={() => setImageWarningDismissed(true)}
+            />
+          );
+        })()}
         {/* Queued steering / follow-up messages (delivered by pi on upcoming turns) */}
         {((queuedMessages?.steering.length ?? 0) + (queuedMessages?.followUp.length ?? 0)) > 0 && (
           <div className="composer-queue-strip">
@@ -1754,6 +2101,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           )}
           {slashMenuOpen && slashQuery !== null && (
             <div
+              ref={slashMenuRef}
               className={`native-popover composer-completion-popover is-slash${isNarrow ? " is-narrow" : ""}`}
               style={{ "--completion-max": `${slashMaxHeight}px` } as React.CSSProperties}
             >
@@ -1844,6 +2192,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               : "";
             return (
               <div
+                ref={atMenuRef}
+                style={{ maxHeight: atMenuMaxHeight === null ? "min(48vh, 400px)" : `min(48vh, 400px, ${atMenuMaxHeight}px)` }}
                 className="native-popover composer-completion-popover"
               >
                 <div
@@ -1977,13 +2327,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             className="chat-composer-editor"
           >
           <textarea
+            aria-label={t("chat.messageLabel")}
             aria-controls={slashMenuOpen && slashQuery !== null ? slashListId : undefined}
             aria-activedescendant={slashMenuOpen && slashQuery !== null && displayedSlashCommands[slashActiveIndex] ? `${slashListId}-${slashActiveIndex}` : undefined}
             aria-autocomplete="list"
             readOnly={Boolean(draftKey && hydratedDraftKey !== draftKey)}
             ref={textareaRef}
+            className="composer-textarea"
+            style={{ fontSize }}
             value={value}
             onChange={(e) => {
+              valueRef.current = e.target.value;
               setValue(e.target.value);
               setHistoryMenuOpen(false);
               updateAtQuery(e.target.value, e.target.selectionStart);
@@ -2007,7 +2361,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             }}
             onInput={handleInput}
             onPaste={handlePaste}
-            aria-label={t("chat.messageLabel")}
             placeholder={!showHints ? "" :
               isStreaming && (onSteer || onFollowUp)
                 ? t("chat.steerPlaceholder")
@@ -2017,7 +2370,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 : t("chat.messagePlaceholder")
             }
             rows={1}
-            className="composer-textarea"
           />
 
           {isStreaming ? (
@@ -2042,6 +2394,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   else handleSend();
                 }}
                 disabled={isStreaming ? !canQueueStreamingMessage : (!value.trim() && !attachedImages.length)}
+                aria-keyshortcuts="Enter Alt+Enter"
                 title={isStreaming && onFollowUp ? (attachedImages.length ? t("chat.imagesCannotQueue") : t("chat.followUpTitle")) : undefined}
               >
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2055,7 +2408,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             <button
               className="native-primary-button composer-send-button"
               onClick={handleSend}
-              disabled={!value.trim() && !attachedImages.length}
+              disabled={builtinCommandPending || (!value.trim() && !attachedImages.length)}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="2" y1="7" x2="11" y2="7" />
@@ -2177,9 +2530,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         return !open;
                       });
                     }}
-                    disabled={isStreaming}
+                    disabled={isStreaming || modelSwitching}
+                    aria-busy={modelSwitching || undefined}
                     ref={modelButtonRef}
-                    title={modelOptions.length > 0 ? "Change model" : "No available models"}
+                    title={modelSwitching ? "Switching model" : modelOptions.length > 0 ? "Change model" : "No available models"}
                   >
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <rect x="4" y="4" width="16" height="16" rx="2" />
@@ -2263,13 +2617,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   })()}
                 </div>
             )}
-            {!isStreaming && onThinkingLevelChange && (
+            {onThinkingLevelChange && (
               <div ref={thinkingDropdownRef} className="composer-anchor">
                 <button
                   className={`native-toolbar-button composer-toolbar-chip composer-effort-trigger${thinkingDropdownOpen ? " is-open" : ""}`}
                   onClick={() => !isStreaming && setThinkingDropdownOpen((v) => !v)}
                   disabled={isStreaming}
-                   title={t("chat.changeReasoning", { level: thinkingDisplayLabel })}
+                   title={isStreaming ? t("chat.currentReasoning", { level: thinkingDisplayLabel }) : t("chat.changeReasoning", { level: thinkingDisplayLabel })}
                    aria-label={t("chat.changeReasoningLabel")}
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2283,7 +2637,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   <div className="native-popover composer-dropdown-panel is-thinking">
                     <div className="composer-menu-scroll">
                     {selectableThinkingLevels(THINKING_LEVELS, availableThinkingLevels, thinkingLevelMap).map((lvl) => {
-                      const isActive = (thinkingLevel ?? "auto") === lvl;
+                      const isActive = lvl === "auto" ? isAutoThinkingSelection : !isAutoThinkingSelection && resolvedThinkingLevel === lvl;
                        const desc = t(THINKING_LEVEL_DESC_KEYS[lvl]);
                       const mappedVal = (lvl !== "auto" && thinkingLevelMap) ? thinkingLevelMap[lvl] : undefined;
                       const displayLabel = (mappedVal != null && mappedVal !== lvl) ? mappedVal : lvl;
@@ -2355,7 +2709,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     {TOOL_PRESETS.map((lvl) => {
                       const preset = TOOL_PRESET_MAP[lvl];
                       const isActive = (toolPreset ?? "default") === preset;
-                       const desc = lvl === "off" ? t("chat.noTools") : lvl === "default" ? t("chat.builtInTools", { count: 4 }) : t("chat.allBuiltInTools");
+                      let desc: string;
+                      if (lvl === "chat-only") desc = t("chat.chatOnly");
+                      else if (lvl === "read-only") desc = t("chat.readOnlyTools", { count: 4 });
+                      else if (lvl === "default") desc = t("chat.builtInTools", { count: 4 });
+                      else desc = t("chat.allBuiltInTools");
                       return (
                         <button
                           key={lvl}
@@ -2398,10 +2756,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             </div>
           </div>
 
+        </div>
           </div>
         </div>
       </div>
-    </div>
     </div>
   );
 });

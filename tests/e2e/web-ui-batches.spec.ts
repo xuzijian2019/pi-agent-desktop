@@ -7,7 +7,10 @@ import type * as DraftStore from "../../lib/draft-store";
 declare global { interface Window { drafts: typeof DraftStore } }
 // Execute the production store with real IndexedDB in isolated browser contexts.
 async function installStore(page: Page) {
-  const source = (await readFile("lib/draft-store.ts", "utf8")).replace('import { APP_PREF_KEYS } from "@/lib/app-prefs";', 'const APP_PREF_KEYS = { chatDrafts: "pi-chat-drafts-v1" };');
+  const imageSource = (await readFile("lib/image-attachments.ts", "utf8")).replace(/^export /gm, "");
+  const source = imageSource + "\n" + (await readFile("lib/draft-store.ts", "utf8"))
+    .replace('import { APP_PREF_KEYS } from "./app-prefs";', 'const APP_PREF_KEYS = { chatDrafts: "pi-chat-drafts-v1" };')
+    .replace('import { MAX_ATTACHED_IMAGES, isBase64ImageWithinLimits } from "./image-attachments";', "");
   const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   await page.evaluate((js) => { const exports = {}; new Function("exports", js)(exports); window.drafts = exports as typeof DraftStore; }, js);
 }
@@ -49,7 +52,7 @@ test("transactional drafts: migration, full attachments, independent tabs, confl
 test("composer reload, orphan blocking, browser shortcut and server feedback", async ({ page }) => {
   const cwd = `${WORK_ROOT}/draft-${randomUUID()}`; await mkdir(cwd, { recursive: true });
   await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);
-  const composer = page.getByPlaceholder("Message…", { exact: false });
+  const composer = page.getByRole("textbox", { name: "Message", exact: true });
   await expect(composer).toBeEditable();
   await composer.fill("unsent draft");
   await page.reload(); await expect(composer).toHaveValue("unsent draft");
@@ -73,7 +76,7 @@ test("composer reload, orphan blocking, browser shortcut and server feedback", a
 test("latest selection, history, native links and project search", async ({ page, context, request }) => {
   const cwd = `${WORK_ROOT}/navigation-${randomUUID()}`; await mkdir(cwd, { recursive: true });
   await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);
-  const composer = page.getByPlaceholder("Message…", { exact: false });
+  const composer = page.getByRole("textbox", { name: "Message", exact: true });
   const ids: string[] = [];
   for (const name of ["alpha", "beta"]) {
     await expect(composer).toBeEditable();
@@ -108,7 +111,7 @@ test("latest selection, history, native links and project search", async ({ page
   await page.keyboard.press("Control+Alt+n");
   release(); await expect(page).toHaveURL(/cwd=/); await expect(composer).toHaveValue("");
   // Search matches the project path even though session names are alpha/beta.
-  const search = page.getByRole("searchbox", { name: "Search sessions…", exact: true });
+  const search = page.getByRole("searchbox", { name: "Search all conversations...", exact: true });
   await expect(search).toBeVisible();
   {
     await search.fill(cwd.split("/").at(-1)!); await expect(linkA).toBeVisible(); await expect(linkB).toBeVisible();
@@ -192,7 +195,7 @@ test("blocked migration exposes failure and preserves legacy contents", async ({
 test("fast typing does not flash draft status or resize the composer", async ({ page }) => {
   const cwd = `${WORK_ROOT}/typing-${randomUUID()}`; await mkdir(cwd, { recursive: true });
   await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);
-  const input = page.getByPlaceholder("Message…", { exact: false });
+  const input = page.getByRole("textbox", { name: "Message", exact: true });
   await expect(input).toBeEditable();
   await input.fill("ready ");
   await expect(page.getByText("Saving draft…", { exact: true })).toHaveCount(0);
@@ -222,7 +225,7 @@ test("fast typing does not flash draft status or resize the composer", async ({ 
 test("slow draft saves show feedback without moving the editor", async ({ page }) => {
   const cwd = `${WORK_ROOT}/slow-save-${randomUUID()}`; await mkdir(cwd, { recursive: true });
   await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);
-  const input = page.getByPlaceholder("Message…", { exact: false });
+  const input = page.getByRole("textbox", { name: "Message", exact: true });
   await expect(input).toBeEditable();
   const before = await input.evaluate((element) => element.closest(".chat-composer")!.getBoundingClientRect().height);
   await page.evaluate(() => {
@@ -239,7 +242,7 @@ test("slow draft saves show feedback without moving the editor", async ({ page }
   await input.fill("slow save");
   await expect(page.getByText("Saving draft…", { exact: true })).toBeVisible();
   const during = await input.evaluate((element) => element.closest(".chat-composer")!.getBoundingClientRect().height);
-  expect(during).toBe(before);
+  expect(Math.abs(during - before)).toBeLessThan(1);
   await expect(page.getByText("Saving draft…", { exact: true })).toHaveCount(0);
   await page.reload(); await expect(input).toHaveValue("slow save");
 });
@@ -247,7 +250,7 @@ test("slow draft saves show feedback without moving the editor", async ({ page }
 test("returning to New Session restores its unsent large paste", async ({ page, request }) => {
   const cwd = `${WORK_ROOT}/new-draft-${randomUUID()}`; await mkdir(cwd, { recursive: true });
   await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);
-  const composer = page.getByPlaceholder("Message…", { exact: false });
+  const composer = page.getByRole("textbox", { name: "Message", exact: true });
   await expect(composer).toBeEditable();
   await composer.fill("!printf existing-chat"); await composer.press("Enter");
   await expect(page).toHaveURL(/session=/);

@@ -26,7 +26,7 @@ async function seed(page:Page,request:APIRequestContext){
 }
 
 test('compact command rows, predictable keyboard navigation, search, completion and narrow layout',async({page})=>{
- await project(page);await input(page).fill('/');await expect(menu(page).getByRole('option')).toHaveCount(39);
+ await project(page);await input(page).fill('/');await expect(menu(page).getByRole('option')).toHaveCount(40);
  const options=menu(page).getByRole('option');const boxes=await options.evaluateAll(nodes=>nodes.slice(0,8).map(node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,height:r.height}}));
  expect(new Set(boxes.map(b=>b.x)).size).toBe(1);expect(Math.max(...boxes.map(b=>b.height))).toBeLessThanOrEqual(40);
  expect((await menu(page).boundingBox())!.height).toBeLessThan(341);
@@ -37,7 +37,7 @@ test('compact command rows, predictable keyboard navigation, search, completion 
  const selected=await input(page).getAttribute('aria-activedescendant');await input(page).press('ArrowLeft');expect(await input(page).getAttribute('aria-activedescendant')).toBe(selected);
  await input(page).fill('/zeb');await expect(options).toHaveCount(1);await input(page).press('Tab');await expect(input(page)).toHaveValue('/zebra ');await expect(menu(page)).toHaveCount(0);
  await input(page).fill('/');await expect(menu(page)).toBeVisible();await page.screenshot({path:test.info().outputPath('slash-desktop.png'),animations:'disabled'});
- await page.getByRole('button',{name:'Switch to dark mode'}).click();await expect(menu(page)).toBeVisible();await page.screenshot({path:test.info().outputPath('slash-desktop-dark.png'),animations:'disabled'});
+ await page.getByRole('button',{name:'Theme: Dark'}).click();await expect(menu(page)).toBeVisible();await page.screenshot({path:test.info().outputPath('slash-desktop-dark.png'),animations:'disabled'});
  await page.setViewportSize({width:390,height:844});await expect(page.locator('.sidebar-container')).toHaveClass(/sidebar-closed/);await expect(menu(page)).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
  await page.screenshot({path:test.info().outputPath('slash-mobile.png'),animations:'disabled'});
@@ -49,7 +49,7 @@ test('native UI commands open existing settings, auth, trust, hotkeys and resume
  for(const name of ['settings','login','logout','trust','hotkeys']){
   await command(page,'/'+name);await expect(page.getByRole('dialog').first()).toBeVisible();await expect(input(page)).toHaveValue('');await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
  }
- await command(page,'/resume');await expect(page.getByRole('searchbox',{name:'Search sessions…',exact:true})).toBeFocused();
+ await command(page,'/resume');await expect(page.getByRole('searchbox',{name:'Search all conversations...',exact:true})).toBeFocused();
 });
 
 test('native model/thinking commands use SDK actions; invalid arguments never become prompts',async({page,request})=>{

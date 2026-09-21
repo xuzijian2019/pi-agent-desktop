@@ -38,7 +38,7 @@ test("stopping and restarting an owned server preserves the browser draft", asyn
   };
   try {
     await start(); await page.goto(`${url}/?cwd=${encodeURIComponent(cwd)}`);
-    const composer = page.getByPlaceholder("Message…", { exact: false });
+    const composer = page.getByRole("textbox", { name: "Message", exact: true });
     await expect(composer).toBeEditable(); await composer.fill("survive a real server restart");
     await stop();
     await expect(page.getByRole("alert").filter({ hasText: /connection|server|offline/i })).toBeVisible({ timeout: 35_000 });

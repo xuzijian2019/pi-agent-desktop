@@ -69,7 +69,7 @@ export function DirectoryPicker({ onCancel, onSelect, onCreate, initialPath, roo
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
   const [currentPath, setCurrentPath] = useState("");
   const [parentDirectory, setParentDirectory] = useState<string | null>(null);
-  const [pathInput, setPathInput] = useState("");
+  const [pathInput, setPathInput] = useState(initialPath ?? "");
   const [directories, setDirectories] = useState<DirectoryEntry[]>([]);
   const [filter, setFilter] = useState("");
   const [folderName, setFolderName] = useState("");
@@ -106,8 +106,8 @@ export function DirectoryPicker({ onCancel, onSelect, onCreate, initialPath, roo
 
   useEffect(() => {
     setPortalTarget(document.body);
-    void navigateTo();
-  }, [navigateTo]);
+    void navigateTo(initialPath || undefined);
+  }, [initialPath, navigateTo]);
 
   const handlePathSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

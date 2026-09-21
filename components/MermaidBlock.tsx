@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { SyntaxHighlighter, vs, vscDarkPlus } from "@/lib/syntax-highlighting";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
@@ -16,6 +16,17 @@ const ZOOM_STEP = 0.25;
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 3;
 
+export function downloadMermaidSvg(svg: SVGSVGElement): void {
+  // Mermaid's HTML serialization can leave void tags such as <br> unclosed.
+  const xml = new XMLSerializer().serializeToString(svg);
+  const url = URL.createObjectURL(new Blob([xml], { type: "image/svg+xml;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "mermaid-diagram.svg";
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 type RenderState =
   | { key: string; status: "loading" }
   | { key: string; status: "error" }
@@ -27,6 +38,7 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false }: Merm
   const [showPreview, setShowPreview] = useState(defaultPreview);
   const [renderState, setRenderState] = useState<RenderState | null>(null);
   const [zoomOpen, setZoomOpen] = useState(false);
+  const previewRef = useRef<HTMLButtonElement>(null);
   const currentKey = `${isDark ? "dark" : "light"}\n${code}`;
   const previewVisible = showPreview && !isStreaming;
 
@@ -67,7 +79,7 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false }: Merm
     };
   }, [code, currentKey, isDark, previewVisible]);
 
-  const previewButton = (
+  const previewButton = useMemo(() => (
     <button
       type="button"
       onClick={() => setShowPreview((v) => !v)}
@@ -77,10 +89,10 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false }: Merm
     >
       {previewVisible ? t("i18n.source") : t("i18n.preview")}
     </button>
-  );
+  ), [isStreaming, previewVisible, t]);
 
   if (!previewVisible) {
-    return <CodeBlock code={code} lang="mermaid" headerAction={previewButton} />;
+    return <CodeBlock code={code} lang="mermaid" headerAction={previewButton} isStreaming={isStreaming} />;
   }
 
   const body = renderState?.key === currentKey && renderState.status === "error" ? (
@@ -91,6 +103,7 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false }: Merm
       <>
         {!zoomOpen && (
           <button
+            ref={previewRef}
             type="button"
             className="mermaid-block mermaid-preview-button"
             title={t("i18n.openMermaidViewer")}
@@ -107,7 +120,23 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false }: Merm
     <div className="markdown-code-block">
       <div className="markdown-code-header">
         <span className="markdown-code-lang">mermaid</span>
-        {previewButton}
+        <div className="markdown-code-actions">
+          {renderState?.key === currentKey && renderState.status === "ready" && (
+            <button
+              type="button"
+              className="markdown-code-action"
+              title={`${t("i18n.downloadFile")} (SVG)`}
+              aria-label={`${t("i18n.downloadFile")} (SVG)`}
+              onClick={() => {
+                const svg = previewRef.current?.querySelector("svg");
+                if (svg) downloadMermaidSvg(svg);
+              }}
+            >
+              SVG
+            </button>
+          )}
+          {previewButton}
+        </div>
       </div>
       {body}
     </div>
@@ -222,15 +251,18 @@ interface CodeBlockProps {
   code: string;
   lang: string;
   headerAction?: ReactNode;
+  isStreaming?: boolean;
 }
 
 /**
  * Syntax-highlighted code block with copy button.
  * Used as the "source" view for mermaid blocks and for all non-mermaid code fences.
  * Memoized because Prism tokenization is expensive; for plain fences (no
- * headerAction) props are stable across parent re-renders.
+ * headerAction) props are stable across parent re-renders. While the owning
+ * message is still streaming, the block renders as plain monospace text —
+ * highlighting a growing block re-tokenizes all of it on every chunk.
  */
-export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction }: CodeBlockProps) {
+export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isStreaming }: CodeBlockProps) {
   const { isDark } = useTheme();
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
@@ -256,24 +288,39 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction }: C
           </button>
         </div>
       </div>
-      <SyntaxHighlighter
-        language={lang || "text"}
-        style={isDark ? vscDarkPlus : vs}
-        showLineNumbers
-        lineNumberStyle={{ color: "var(--text-dim)", fontStyle: "normal" }}
-        customStyle={{
-          margin: 0,
-          padding: "11px 13px",
-          fontSize: 12.5,
-          lineHeight: 1.62,
-          border: "none",
-          borderRadius: 0,
-          backgroundColor: "color-mix(in srgb, var(--bg) 92%, var(--bg-panel))",
-        }}
-        codeTagProps={{ style: { fontFamily: "var(--font-mono)" } }}
-      >
-        {code}
-      </SyntaxHighlighter>
+      {isStreaming ? (
+        <pre
+          style={{
+            margin: 0,
+            padding: "11px 13px",
+            fontSize: "calc(12.5px + var(--chat-font-size-offset, 0px))",
+            lineHeight: 1.62,
+            overflowX: "auto",
+            backgroundColor: "color-mix(in srgb, var(--bg) 92%, var(--bg-panel))",
+          }}
+        >
+          <code style={{ fontFamily: "var(--font-mono)" }}>{code}</code>
+        </pre>
+      ) : (
+        <SyntaxHighlighter
+          language={lang || "text"}
+          style={isDark ? vscDarkPlus : vs}
+          showLineNumbers
+          lineNumberStyle={{ color: "var(--text-dim)", fontStyle: "normal" }}
+          customStyle={{
+            margin: 0,
+            padding: "11px 13px",
+            fontSize: "calc(12.5px + var(--chat-font-size-offset, 0px))",
+            lineHeight: 1.62,
+            border: "none",
+            borderRadius: 0,
+            backgroundColor: "color-mix(in srgb, var(--bg) 92%, var(--bg-panel))",
+          }}
+          codeTagProps={{ style: { fontFamily: "var(--font-mono)" } }}
+        >
+          {code}
+        </SyntaxHighlighter>
+      )}
     </div>
   );
 });

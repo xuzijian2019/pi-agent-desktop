@@ -151,7 +151,7 @@ export async function scanAllSessions(): Promise<ScannedSessionInfo[]> {
   let files: string[];
   try {
     const dirEntries = await readdir(sessionsDir, { withFileTypes: true });
-    const dirs = dirEntries.filter((e) => e.isDirectory()).map((e) => join(sessionsDir, e.name));
+    const dirs = dirEntries.filter((e) => e.isDirectory() || e.isSymbolicLink()).map((e) => join(sessionsDir, e.name));
     const perDir = await Promise.all(dirs.map(async (dir) => {
       try {
         return (await readdir(dir)).filter((f) => f.endsWith(".jsonl")).map((f) => join(dir, f));

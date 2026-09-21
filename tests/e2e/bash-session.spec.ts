@@ -55,7 +55,7 @@ test("bash-only session: run, persist to disk, reopen after reload", async ({ pa
 
   await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);
 
-  const composer = page.getByPlaceholder("Message…", { exact: false });
+  const composer = page.getByRole("textbox", { name: "Message", exact: true });
   await expect(composer).toBeVisible();
   await composer.fill(`!printf '%s\\n' ${marker}`);
   await composer.press("Enter");

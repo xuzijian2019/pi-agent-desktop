@@ -18,7 +18,7 @@ export function validateTask(body: Record<string, unknown>): Omit<SavedTask, "id
   if (typeof name !== "string" || !name.trim() || name.trim().length > 80 || typeof description !== "string" || description.length > 500 || typeof prompt !== "string" || Buffer.byteLength(prompt) > 131072) throw new UiError("Invalid task text");
   if (projectRoot !== null && typeof projectRoot !== "string") throw new UiError("Invalid project scope");
   if (model !== null && (typeof model !== "object" || typeof (model as Record<string, unknown>).provider !== "string" || !(model as Record<string, unknown>).provider || typeof (model as Record<string, unknown>).modelId !== "string" || !(model as Record<string, unknown>).modelId)) throw new UiError("Invalid model");
-  if (!["inherit", "auto", "off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(String(effort)) || !["inherit", "none", "default", "full"].includes(String(tools))) throw new UiError("Invalid task settings");
+  if (!["inherit", "auto", "off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(String(effort)) || !["inherit", "none", "read-only", "default", "full"].includes(String(tools))) throw new UiError("Invalid task settings");
   return { name: name.trim(), description, prompt, projectRoot, model: model as SavedTask["model"], effort: effort as TaskEffort, tools: tools as TaskTools };
 }
 export function listSavedTasks(projectRoot: string | null) {

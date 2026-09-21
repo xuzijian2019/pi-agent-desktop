@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "upstreamBaseline": "v0.8.2",
+  "upstreamBaseline": "main@974c8bb (post v0.9.1)",
   "note": "Single source of truth for the pi-web merge boundary. `driftedUpstreamFiles` lists files agegr/pi-web owns that this fork has also edited — every one is a potential merge conflict, and a potential SILENT semantic conflict when git merges cleanly but the two sides changed different things. The automated sync (.github/workflows/component-updates.yml) intersects each incoming upstream release with this map to decide whether it may push to main unattended. Human-facing rationale lives in docs/ownership-boundaries.md.",
   "ignored": [
     "package-lock.json",
@@ -25,126 +25,86 @@
   "driftedUpstreamFiles": {
     "components/SessionSidebar.tsx": {
       "risk": "high",
-      "drift": 2133,
+      "drift": 2441,
       "reason": "~500 lines were MOVED OUT into components/ProjectPicker.tsx and components/path-ui.tsx, which do not exist upstream. git merge does not track cross-file moves: an upstream edit to the project-picker block can merge back cleanly and silently resurrect a second copy.",
-      "structuralDrift": 1478,
+      "structuralDrift": 1799,
       "disposition": "accepted"
     },
     "components/AppShell.tsx": {
       "risk": "high",
-      "drift": 1843,
+      "drift": 2355,
       "reason": "Top-bar redesign (toolbar consolidated into a more-menu, inline styles to classNames) plus the mount point for desktop chrome. The desktop-only parts moved to components/desktop/; the rest is the fork's own interaction design, not desktop plumbing, so this file stays high risk by design rather than by neglect. Header/More cleanup (ui-refresh decisions 7 and 8) DELETES upstream UI rather than adding fork UI — the Full history toolbar button, the Session stats more-item and the session top panel — which raises structural drift by 37 lines, because upstream still ships all of it. Numbers are the measured values from `npm run drift` against the recorded baseline. Saved-task append and chip conflict fixes bring measured structural drift to 1411. Phase 4 adds an import, one local element and one prop to fill ChatWindow's empty-state slot: 3 structural lines.",
-      "structuralDrift": 1411,
+      "structuralDrift": 1837,
       "disposition": "accepted"
     },
     "components/FileViewer.tsx": {
       "risk": "high",
-      "drift": 599,
+      "drift": 548,
       "reason": "Adds FileViewerToolbar and FileViewerStatus, file icons, a live-sync indicator and a retry action. Both components are defined inside FileViewer.tsx rather than moved out, so there is no cross-file resurrection risk — only a large diff. Kept deliberately.",
-      "structuralDrift": 430,
+      "structuralDrift": 408,
       "disposition": "accepted"
     },
     "components/FileExplorer.tsx": {
-      "risk": "high",
-      "drift": 904,
-      "reason": "Adds selection highlighting (selectedPath/onSelectPath) and moves git status colours onto CSS variables. Generic improvement, no desktop coupling. Kept deliberately.",
-      "structuralDrift": 731,
-      "disposition": "accepted"
-    },
-    "components/ModelsConfig.tsx": {
       "risk": "medium",
-      "drift": 281,
-      "reason": "Already the correct shape: upstream inline style objects swapped for native-* classNames, 14 structural lines out of 148. Conflicts here are textual and trivially resolvable. Use this file as the model for restyling a shared component.",
-      "structuralDrift": 113,
+      "drift": 97,
+      "reason": "Adds selection highlighting (selectedPath/onSelectPath) and moves git status colours onto CSS variables. Generic improvement, no desktop coupling. Kept deliberately.",
+      "structuralDrift": 97,
       "disposition": "accepted"
     },
     "components/TabBar.tsx": {
       "risk": "medium",
-      "drift": 116,
-      "reason": "Accessibility work: role=\"tab\", aria-selected, roving tabIndex, arrow-key navigation, Enter/Space activation, plus an empty state. A generic improvement with no desktop coupling, so it cannot be extracted anywhere — the only ways to remove this drift are upstreaming it or deleting the accessibility support. Kept deliberately.",
-      "structuralDrift": 61,
+      "drift": 95,
+      "reason": "Accessibility work: role=\"tab\", aria-selected, roving tabIndex, arrow-key navigation, Enter/Space activation, plus an empty state. A generic improvement with no desktop coupling, so it cannot be extracted anywhere — the only ways to remove this drift are upstreaming it or deleting the accessibility support. Kept deliberately. The 2026-09-20 upstream merge keeps this class-based markup while adopting upstream's terminal tabs (terminal icon, closing state, Home/End keys); upstream's own TabBar renders the label twice and dropped the file-tab class, so the fork version is the working one. Structural drift crossed the medium threshold on that merge.",
+      "structuralDrift": 41,
       "disposition": "accepted"
     },
     "components/ChatWindow.tsx": {
       "risk": "high",
-      "drift": 950,
+      "drift": 1234,
       "reason": "Branding copy and a redesigned empty state. Part of the fork's interaction design. Kept deliberately. Workbench integration adds 32 structural lines relative to d0a8be2; totals conservatively add that delta because the v0.8.2 baseline is unavailable locally. Transcript search adds read-only historical rendering and exact-match expansion; the added drift is a conservative upper bound for this integration. Phase 4 adds one optional emptyStateSlot ReactNode prop and renders it inside .chat-empty-state: 3 structural lines, and the empty-state UI itself lives in components/workbench/NewTaskGuide.tsx.",
-      "structuralDrift": 857,
+      "structuralDrift": 1115,
       "disposition": "accepted"
     },
     "hooks/useTheme.ts": {
       "risk": "medium",
-      "drift": 135,
+      "drift": 31,
       "reason": "Follows the OS colour scheme until the user picks a theme explicitly, and drops the ToggleOrigin argument so the view transition always starts from the centre. The view transition itself is unchanged from upstream. Kept deliberately.",
-      "structuralDrift": 135,
-      "disposition": "accepted"
-    },
-    "components/PluginsConfig.tsx": {
-      "risk": "medium",
-      "drift": 193,
-      "reason": "Already the correct shape: 6 structural lines out of 54, the rest is style-to-className substitution. Nothing to revert.",
-      "structuralDrift": 105,
+      "structuralDrift": 31,
       "disposition": "accepted"
     },
     "components/ChatInput.tsx": {
       "risk": "high",
-      "drift": 1844,
+      "drift": 2308,
       "reason": "Composer chrome restyle. Phase 3 stream H2 and Phase 4 part C together replaced 134 of the 136 inline style objects with classes in app/native-theme.css; the 2 that remain carry a measured popover position. Structural drift is 1044 against 1002 on main: +5 from the part C checkpoint (the per-tone banner colour constant and the queued-message recall button's pointer handlers), +3 from diff realignment across the remaining conversions, and +34 from dropping the onMouseEnter/onMouseLeave colour hacks on the composer controls, which the classifier scores as structural because it deletes upstream lines. That last 34 is isolated in a single commit. Saved-draft restoration adds 4 structural lines, bringing the current measured structural drift to 1015. Upstream changed this file in v0.8.1, and components/ChatInput*.test.mjs plus tests/e2e/workbench.spec.ts cover it.",
-      "structuralDrift": 1015,
+      "structuralDrift": 1500,
       "disposition": "accepted"
     },
     "components/MessageView.tsx": {
-      "risk": "medium",
-      "drift": 737,
-      "reason": "Message bubble markup adjusted. Transcript search adds read-only historical rendering and exact-match expansion. Phase 3 stream H3 then replaced ~90 inline style objects with classes in app/native-theme.css, which is why the total is large and almost two thirds cosmetic; the structural half is unchanged transcript-search and written-file rendering.",
-      "structuralDrift": 201,
-      "disposition": "accepted"
-    },
-    "components/SkillsConfig.tsx": {
-      "risk": "low",
-      "drift": 56,
-      "reason": "Already the correct shape: 3 structural lines out of 44, the rest is style-to-className substitution. Nothing to revert.",
-      "structuralDrift": 14,
+      "risk": "high",
+      "drift": 795,
+      "reason": "Message bubble markup adjusted. Transcript search adds read-only historical rendering and exact-match expansion. Phase 3 stream H3 then replaced ~90 inline style objects with classes in app/native-theme.css, which is why the total is large and almost two thirds cosmetic; the structural half is unchanged transcript-search and written-file rendering. The 2026-09-20 upstream merge added transcript tool expansion and tool-result image hooks on top of the fork's transcript-search rendering, which pushed structural drift just over the high threshold.",
+      "structuralDrift": 266,
       "disposition": "accepted"
     },
     "lib/i18n/registry.ts": {
       "risk": "low",
-      "drift": 4,
-      "structuralDrift": 4,
+      "drift": 6,
+      "structuralDrift": 6,
       "disposition": "accepted",
       "reason": "Relative imports of ./messages/en and ./messages/zh-CN carry explicit .ts extensions so lib/i18n/registry.test.mjs can load the file through Node's native type stripping (same constraint that put allowImportingTsExtensions in tsconfig.json). Two import lines; conflicts here would be textual."
     },
-    "next.config.ts": {
-      "risk": "medium",
-      "drift": 21,
-      "reason": "Desktop standalone build branch. Also holds serverExternalPackages, which upstream updates whenever it adds a pi package — do NOT auto-derive that list here.",
-      "disposition": "accepted"
-    },
     "app/layout.tsx": {
       "risk": "low",
-      "drift": 24,
+      "drift": 19,
       "reason": "native-theme.css import, branding title, dark-mode bootstrap script. Workbench integration adds 1 structural lines relative to d0a8be2; totals conservatively add that delta because the v0.8.2 baseline is unavailable locally.",
-      "structuralDrift": 24,
-      "disposition": "accepted"
-    },
-    "eslint.config.mjs": {
-      "risk": "low",
-      "drift": 7,
-      "reason": "Adds ignores for the desktop build output directories.",
+      "structuralDrift": 19,
       "disposition": "accepted"
     },
     "lib/rpc-manager.ts": {
       "risk": "medium",
-      "drift": 234,
+      "drift": 228,
       "reason": "Small fork edit in a file upstream changes often; watch it despite the low drift count. Workbench integration adds 80 structural lines relative to d0a8be2; totals conservatively add that delta because the v0.8.2 baseline is unavailable locally.",
-      "structuralDrift": 234,
-      "disposition": "accepted"
-    },
-    "components/FileIcons.tsx": {
-      "risk": "low",
-      "drift": 5,
-      "reason": "Adds an icon size parameter, consumed by the fork's FileViewer toolbar.",
-      "structuralDrift": 3,
+      "structuralDrift": 228,
       "disposition": "accepted"
     },
     "components/BranchNavigator.tsx": {
@@ -152,36 +112,6 @@
       "drift": 5,
       "reason": "className hook only, no structural change — the intended shape for every restyled file.",
       "structuralDrift": 0,
-      "disposition": "accepted"
-    },
-    "package.json": {
-      "risk": "low",
-      "drift": 13,
-      "reason": "Desktop scripts and Tauri deps. Name stays @agegr/pi-web on purpose — see docs/ownership-boundaries.md.",
-      "disposition": "accepted"
-    },
-    "tsconfig.json": {
-      "risk": "low",
-      "drift": 5,
-      "reason": "resolveJsonModule for branding, plus allowImportingTsExtensions: lib/*.test.mjs load .ts sources through Node's native type stripping, which requires explicit extensions on relative imports.",
-      "disposition": "accepted"
-    },
-    ".gitignore": {
-      "risk": "low",
-      "drift": 7,
-      "reason": "Desktop build output plus local agent tooling state (.claude/, .spec-workflow/).",
-      "disposition": "accepted"
-    },
-    "README.md": {
-      "risk": "low",
-      "drift": 264,
-      "reason": "Fork-specific product docs, English and the language switcher's default entry point. Conflicts here are noisy but harmless — resolve by keeping the fork version.",
-      "disposition": "accepted"
-    },
-    "README.zh-CN.md": {
-      "risk": "low",
-      "drift": 264,
-      "reason": "Fork-specific product docs, Simplified Chinese translation of README.md. Same handling as README.md. Upstream's other translations (ja, ru) are deleted in this fork on purpose — if a sync resurrects them, delete them again rather than translating Pi Agent docs into a language nobody here maintains.",
       "disposition": "accepted"
     },
     "lib/file-access.ts": {
@@ -299,6 +229,8 @@
     "2026-09-19 — drift classifier: a multi-line style={{ … }} object now counts as cosmetic as a whole (inner lines and the closing }}), per diff side. Deleting an inline style object used to score its tail as structural, which held back stream H2 in ChatInput.tsx. Re-measured: SessionSidebar 1561→1503, ChatInput 1051→1002, MessageView 252→201 (now medium), AppShell 1487→1405. No code changed.",
     "2026-09-19 — new-task empty state (Phase 4 part 1). A new task showed a composer in a blank area; it now carries one dim guidance line and, when the saved-task library has any, up to three chips ordered by updatedAt plus an \"All saved tasks\" link into the existing panel. All of the UI is fork-owned: components/workbench/NewTaskGuide.tsx, a .new-task-* block at the end of app/workbench.css and three keys in lib/i18n/messages/workbench.ts (en + zh-CN). The two upstream files pay 3 structural lines each and nothing more: ChatWindow.tsx gains one optional emptyStateSlot ReactNode rendered inside .chat-empty-state above the composer (947/854 -> 950/857), AppShell.tsx an import, a local element next to sendPreview and the prop that passes it (1824/1405 -> 1827/1408). A slot was chosen over building the guide inside ChatWindow precisely to keep it at that size, and reusing AppShell's existing useSavedTask callback means the chip and the Saved Tasks panel apply a task through one code path. Both files stay high risk and accepted. The component needs no forkOwnedPaths entry: components/workbench/ already covers the directory.",
     "2026-09-19 — ui-refresh phase 4 (parts A, B, C). A: the Files tab now puts the project tree left of the viewer, by CSS order rather than by moving JSX. B: the Saved Tasks and Activity panels hide their filter rows until there is something to filter. C: the composer conversion finished — components/ChatInput.tsx went from 28 inline style={{}} objects to 2 (the model popover and the project-path tooltip, both measured positions), with the new classes appended to the reserved H2 block of app/native-theme.css. The effort and tools menus lost their max-height IIFEs to `max-height: max(120px, 60dvh)`, which removes fork-added JS. Measured: ChatInput.tsx 1840 total / 796 cosmetic / 1044 structural, AppShell.tsx 1824 / 419 / 1405 (unchanged). ChatInput's structural drift is 42 over the 1002 it carries on main and the cap is not reachable from this branch: the part C checkpoint was already at 1007, the remaining style-to-class work costs +3 in diff realignment, and replacing the control hover handlers with :hover costs +34 because every deleted upstream handler line scores structural. The :hover change is a standalone commit; reverting it returns the file to 1010. Accepted with that trade-off recorded rather than silently split.",
-    "2026-09-19 — drift classifier: onMouseEnter/onMouseLeave handlers and e.currentTarget.style pokes are cosmetic; replacing them with :hover rules is the same restyle as swapping an inline style for a className. Re-measured after Phase 4: ChatInput 1044→1011, SessionSidebar 1503→1478, AppShell 1405→1395. No code changed."
+    "2026-09-19 — drift classifier: onMouseEnter/onMouseLeave handlers and e.currentTarget.style pokes are cosmetic; replacing them with :hover rules is the same restyle as swapping an inline style for a className. Re-measured after Phase 4: ChatInput 1044→1011, SessionSidebar 1503→1478, AppShell 1405→1395. No code changed.",
+    "2026-09-19 — merged upstream v0.8.11 → v0.9.1 → main@974c8bb in four staged merges (88285a4, 7dbd35f, b11eabe, 0e36743). Config modals (Models/Skills/Plugins) now track upstream exactly and left the manifest. Numbers refreshed against main@974c8bb.",
+    "2026-09-20 — merged abcwyc/pi-agent-desktop upstream/main 82c8aaf without rewriting fork history. Kept workbench, IndexedDB drafts, side conversations, project order, tail-follow scrolling, and simplified composer. Integrated upstream runtime, subagents, terminals, pagination, security, and settings; retained Pi 0.86.1 and adapted transcript APIs. Shared-file drift measured against pi-web 974c8bb."
   ]
 }

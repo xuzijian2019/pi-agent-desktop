@@ -4,8 +4,8 @@ import { homedir } from "os";
 import path from "path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { loadSkillsWithInstallInfo } from "@/lib/skills-service";
+import { setDisableModelInvocation } from "@/lib/skill-frontmatter";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
-import { setSkillModelInvocationDisabled } from "@/lib/skill-frontmatter";
 
 export const dynamic = "force-dynamic";
 
@@ -48,8 +48,7 @@ export async function PATCH(req: Request) {
     }
 
     const content = readFileSync(filePath, "utf8");
-    const updated = setSkillModelInvocationDisabled(content, disableModelInvocation);
-
+    const updated = setDisableModelInvocation(content, disableModelInvocation);
     writeFileSync(filePath, updated, "utf8");
     return NextResponse.json({ success: true });
   } catch (e) {

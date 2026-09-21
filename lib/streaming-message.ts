@@ -1,69 +1,147 @@
-import type { AssistantMessageEvent } from "@earendil-works/pi-ai";
-import { normalizeToolCalls } from "./normalize";
-import type { AgentMessage, AssistantMessage, AssistantContentBlock } from "./types";
+import type { ClientAssistantMessageEvent } from "./agent-event-wire";
+import { normalizeStreamingToolCalls } from "./normalize";
+import type {
+  AgentMessage,
+  AssistantContentBlock,
+  AssistantMessage,
+} from "./types";
 
-export type ClientAssistantMessageEvent = AssistantMessageEvent extends infer Event
-  ? Event extends { partial: unknown }
-    ? Omit<Event, "partial">
-    : Event
-  : never;
+export type { ClientAssistantMessageEvent } from "./agent-event-wire";
 
-function isAssistantMessage(message: Partial<AgentMessage> | null): message is AssistantMessage {
-  return message?.role === "assistant" && Array.isArray(message.content);
+export interface StreamingState {
+  isStreaming: boolean;
+  streamingMessage: AssistantMessage | null;
 }
 
-function replaceContentBlock(
-  message: AssistantMessage,
+export type StreamAction =
+  | { type: "start" }
+  | { type: "resume" }
+  | { type: "snapshot"; message: AgentMessage }
+  | { type: "delta"; event: ClientAssistantMessageEvent }
+  | { type: "end" };
+
+export const INITIAL_STREAMING_STATE: StreamingState = {
+  isStreaming: false,
+  streamingMessage: null,
+};
+
+function updateContentBlock(
+  state: StreamingState,
   contentIndex: number,
-  block: AssistantContentBlock,
-): AssistantMessage {
+  update: (current: AssistantContentBlock | undefined) => AssistantContentBlock | null,
+): StreamingState {
+  const message = state.streamingMessage;
+  if (!message || !Number.isInteger(contentIndex) || contentIndex < 0) return state;
+
   const content = [...message.content];
-  content[contentIndex] = block;
-  return { ...message, content };
+  const nextBlock = update(content[contentIndex]);
+  if (!nextBlock) return state;
+  content[contentIndex] = nextBlock;
+  return {
+    isStreaming: true,
+    streamingMessage: { ...message, content },
+  };
 }
 
-/**
- * Applies Pi 0.84's delta-only wire event to the current streaming message.
- * message_end remains authoritative; this reducer is only for the live bubble.
- */
-export function applyAssistantMessageEvent(
-  current: Partial<AgentMessage> | null,
+function applyDelta(
+  state: StreamingState,
   event: ClientAssistantMessageEvent,
-): Partial<AgentMessage> | null {
-  if (event.type === "done") return normalizeToolCalls(event.message as AgentMessage);
-  if (event.type === "error") return normalizeToolCalls(event.error as AgentMessage);
-  if (!isAssistantMessage(current)) return current;
-
+): StreamingState {
   switch (event.type) {
-    case "start":
-      return current;
     case "text_start":
-      return replaceContentBlock(current, event.contentIndex, { type: "text", text: "" });
-    case "text_delta": {
-      const block = current.content[event.contentIndex];
-      const text = block?.type === "text" ? block.text : "";
-      return replaceContentBlock(current, event.contentIndex, { type: "text", text: text + event.delta });
-    }
+      return updateContentBlock(state, event.contentIndex, (current) => (
+        current?.type === "text" ? current : { type: "text", text: "" }
+      ));
+    case "text_delta":
+      return updateContentBlock(state, event.contentIndex, (current) => (
+        current?.type === "text"
+          ? { ...current, text: current.text + event.delta }
+          : null
+      ));
     case "text_end":
-      return replaceContentBlock(current, event.contentIndex, { type: "text", text: event.content });
+      return updateContentBlock(state, event.contentIndex, (current) => ({
+        ...(current?.type === "text" ? current : {}),
+        type: "text",
+        text: event.content,
+      }));
     case "thinking_start":
-      return replaceContentBlock(current, event.contentIndex, { type: "thinking", thinking: "" });
-    case "thinking_delta": {
-      const block = current.content[event.contentIndex];
-      const thinking = block?.type === "thinking" ? block.thinking : "";
-      return replaceContentBlock(current, event.contentIndex, { type: "thinking", thinking: thinking + event.delta });
-    }
+      return updateContentBlock(state, event.contentIndex, (current) => (
+        current?.type === "thinking" ? current : { type: "thinking", thinking: "" }
+      ));
+    case "thinking_delta":
+      return updateContentBlock(state, event.contentIndex, (current) => (
+        current?.type === "thinking"
+          ? { ...current, thinking: current.thinking + event.delta }
+          : null
+      ));
     case "thinking_end":
-      return replaceContentBlock(current, event.contentIndex, { type: "thinking", thinking: event.content });
-    case "toolcall_end": {
-      const next = replaceContentBlock(current, event.contentIndex, event.toolCall as unknown as AssistantContentBlock);
-      return normalizeToolCalls(next as AgentMessage);
-    }
-    // Pi's partial-free toolcall_start/toolcall_delta events do not carry the
-    // tool id/name or parsed arguments. toolcall_end supplies the authoritative
-    // ToolCall, so keep the live message unchanged until then.
+      return updateContentBlock(state, event.contentIndex, (current) => ({
+        ...(current?.type === "thinking" ? current : {}),
+        type: "thinking",
+        thinking: event.content,
+      }));
     case "toolcall_start":
+      return updateContentBlock(state, event.contentIndex, (current) => {
+        if (current?.type === "toolCall") {
+          return {
+            ...current,
+            toolCallId: event.id ?? current.toolCallId,
+            toolName: event.toolName ?? current.toolName,
+            rawInput: current.rawInput ?? "",
+          };
+        }
+        if (typeof event.toolName !== "string") return null;
+        return {
+          type: "toolCall",
+          toolCallId: event.id ?? "",
+          toolName: event.toolName,
+          input: {},
+          rawInput: "",
+        };
+      });
     case "toolcall_delta":
-      return current;
+      return updateContentBlock(state, event.contentIndex, (current) => (
+        current?.type === "toolCall"
+          ? {
+            ...current,
+            toolCallId: event.id || current.toolCallId,
+            toolName: event.toolName || current.toolName,
+            rawInput: (current.rawInput ?? "") + event.delta,
+          }
+          : null
+      ));
+    case "toolcall_end":
+      return updateContentBlock(state, event.contentIndex, () => ({
+        type: "toolCall",
+        toolCallId: event.toolCall.id,
+        toolName: event.toolCall.name,
+        input: event.toolCall.arguments,
+      }));
+    default:
+      return state;
+  }
+}
+
+export function streamReducer(
+  state: StreamingState,
+  action: StreamAction,
+): StreamingState {
+  switch (action.type) {
+    case "start":
+      return { isStreaming: true, streamingMessage: null };
+    case "resume":
+      return { ...state, isStreaming: true };
+    case "snapshot": {
+      const message = normalizeStreamingToolCalls(action.message);
+      return message.role === "assistant"
+        ? { isStreaming: true, streamingMessage: message }
+        : state;
+    }
+    case "delta":
+      return applyDelta(state, action.event);
+    case "end":
+      return INITIAL_STREAMING_STATE;
+    default:
+      return state;
   }
 }

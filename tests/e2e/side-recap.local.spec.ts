@@ -47,7 +47,7 @@ async function seed(request:APIRequestContext) {
   const entries=[{type:'session',version:3,id,cwd,timestamp},{type:'model_change',id:'model001',parentId:null,provider:'local-acceptance',modelId:'fixture',timestamp},{type:'thinking_level_change',id:'think001',parentId:'model001',thinkingLevel:'off',timestamp},{type:'message',id:'user0001',parentId:'think001',timestamp,message:{role:'user',content:'INHERITED_PARENT_ONLY',timestamp:Date.now()}},{type:'message',id:'assist01',parentId:'user0001',timestamp,message:{role:'assistant',content:[{type:'text',text:'INHERITED_ANSWER_ONLY'}],api:'openai-completions',provider:'local-acceptance',model:'fixture',stopReason:'stop',timestamp:Date.now(),usage:{input:1,output:1,cacheRead:0,cacheWrite:0,totalTokens:2,cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}}}}];
   const original=entries.map(e=>JSON.stringify(e)).join('\n')+'\n'; await writeFile(file,original); const refresh=await request.post('/api/agent/new',{data:{cwd,type:'ensure_session',provider:'local-acceptance',modelId:'fixture',persistPreferences:false}}); expect(refresh.ok(),await refresh.text()).toBeTruthy(); return {id,cwd,file,original};
 }
-async function open(page:Page) { const p=await seed(page.request); await page.request.patch(`/api/sessions/${p.id}`,{data:{name:`Acceptance ${p.id}`}}); p.original=await readFile(p.file,'utf8'); await page.goto(`/?session=${p.id}`); await expect(page.getByPlaceholder('Message…',{exact:false})).toBeEditable(); await expect(page.getByText('INHERITED_ANSWER_ONLY',{exact:true})).toBeVisible(); return p; }
+async function open(page:Page) { const p=await seed(page.request); await page.request.patch(`/api/sessions/${p.id}`,{data:{name:`Acceptance ${p.id}`}}); p.original=await readFile(p.file,'utf8'); await page.goto(`/?session=${p.id}`); await expect(page.getByRole("textbox", { name: "Message", exact: true })).toBeEditable(); await expect(page.getByText('INHERITED_ANSWER_ONLY',{exact:true})).toBeVisible(); return p; }
 async function command(page:Page,text:string,key='Enter') { const input=page.locator('.chat-composer textarea'); await input.fill(text); if(text.startsWith('/') && !text.includes(' ')) await input.press('Escape'); await input.press(key); }
 async function sideCreate(request:APIRequestContext,parentId:string,ownerId=randomUUID()) { const res=await request.post('/api/ephemeral',{data:{parentId,ownerId,kind:'side'}}); expect(res.ok(),await res.text()).toBeTruthy(); return {...(await res.json()).data,ownerId}; }
 async function close(request:APIRequestContext,s:{id:string;ownerId:string}) { await request.delete(`/api/ephemeral/${s.id}?ownerId=${s.ownerId}`); }
@@ -97,7 +97,7 @@ test('invalid local commands display useful errors and never call provider',asyn
  await open(page); const start=calls.length;
  await command(page,'/side');
  await expect.soft(page.getByText('Usage: /side <question> (or /btw <question>)',{exact:true})).toBeVisible({timeout:2000});
- expect(calls.length).toBe(start); await expect(page.getByPlaceholder('Message…',{exact:false})).toHaveValue('/side');
+ expect(calls.length).toBe(start); await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue('/side');
 });
 
 test('recap: pending cancellation control and navigation must not retain stale card',async({page})=>{
@@ -114,7 +114,7 @@ test('side: narrow layout, focus isolation, nested command rejection and refresh
  const p=await open(page); await page.setViewportSize({width:390,height:844}); await command(page,'/side test');
  const panel=page.getByRole('region',{name:'Side chat',exact:true}); await expect(panel).toContainText('LOCAL_SIDE_OK');
  await expect(panel.locator('textarea')).toBeFocused();
- const main=page.getByPlaceholder('Message…',{exact:false});
+ const main=page.locator("textarea[aria-label=Message]");
  expect.soft(await main.evaluate(el=>!!el.closest('[inert]')),'hidden main composer must be inert').toBe(true);
  const start=calls.length; await panel.locator('textarea').fill('/unknown'); await panel.locator('textarea').press('Enter');
  await expect.soft(panel.getByRole('alert')).toBeVisible({timeout:1500});
@@ -207,7 +207,7 @@ test('historical compacted branch and parent scroll container survive side and r
  const p=await seed(request);const entries=(await readFile(p.file,'utf8')).trim().split('\n').map(line=>JSON.parse(line));const assistant=entries.at(-1).message;const timestamp=new Date().toISOString();
  const historical=[{type:'message',id:'histuser',parentId:'assist01',timestamp,message:{role:'user',content:'HISTORICAL_QUESTION',timestamp:Date.now()}},{type:'compaction',id:'histcomp',parentId:'histuser',timestamp,summary:'COMPACTED_BRANCH_SENTINEL',firstKeptEntryId:'histuser',tokensBefore:1000},{type:'message',id:'histleaf',parentId:'histcomp',timestamp,message:{...assistant,content:[{type:'text',text:'HISTORICAL_LEAF\n\n'+Array.from({length:70},(_,i)=>`History line ${i}.\n`).join('\n')}]}},{type:'message',id:'altleaf1',parentId:'assist01',timestamp,message:{...assistant,content:[{type:'text',text:'ACTIVE_ALTERNATIVE_LEAF'}]}}];
  await writeFile(p.file,entries.concat(historical).map(entry=>JSON.stringify(entry)).join('\n')+'\n');await request.patch(`/api/sessions/${p.id}`,{data:{name:'Historical acceptance'}});await page.goto(`/?session=${p.id}`);
- await expect(page.getByText('ACTIVE_ALTERNATIVE_LEAF',{exact:true})).toBeVisible();await page.getByRole('button',{name:'Forks',exact:true}).click();await page.locator('span').filter({hasText:/^HISTORICAL_LEAF/}).click();
+ await expect(page.getByText('ACTIVE_ALTERNATIVE_LEAF',{exact:true})).toBeVisible();await page.getByRole('button',{name:'Forks',exact:true}).click();await page.locator('span').filter({hasText:/^HISTORICAL_QUESTION/}).click();
  await expect(page.getByText('History line 30.',{exact:false})).toBeVisible();await page.keyboard.press('Escape');
  const scroller=page.locator('.chat-window .overflow-y-auto.pt-4');await scroller.evaluate(el=>{el.scrollTop=250;el.setAttribute('data-acceptance-scroll','kept');});const top=await scroller.evaluate(el=>el.scrollTop);
  const start=calls.length;await command(page,'/side branch question');const panel=page.getByRole('region',{name:'Side chat',exact:true});await expect(panel).toContainText('LOCAL_SIDE_OK');

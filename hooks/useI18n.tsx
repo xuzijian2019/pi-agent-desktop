@@ -26,7 +26,7 @@ function getMessages(): Record<string, Record<string, string>> {
 
 function readInitialLocale(): Locale {
   const stored = getPref(APP_PREF_KEYS.locale);
-  if (stored === "en" || stored === "zh-CN") return stored;
+  if (stored === "en" || stored === "zh-CN" || stored === "zh-TW") return stored;
   // UI defaults to English; browser language is intentionally not consulted
   // (the topbar language switcher was removed).
   return defaultLocale;

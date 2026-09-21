@@ -2,8 +2,10 @@ import type { ModelScopeWarning } from "./model-scope-warnings";
 
 export interface ModelsData {
   models: Record<string, string>;
-  modelList: { id: string; name: string; provider: string }[];
+  modelList: { id: string; name: string; provider: string; input?: string[] }[];
   defaultModel: { provider: string; modelId: string } | null;
+  /** Resolved thinking level a new session starts with when the user has not picked one. */
+  defaultThinkingLevel: string | null;
   thinkingLevels: Record<string, string[]>;
   thinkingLevelMaps: Record<string, Record<string, string | null>>;
   /** `provider/modelId` → thinking level pinned by an `enabledModels` `:level` suffix. */
@@ -25,6 +27,8 @@ declare global {
 
 const MODELS_CACHE_TTL_MS = 60_000;
 const MAX_MODELS_CACHE_ENTRIES = 32;
+// Never interpolate the caught error here; SDK errors can contain paths and provider details.
+const SAFE_MODEL_LOAD_FAILURE_MESSAGE = "Model list is temporarily unavailable. Check your configuration and try again.";
 
 function getModelsCacheState(): ModelsCacheState {
   if (!globalThis.__piModelsCacheState) {
@@ -46,6 +50,10 @@ export function invalidateModelsCache(): void {
 
 export function withModelRuntimeError(data: ModelsData, modelError: string | undefined): ModelsData {
   return modelError ? { ...data, modelError } : data;
+}
+
+export function withSafeModelLoadFailure(data: ModelsData): ModelsData {
+  return { ...data, modelError: SAFE_MODEL_LOAD_FAILURE_MESSAGE };
 }
 
 export function loadModelsWithCache(cwd: string, loader: () => Promise<ModelsData>): Promise<ModelsData> {

@@ -79,11 +79,11 @@ test("no test file is left out of npm test", async () => {
     .split("\n")
     .filter(Boolean);
 
-  const covered = tracked.filter((file) => /^(app|lib|scripts|components|hooks)\//.test(file));
+  const covered = tracked.filter((file) => /^(app|lib|scripts|components|hooks|public)\//.test(file));
   assert.deepEqual(
     tracked.filter((file) => !covered.includes(file)),
     [],
-    "a .test.mjs file lives outside app/, lib/, scripts/, components/ and hooks/ — extend npm test",
+    "a .test.mjs file lives outside app/, lib/, scripts/, components/, hooks/ and public/ — extend npm test",
   );
 });
 
@@ -222,4 +222,14 @@ test("the Windows debug workflow cannot release or sign anything", async () => {
   assert.doesNotMatch(workflow, /gh release/);
   assert.match(workflow, /contents: read/);
   assert.match(workflow, /trace-stray-scandir\.cjs/);
+});
+
+test("desktop staging ships node-pty native prebuilds with executable helpers", async () => {
+  const prepareSource = await readFile(new URL("./prepare-desktop.mjs", import.meta.url), "utf8");
+  // Next's tracer cannot follow node-pty's runtime-computed prebuilds path;
+  // staging must copy the tree and fix the macOS spawn-helper bits for both
+  // darwin variants (a staged build may run on either architecture).
+  assert.match(prepareSource, /node_modules", "node-pty"\)/);
+  assert.match(prepareSource, /\["darwin-arm64", "darwin-x64"\]/);
+  assert.match(prepareSource, /chmod\(join\(ptyDestination, "prebuilds", variant, "spawn-helper"\), 0o755\)/);
 });

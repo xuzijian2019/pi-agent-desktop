@@ -1,22 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { readTextPreviewChunk } from "@/lib/text-preview";
 import fs from "fs";
 import path from "path";
 import {
   getAllowedFileRoots,
   isExistingFilePathAllowed,
   isFilePathAllowed,
-  isWindowsAbsolutePath,
-  normalizeSlashes,
 } from "@/lib/file-access";
 import {
   DOCX_PREVIEW_MAX_BYTES,
   IMAGE_PREVIEW_MAX_BYTES,
-  TEXT_PREVIEW_MAX_BYTES,
   documentPreviewKind,
   getAudioMime,
   getDocumentMime,
   getFileExt,
   getImageMime,
+  getVideoMime,
 } from "@/lib/file-types";
 import { resolveDirentIsDirectory } from "@/lib/file-dirent";
 import { isFilePathReferencedBySession } from "@/lib/session-file-references";
@@ -33,6 +32,7 @@ import {
 } from "@/lib/bounded-form-data";
 import { isDesktopApiRequestAllowed } from "@/lib/desktop-api-auth";
 import { getFileLanguage } from "@/lib/file-language";
+import { filePathFromApiSegments, isWindowsAbsolutePath, samePath } from "@/lib/paths";
 
 const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
@@ -92,22 +92,6 @@ const SERVE_EXT_TO_MIME: Record<string, string> = {
 };
 
 
-function getServeMime(filePath: string): string {
-  const ext = getFileExt(filePath);
-  return getImageMime(filePath)
-    || getAudioMime(filePath)
-    || getDocumentMime(filePath)
-    || SERVE_EXT_TO_MIME[ext]
-    || "application/octet-stream";
-}
-
-function filePathFromSegments(segments: string[]): string {
-  const joined = segments.join("/");
-  const slashJoined = normalizeSlashes(joined);
-  if (isWindowsAbsolutePath(slashJoined)) return slashJoined;
-  return "/" + joined.replace(/^\/+/, "");
-}
-
 function parseFileRequestType(value: string): FileRequestType | null {
   return FILE_REQUEST_TYPE_SET.has(value) ? (value as FileRequestType) : null;
 }
@@ -115,7 +99,7 @@ function parseFileRequestType(value: string): FileRequestType | null {
 async function getUploadDirectory(segments: string[]): Promise<
   { directory: string } | { response: NextResponse }
 > {
-  const directory = filePathFromSegments(segments);
+  const directory = filePathFromApiSegments(segments);
   const allowedRoots = await getAllowedFileRoots();
   if (!isFilePathAllowed(directory, allowedRoots)) {
     return { response: NextResponse.json({ error: "Access denied" }, { status: 403 }) };
@@ -434,8 +418,16 @@ function getContentDisposition(filePath: string, asDownload = false): string {
   return `${disposition}; filename="${fallback}"; filename*=UTF-8''${encodeHeaderValue(fileName)}`;
 }
 
+function getServeMime(filePath: string): string {
+  return getImageMime(filePath)
+    || getAudioMime(filePath)
+    || getDocumentMime(filePath)
+    || getVideoMime(filePath)
+    || "application/octet-stream";
+}
+
 function streamFile(filePath: string, stat: fs.Stats, contentType: string, rangeHeader: string | null, asDownload = false, extraHeaders: Record<string, string> = {}): Response {
-  const headers = {
+  const headers: Record<string, string> = {
     "Content-Type": contentType,
     "Cache-Control": "no-cache",
     "Accept-Ranges": "bytes",
@@ -443,6 +435,16 @@ function streamFile(filePath: string, stat: fs.Stats, contentType: string, range
     "X-Content-Type-Options": "nosniff",
     ...extraHeaders,
   };
+  // SVG is the only preview type a browser executes as a document. A
+  // repo-controlled SVG navigated to directly (for example through a link in
+  // a transcript) would otherwise run script in the Pi Web origin, where it
+  // can call any /api route. These headers only affect document rendering;
+  // <img> preview embedding ignores them.
+  if (contentType === "image/svg+xml") {
+    headers["Content-Security-Policy"] =
+      "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+    headers["Referrer-Policy"] = "no-referrer";
+  }
 
   if (!rangeHeader) {
     return new Response(createFileBodyStream(filePath), {
@@ -558,7 +560,7 @@ export async function GET(
 ) {
   try {
     const { path: segments } = await params;
-    const filePath = filePathFromSegments(segments);
+    const filePath = filePathFromApiSegments(segments);
     const requestedType = request.nextUrl.searchParams.get("type");
     const rawType = requestedType ?? "list";
     const type = parseFileRequestType(rawType);
@@ -577,19 +579,25 @@ export async function GET(
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    let stat: fs.Stats;
+    let stat: fs.Stats | undefined;
     try {
       stat = fs.statSync(filePath);
     } catch {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      if (type !== "watch") {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
     }
 
-    if (!allowedBySessionReference && !isExistingFilePathAllowed(filePath, allowedRoots)) {
+    const existingAuthorizationPath = stat ? filePath : path.dirname(filePath);
+    if (
+      !allowedBySessionReference
+      && !isExistingFilePathAllowed(existingAuthorizationPath, allowedRoots)
+    ) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
     if (type === "read") {
-      if (!stat.isFile()) {
+      if (!stat?.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 400 });
       }
       const imageMime = getImageMime(filePath);
@@ -603,56 +611,60 @@ export async function GET(
       if (audioMime) {
         return streamFile(filePath, stat, audioMime, request.headers.get("range"));
       }
+      const videoMime = getVideoMime(filePath);
+      if (videoMime) {
+        return streamFile(filePath, stat, videoMime, request.headers.get("range"));
+      }
       const documentMime = getDocumentMime(filePath);
       if (documentMime) {
         return streamFile(filePath, stat, documentMime, request.headers.get("range"));
       }
-      const isHtmlFile = getFileExt(filePath) === "html" || getFileExt(filePath) === "htm";
-      const textPreviewMaxBytes = isHtmlFile ? HTML_PREVIEW_MAX_BYTES : TEXT_PREVIEW_MAX_BYTES;
-      if (stat.size > textPreviewMaxBytes) {
-        return NextResponse.json({
-          error: isHtmlFile
-            ? "File too large for preview (>10MB)"
-            : "File too large for preview (>256KB)",
-        }, { status: 413 });
+      const rawOffset = request.nextUrl.searchParams.get("offset");
+      if (rawOffset !== null && !/^\d+$/.test(rawOffset)) {
+        return NextResponse.json({ error: "Invalid text preview offset" }, { status: 400 });
       }
-      const content = fs.readFileSync(filePath, "utf-8");
+      const offset = Number(rawOffset ?? 0);
+      if (!Number.isSafeInteger(offset) || offset > stat.size) {
+        return NextResponse.json({ error: "Invalid text preview offset" }, { status: 400 });
+      }
+      const chunk = readTextPreviewChunk(filePath, stat.size, offset);
       const language = getFileLanguage(filePath);
-      return NextResponse.json({ content, language, size: stat.size });
+      return NextResponse.json({ ...chunk, language, size: stat.size });
     }
 
     if (type === "download") {
-      if (!stat.isFile()) {
+      if (!stat?.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 400 });
       }
-      const mime = getImageMime(filePath) || getAudioMime(filePath) || getDocumentMime(filePath) || "application/octet-stream";
+      const mime = getImageMime(filePath) || getAudioMime(filePath) || getVideoMime(filePath) || getDocumentMime(filePath) || "application/octet-stream";
       return streamFile(filePath, stat, mime, request.headers.get("range"), true);
     }
 
     if (type === "serve") {
-      if (!stat.isFile()) {
+      if (!stat?.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 400 });
       }
-      return streamFile(filePath, stat, getServeMime(filePath), request.headers.get("range"), false, { "Content-Security-Policy": HTML_PREVIEW_CSP });
+      return stat ? streamFile(filePath, stat, getServeMime(filePath), request.headers.get("range"), false, { "Content-Security-Policy": HTML_PREVIEW_CSP }) : NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
     if (type === "meta") {
-      if (!stat.isFile()) {
+      if (!stat?.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 400 });
       }
       const imageMime = getImageMime(filePath);
       const audioMime = getAudioMime(filePath);
+      const videoMime = getVideoMime(filePath);
       const documentMime = getDocumentMime(filePath);
       return NextResponse.json({
         size: stat.size,
         language: getFileLanguage(filePath),
-        mime: imageMime || audioMime || documentMime || "text/plain",
+        mime: imageMime || audioMime || videoMime || documentMime || "text/plain",
         previewKind: documentPreviewKind(filePath),
       });
     }
 
     if (type === "preview") {
-      if (!stat.isFile()) {
+      if (!stat?.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 400 });
       }
       if (getFileExt(filePath) !== "docx") {
@@ -683,12 +695,15 @@ export async function GET(
     }
 
     if (type === "watch") {
-      if (!stat.isFile()) {
+      if (stat && !stat.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 400 });
       }
       let watcher: fs.FSWatcher | null = null;
-      let lastMtimeMs = stat.mtimeMs;
-      let lastSize = stat.size;
+      let lastMtimeMs = stat?.mtimeMs ?? 0;
+      let lastCtimeMs = stat?.ctimeMs ?? 0;
+      let lastIno = stat?.ino ?? 0;
+      let lastSize = stat?.size ?? 0;
+      let lastExists = stat !== undefined;
       const stream = new ReadableStream({
         start(controller) {
           const send = (eventName: string, data: Record<string, unknown>) => {
@@ -699,25 +714,44 @@ export async function GET(
               // client disconnected
             }
           };
-          // Send initial ping so client knows connection is live
-          send("connected", { filePath });
           try {
-            watcher = fs.watch(filePath, () => {
+            const watchedDirectory = path.dirname(filePath);
+            watcher = fs.watch(watchedDirectory, (_eventType, changedName) => {
+              if (
+                changedName != null
+                && !samePath(path.join(watchedDirectory, changedName.toString()), filePath)
+              ) return;
               try {
                 const s = fs.statSync(filePath);
                 // Some platforms emit watch events for file reads/attribute
                 // access. Ignore those or the client's refresh read loops.
-                if (s.mtimeMs === lastMtimeMs && s.size === lastSize) return;
+                if (
+                  lastExists
+                  && s.mtimeMs === lastMtimeMs
+                  && s.ctimeMs === lastCtimeMs
+                  && s.ino === lastIno
+                  && s.size === lastSize
+                ) return;
+                lastExists = true;
                 lastMtimeMs = s.mtimeMs;
+                lastCtimeMs = s.ctimeMs;
+                lastIno = s.ino;
                 lastSize = s.size;
                 send("change", { mtime: s.mtime.toISOString(), size: s.size });
               } catch {
+                if (!lastExists) return;
+                lastExists = false;
                 send("change", { mtime: new Date().toISOString(), size: 0 });
               }
             });
             watcher.on("error", () => {
+              try { watcher?.close(); } catch { /* ignore */ }
+              watcher = null;
               try { controller.close(); } catch { /* ignore */ }
             });
+            // The client snapshots only after this event, so emit it after the
+            // watcher exists to avoid dropping changes between those steps.
+            send("connected", { filePath });
           } catch {
             send("error", { message: "Failed to watch file" });
             controller.close();
@@ -738,7 +772,7 @@ export async function GET(
     }
 
     if (type === "watch-dir") {
-      if (!stat.isDirectory()) {
+      if (!stat?.isDirectory()) {
         return NextResponse.json({ error: "Not a directory" }, { status: 400 });
       }
       let watcher: fs.FSWatcher | null = null;
@@ -815,12 +849,12 @@ export async function GET(
     // paths without preserving the document's query string. Treat an
     // untyped file request as an inline file response so relative CSS, JS,
     // images, and other assets loaded by the HTML preview keep working.
-    if (type === "list" && requestedType === null && stat.isFile()) {
-      return streamFile(filePath, stat, getServeMime(filePath), request.headers.get("range"), false, { "Content-Security-Policy": HTML_PREVIEW_CSP });
+    if (type === "list" && requestedType === null && stat?.isFile()) {
+      return stat ? streamFile(filePath, stat, getServeMime(filePath), request.headers.get("range"), false, { "Content-Security-Policy": HTML_PREVIEW_CSP }) : NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
     // type === "list"
-    if (!stat.isDirectory()) {
+    if (!stat?.isDirectory()) {
       return NextResponse.json({ error: "Not a directory" }, { status: 400 });
     }
 

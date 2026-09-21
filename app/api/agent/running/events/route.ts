@@ -1,4 +1,6 @@
-import { getRunningRpcSessionIds, getRpcSessionRunIds, subscribeRunningSessions } from "@/lib/rpc-manager";
+import { registerEventStreamCloser } from "@/lib/agent-event-stream";
+import { getSessionListVersion } from "@/lib/session-reader";
+import { getCompletionNotificationSuppressedRpcSessionIds, getRunningRpcSessionIds, getRpcSessionRunIds, subscribeRunningSessions } from "@/lib/rpc-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -12,16 +14,19 @@ export async function GET(req: Request) {
       const encoder = new TextEncoder();
       let closed = false;
       let unsubscribe = () => {};
+      let unregisterClose = () => {};
       let heartbeat: ReturnType<typeof setInterval> | null = null;
       const cleanup = () => {
         if (closed) return;
         closed = true;
         if (heartbeat) clearInterval(heartbeat);
         unsubscribe();
+        unregisterClose();
         req.signal?.removeEventListener("abort", cleanup);
         try { controller.close(); } catch { /* already closed/cancelled */ }
       };
       dispose = cleanup;
+      unregisterClose = registerEventStreamCloser(cleanup);
       req.signal?.addEventListener("abort", cleanup);
       const encode = (data: unknown) => {
         if (closed) return false;
@@ -35,22 +40,28 @@ export async function GET(req: Request) {
         }
       };
 
+      const snapshot = (ids = getRunningRpcSessionIds()) => ({
+        type: "running", runningSessionIds: ids, runIds: getRpcSessionRunIds(),
+        sessionListVersion: getSessionListVersion(),
+        completionNotificationSuppressedSessionIds: getCompletionNotificationSuppressedRpcSessionIds(),
+      });
+
       // Subscribe BEFORE taking the initial snapshot so no state change can slip
       // through the gap between snapshot and subscription.
       const nextUnsubscribe = subscribeRunningSessions((ids) => {
-        encode({ type: "running", runningSessionIds: ids, runIds: getRpcSessionRunIds() });
+        encode(snapshot(ids));
       });
       if (closed) nextUnsubscribe();
       else unsubscribe = nextUnsubscribe;
 
       // Initial snapshot so the client renders the correct state immediately.
       // (A duplicate frame here is harmless: the client just sets the same set.)
-      encode({ type: "running", runningSessionIds: getRunningRpcSessionIds(), runIds: getRpcSessionRunIds() });
+      encode(snapshot());
 
       // Heartbeat to keep the connection alive through proxies/timeouts.
       if (!closed) heartbeat = setInterval(() => {
         if (closed) return;
-        try { controller.enqueue(encoder.encode(":\n\n")); }
+        try { encode(snapshot()); }
         catch { cleanup(); }
       }, 30_000);
 

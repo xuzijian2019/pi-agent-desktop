@@ -66,3 +66,5 @@ pi-gui-session-preview.png
 /playwright-report/
 /test-results/
 /blob-report/
+# upstream e2e scratch files
+e2e_*.mjs

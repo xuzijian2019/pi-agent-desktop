@@ -156,15 +156,41 @@ hooks/
 
 ### A new session has no file until pi flushes it
 Pi delays the first flush of a new session until an assistant message exists, so a run that just started is invisible to the disk scan behind `/api/sessions`. The sidebar list is derived purely from `.jsonl` files, so without help the session the user is actively watching cannot be found in the list until the turn ends.
-- `AgentSessionWrapper.getLiveSnapshot()` builds a `SessionInfo`-shaped row from the in-memory `sessionManager`; `/api/sessions` merges those for ids the scan did not return. The snapshot returns `null` until a user message exists, otherwise an untouched "new chat" runtime renders a row that later vanishes.
-- `SessionManager.open()` on a missing file returns an **empty history rather than throwing**, so a read path that opens the file blindly silently shows an empty chat. Session reads go through `openSessionManagerForRead()`, which falls back to the live runtime's manager. Rename and delete of an unflushed session likewise go through the runtime — there is no file to append to or unlink.
+- `/api/sessions` merges live runtime rows via `getRpcSessionInfos()` (`lib/rpc-manager.ts`) with `mergeSessionLists()` (`lib/session-reader.ts`); the disk row wins for a persisted id, and a runtime row is suppressed until a user message exists (otherwise an untouched "new chat" runtime renders a row that later vanishes). `ensure_session`-created idle runtimes are also suppressed.
+- Sessions created by subagents carry a `relation: { kind: "subagent", ... }`; sidebar rows for subagents are hidden and their state aggregates into the parent row (`listSessionFamilies` in `lib/session-family.ts`).
+- The disk scan behind the list is the fork's incremental scanner (`lib/session-scan.ts`), cached per file keyed on mtime+size, so post-turn refreshes only re-parse the session that changed. `invalidateScannedSession(path)` drops one file's cache entry; `invalidateSessionListCache()` drops the list itself. Include symlinked project directories when touching the directory walk.
+- `GET /api/sessions` returns a `sessionListVersion` counter; the sidebar's SSE handler refetches the list (reusing the invalidated server cache, no forced scan) whenever the version moves — that is how edits from another window/process appear.
 - The sidebar refetches the list once per running id it has no row for, because a session can start running between list fetches.
+
+### Event pipeline: SDK → wire → client (`lib/agent-event-stream.ts`, `lib/agent-event-wire.ts`)
+- Per-agent SSE goes through `createAgentEventStream(req, id, sessionPromise)`: the session starts **asynchronously** (the route never `await`s `startRpcSession`), the stream filters events through `toClientAgentEvent()` and forwards them with one shared `TextEncoder`. Cancellation is `cancelStream(closeController)`; closing with `false` keeps the session's own listeners alive.
+- The sidebar's running-id stream (`/api/agent/running/events`) keeps the older inline `dispose` pattern and must stay registered in `app/api/agent/events-route.test.mjs`.
+- `subscribeRunningSessions()`/`notifyRunningChange()` in `rpc-manager.ts` broadcast the running-id set; `SessionSidebar` treats the stream as authoritative for running state (`sseAuthoritativeRef`) once connected, and a `sessionListVersion` bump on any SSE frame triggers a cache-reusing list refetch.
+
+### Session listing: incremental scanner vs upstream catalogue
+- `lib/session-scan.ts` replaces `SessionManager.listAll()`: same per-file info minus `allMessagesText`, cached per file keyed on mtime+size (`globalThis.__piSessionScanCache`). Only files whose mtime/size changed are re-parsed. `invalidateScannedSession(path)` forces one file's reparse; `invalidateSessionListCache()` drops the merged list cache. Symlinked project dirs are included.
+- `resolveSessionPath()` tries a targeted header read (bounded to 4 KiB) before falling back to a full scan; `readSessionHeader()` never parses the whole file.
+- Never reintroduce a literal `homedir()` into an fs call in these paths — route it through `userHome()` or the scanner walks the whole user profile at build time and Windows releases fail.
+
+### Client session hook: guards you must keep when merging upstream (`hooks/useAgentSession.ts`)
+- **Monotonic request ids**: `contextLoadIdRef`/`toolsLoadIdRef`/`sessionGenerationRef` — checking only the session id is not enough when the user switches A→B→A before a request settles. `loadContext`/`loadTools`/the `agent_end` refresh all capture and re-verify identity.
+- **Session-load deadline**: `loadSession` fetches through `fetchWithRetry` (one retry with a longer deadline); a hung first attempt must not leave "loading session" forever.
+- **Streaming seed**: `seedStreamingSnapshot()` re-hydrates the streaming bubble from `get_state.streamingMessage` on reconnect paths (page refresh mid-run).
+- **Render-phase scroll save**: the departing session's scroll position is saved inside the `sessionIdentity !== appliedIdentity` render block, not in an effect cleanup — the browser clamps scrollTop to 0 before cleanup runs. `pendingInitialScrollTopRef` is consumed by the first-messages layout effect; upstream's `pendingScrollRestore` visibility gate hides the container until an in-page viewport restore lands.
+
+### Thinking-level state model (post-0.9.1)
+Four states, not one: `newSessionThinkingLevel` (composer pre-send), `newSessionDefaultThinkingLevel` (from `/api/models` pins + `defaultThinkingLevel`), `currentThinkingOverride` (explicit user choice), `liveThinkingLevel` (wrapper-reported). `thinkingLevel` returned to the UI is `displayThinkingLevel ?? "auto"`. "auto" clears all overrides and leaves pi's setting untouched. The selector prefers the live wrapper model/thinking over persisted response metadata.
+
+### Security posture from the upstream main merge
+- `PI_WEB_PASSWORD` (off by default) enables browser password login with `pi_web_session` cookie (SameSite=Lax) and global backoff throttling (`lib/auth-throttle.ts`). When disabled, loopback/desktop-token paths behave exactly as before — desktop token auth is independent.
+- Manual-code OAuth handshake tokens are `crypto.randomUUID()`; never revert to Math.random.
+- Inline SVG previews opened as documents get a CSP that blocks script execution (`HTML_PREVIEW_CSP` in the files route).
 
 ### ToolCall field normalization
 Pi stores toolCall blocks as `{type:"toolCall", id, name, arguments}` but `ToolCallContent` uses `{toolCallId, toolName, input}`. `normalizeToolCalls()` in `lib/normalize.ts` handles this — called in both `session-reader.ts` (file load) and `ChatWindow.handleAgentEvent()` (streaming).
 
 ### New session tool preset
-Tool names are passed at session creation (`POST /api/agent/new` → `toolNames[]`). For existing sessions, the active preset is inferred on mount via `get_tools` → `getPresetFromTools()`. When tools are fully disabled (`toolNames = []`), `rpc-manager.ts` passes an empty tool allow-list and forces `agent.state.systemPrompt = ""` after startup/reload/resource discovery.
+Tool names are passed at session creation (`POST /api/agent/new` → `toolNames[]`). For existing sessions, the active preset is inferred on mount via `get_tools` → `getPresetFromTools()`. When tools are fully disabled (`toolNames = []`), `rpc-manager.ts` passes an empty tool allow-list and keeps an empty prompt after startup/reload/resource discovery through `lib/exact-system-prompt.ts`. Pi 0.86 makes `agent.state.systemPrompt` read-only; update transcript system messages while retaining tool declarations instead. Opening an existing conversation must not append tool-selection metadata.
 
 ### Model defaults for new sessions
 `GET /api/models` returns `defaultModel` read from `~/.pi/agent/settings.json`. `ChatWindow` pre-selects this on mount for new sessions. Explicit browser model/thinking selections are applied atomically during AgentSession construction, then `lib/startup-preferences.ts` persists their effective values without replaying `set_model`/`set_thinking_level`; implicit `enabledModels` fallbacks and thinking pins are not persisted.
@@ -182,7 +208,7 @@ On `ChatWindow` mount, `GET /api/agent/[id]` is called. If `state.isStreaming ==
 Newer pi emits `compaction_start` / `compaction_end`; older versions emitted `auto_compaction_start` / `auto_compaction_end`. `handleAgentEvent` accepts both sets to keep `isCompacting` in sync. Manual compact is a blocking POST — the button stays disabled until the response returns.
 
 ### Running state polling + reconciliation
-- The sidebar polls `/api/agent/running` every 2.5 seconds while the tab is visible and pauses polling in background tabs. The session-list response remains the initial fallback.
+- The sidebar uses `/api/agent/running/events` for running status. Its heartbeat carries the session-list version so external Pi writes also refresh the catalog. Fork-owned running/activity streams register with the shared shutdown drain; the session-list response remains the initial fallback.
 - `useAgentSession` treats per-session SSE as primary for chat events and opens it before each prompt. `prompt_done` completes the current UI stage and notification immediately, but the idle SSE stays open for a 30-second grace window and is reused by the next prompt. `agent_start` cancels that close timer; `agent_settled` finishes extension-injected runs that have no wrapper-level `prompt_done` and starts a fresh grace window. Do not close on the first `agent_end`: retries, compaction, and extension-queued messages can continue the same logical prompt.
 - While a run is active, `useAgentSession` periodically calls `GET /api/agent/[id]` and also reconciles on `visibilitychange`/`online`. This fixes missed terminal events from background tabs or half-open connections.
 - Prompt runs use a monotonic run id; late SSE or slow reconciliation responses from an old run must be ignored so they cannot resurrect stale streaming bubbles.
@@ -236,6 +262,9 @@ Switching chats does **not** remount `ChatWindow` — `AppShell.handleSelectSess
 - `lib/workspace-state.ts` restores the last session/cwd/file tabs on cold start. URL params always win over the persisted workspace.
 - `useDesktopConnection` polls `/api/home` only in Tauri to drive the offline banner. Its cleanup must stop in-flight probes from rescheduling, otherwise an unmount leaves a timer nobody owns and it pings forever.
 
+### Workspace terminals & node-pty staging
+- Terminal tabs load `node-pty` through a runtime-computed path (`prebuilds/${platform}-${arch}/*.node`), which Next's file tracer cannot follow — a bare standalone build ships only `lib/` and breaks at runtime. `prepare-desktop.mjs` copies the whole `prebuilds/` tree and chmods `spawn-helper` for **both** darwin variants (macOS strips the bit in published prebuilds; `bin/prepare-terminal.js` fixes the same thing at npm-install time). If terminal tabs 500 or hang in a packaged app, check that `resources/server/node_modules/node-pty/prebuilds/` exists with executable helpers first.
+
 ### Upstream merge sentinels (not the same "fork" as session fork)
 This repo is a fork of `agegr/pi-web` and periodically merges upstream. `components/fork-extractions.test.mjs` guards the failure mode that a clean merge can still be wrong: code this fork *moved* to another file reappears at its origin, or a fork change is silently reverted. Git does not track cross-file moves, so neither shows up in `tsc`, eslint, or the upstream suite.
 
@@ -267,3 +296,13 @@ Location: `~/.pi/agent/sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl`
 --accent --user-bg --tool-bg
 --font-mono
 ```
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
