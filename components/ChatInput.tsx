@@ -70,6 +70,8 @@ interface Props {
   isCompacting?: boolean;
   compactError?: string | null;
   compactResult?: CompactResultInfo | null;
+  /** Compaction/branch-summary generation is in retry backoff (attempt/max). */
+  summarizationRetry?: { attempt: number; maxAttempts: number } | null;
   toolPreset?: ToolPreset;
   onToolPresetChange?: (preset: ToolPreset) => void;
   thinkingLevel?: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -79,6 +81,15 @@ interface Props {
   availableThinkingLevels?: string[] | null;
   thinkingLevelMap?: Record<string, string | null> | null;
   retryInfo?: { attempt: number; maxAttempts: number; errorMessage?: string } | null;
+  /** Cancel the auto-retry backoff (pi ≥ 0.86) shown in the retry banner. */
+  onAbortRetry?: () => void;
+  automation?: { autoCompactionEnabled: boolean | null; autoRetryEnabled: boolean | null; steeringMode: string | null; followUpMode: string | null };
+  onSetAutomation?: (change: {
+    autoCompaction?: boolean;
+    autoRetry?: boolean;
+    steeringMode?: "all" | "one-at-a-time";
+    followUpMode?: "all" | "one-at-a-time";
+  }) => void;
   queuedMessages?: QueuedMessages | null;
   inputHistory?: string[];
   onRecallQueue?: () => void;
@@ -643,7 +654,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange, modelSwitching,
   compactError, compactResult, toolPreset, onToolPresetChange,
   thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
-  retryInfo, queuedMessages, inputHistory = [], onRecallQueue,
+  retryInfo, onAbortRetry, queuedMessages, inputHistory = [], onRecallQueue,
   slashCommands, slashCommandsLoading, onLoadSlashCommands,
   onBuiltinCommand, onViewCommand,
   onPromptWithStreamingBehavior,
@@ -2025,6 +2036,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               <path d="M3 3v5h5" />
             </svg>
              {t("chat.retrying", { attempt: retryInfo.attempt, max: retryInfo.maxAttempts })}{retryInfo.errorMessage && <span className="composer-status-detail">— {retryInfo.errorMessage}</span>}
+             {onAbortRetry && (
+               <button type="button" onClick={onAbortRetry} className="composer-status-action">
+                 {t("chat.cancelRetry")}
+               </button>
+             )}
           </div>
         )}
         {compactResultText && (

@@ -19,7 +19,8 @@ import { mergeSessionStats, type SessionFileStats } from "@/lib/session-stats";
 import { userMessageKey } from "@/lib/prompt-recovery";
 import { AgentEventConnection } from "@/lib/agent-event-connection";
 import { getToolExecutionProgress } from "@/lib/tool-execution-progress";
-import { CHAT_SCROLL_TAIL_TOLERANCE } from "@/lib/chat-lazy-load";
+import { updateExtensionWidgets } from "@/lib/extension-widgets";
+import { CHAT_SCROLL_TAIL_TOLERANCE, shouldShowScrollToLatest } from "@/lib/chat-lazy-load";
 import { INITIAL_STREAMING_STATE, streamReducer, type ClientAssistantMessageEvent } from "@/lib/streaming-message";
 
 export interface SessionData {
@@ -80,7 +81,18 @@ type AgentStateResponse = {
   extensionStatuses?: ExtensionStatusItem[];
   extensionWidgets?: ExtensionWidgetItem[];
   queuedMessages?: { steering?: string[]; followUp?: string[] } | null;
+  autoCompactionEnabled?: boolean;
+  autoRetryEnabled?: boolean;
+  steeringMode?: string;
+  followUpMode?: string;
 };
+
+export interface SessionAutomation {
+  autoCompactionEnabled: boolean | null;
+  autoRetryEnabled: boolean | null;
+  steeringMode: string | null;
+  followUpMode: string | null;
+}
 
 export interface QueuedMessages {
   steering: string[];
@@ -180,6 +192,9 @@ const AGENT_STATE_RECONCILE_MS = 15_000;
 const BASH_STATE_RECONCILE_MS = 1_000;
 const EVENT_STREAM_READY_TIMEOUT_MS = 60_000;
 const EVENT_STREAM_RECONNECT_DELAY_MS = 1_000;
+// Live `!command` output is buffered client-side for the pending bubble; keep
+// only the tail so a chatty command cannot grow the state unbounded.
+const PENDING_BASH_OUTPUT_CAP = 16_000;
 const SESSION_LEASE_RENEW_INTERVAL_MS = 30_000;
 // Retry temporary model-list failures without requiring a page refresh.
 const MODELS_RETRY_DELAYS_MS = [2_000, 5_000, 10_000];
@@ -304,7 +319,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [streamState, dispatch] = useReducer(streamReducer, INITIAL_STREAMING_STATE);
   const [agentRunning, setAgentRunning] = useState(false);
   const [bashRunning, setBashRunning] = useState(false);
-  const [pendingBash, setPendingBash] = useState<{ command: string; excludeFromContext: boolean } | null>(null);
+  const [pendingBash, setPendingBash] = useState<{ command: string; excludeFromContext: boolean; output: string } | null>(null);
+  // Session automation flags (auto-compaction / auto-retry / queue delivery
+  // modes) mirrored from get_state; null while unknown (new session).
+  const [automation, setAutomation] = useState<SessionAutomation>({
+    autoCompactionEnabled: null,
+    autoRetryEnabled: null,
+    steeringMode: null,
+    followUpMode: null,
+  });
+  // Retry backoff for compaction/branch-summary regeneration (SDK 0.86
+  // `summarization_retry_*`): shown next to the compact indicator so a
+  // stuck-looking "Compacting…" explains itself.
+  const [summarizationRetry, setSummarizationRetry] = useState<{ attempt: number; maxAttempts: number } | null>(null);
   const [modelNames, setModelNames] = useState<Record<string, string>>({});
   const [modelList, setModelList] = useState<ModelEntry[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
@@ -342,9 +369,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [pendingModel, setPendingModel] = useState<{ provider: string; modelId: string } | null>(null);
   const [modelSwitching, setModelSwitching] = useState(false);
   const [isCompacting, setIsCompacting] = useState(false);
+  const [autoCompactionEnabled, setAutoCompactionEnabled] = useState(true);
   const [compactError, setCompactError] = useState<string | null>(null);
   const [compactResult, setCompactResult] = useState<CompactResultInfo | null>(null);
   const [agentPhase, setAgentPhase] = useState<AgentPhase>(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [slashCommands, setSlashCommands] = useState<SlashCommandInfo[]>([]);
   const [slashCommandsLoading, setSlashCommandsLoading] = useState(false);
   const [noticeState, dispatchNotice] = useReducer(noticeReducer, { visible: [], pending: [] });
@@ -363,6 +392,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [appliedIdentity, setAppliedIdentity] = useState<string | null>(session?.id ?? null);
   const sessionPropIdRef = useRef<string | null>(session?.id ?? null);
   const agentRunningRef = useRef(false);
+  const externalAppendRefreshAtRef = useRef(0);
   const sdkAgentActiveRef = useRef(false);
   const rpcPromptPendingRef = useRef(false);
   const notifiedPromptRunIdRef = useRef(-1);
@@ -549,6 +579,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (state?.thinkingLevel !== undefined) {
       setLiveThinkingLevel(asConcreteThinkingLevel(state.thinkingLevel));
     }
+    setAutomation((prev) => ({
+      autoCompactionEnabled: state?.autoCompactionEnabled ?? prev.autoCompactionEnabled,
+      autoRetryEnabled: state?.autoRetryEnabled ?? prev.autoRetryEnabled,
+      steeringMode: state?.steeringMode ?? prev.steeringMode,
+      followUpMode: state?.followUpMode ?? prev.followUpMode,
+    }));
   }, []);
 
   const resolveComposerDraftKey = useCallback((key: string | undefined) => {
@@ -686,6 +722,7 @@ const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.cur
           if (liveState.extensionStatuses !== undefined) setExtensionStatuses(liveState.extensionStatuses ?? []);
           if (liveState.extensionWidgets !== undefined) setExtensionWidgets(liveState.extensionWidgets ?? []);
           if (liveState.queuedMessages !== undefined) setQueuedMessages(normalizeQueuedMessages(liveState.queuedMessages));
+          if (liveState.autoCompactionEnabled !== undefined) setAutoCompactionEnabled(liveState.autoCompactionEnabled ?? true);
         } else if (!agentState.running) {
           setQueuedMessages({ steering: [], followUp: [] });
         }
@@ -1057,16 +1094,12 @@ const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.cur
         });
         break;
       case "setWidget":
-        setExtensionWidgets((prev) => {
-          const rest = prev.filter((item) => item.key !== request.widgetKey);
-          return request.widgetLines
-            ? [...rest, {
-                key: request.widgetKey,
-                lines: request.widgetLines,
-                placement: request.widgetPlacement ?? "aboveEditor",
-              }]
-            : rest;
-        });
+        setExtensionWidgets((prev) => updateExtensionWidgets(
+          prev,
+          request.widgetKey,
+          request.widgetLines,
+          request.widgetPlacement,
+        ));
         break;
       case "setTitle":
         if (request.title) window.dispatchEvent(new CustomEvent("pi-extension-title", { detail: { sessionId: sessionIdRef.current, title: request.title } }));
@@ -1292,6 +1325,7 @@ const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.cur
       // would otherwise leave the "Stop compaction" UI stuck. No state
       // (wrapper destroyed) means nothing is compacting.
       setIsCompacting(state?.isCompacting ?? false);
+      setAutoCompactionEnabled(state?.autoCompactionEnabled ?? true);
       setQueuedMessages(normalizeQueuedMessages(state?.queuedMessages));
       const busy = data.running && state
         && (state.isStreaming || state.isPromptRunning || state.isCompacting);
@@ -1584,13 +1618,11 @@ const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.cur
       case "auto_retry_end":
         setRetryInfo(null);
         break;
-      case "auto_compaction_start":
       case "compaction_start":
         setIsCompacting(true);
         setCompactError(null);
         setCompactResult(null);
         break;
-      case "auto_compaction_end":
       case "compaction_end":
         setIsCompacting(false);
         if (event.errorMessage) {
@@ -1600,7 +1632,51 @@ const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.cur
           setCompactResult(readCompactResult(event.result, (event.reason as string | undefined) ?? "auto"));
           if (sessionIdRef.current) loadSession(sessionIdRef.current);
         }
+        // compaction_end.willRetry means the summary failed and the SDK will
+        // retry generation; isCompacting visually ends here and the retry
+        // countdown takes over via summarization_retry_scheduled.
+        if (!event.willRetry) setSummarizationRetry(null);
         break;
+      case "summarization_retry_scheduled":
+        setSummarizationRetry({
+          attempt: event.attempt as number,
+          maxAttempts: event.maxAttempts as number,
+        });
+        break;
+      case "summarization_retry_attempt_start":
+        // The scheduled counter already shows; the attempt itself is covered
+        // by the compact indicator staying in its post-start visual state.
+        break;
+      case "summarization_retry_finished":
+        setSummarizationRetry(null);
+        break;
+      case "bash_execution_update": {
+        if (!bashRunningRef.current) break;
+        const delta = typeof event.delta === "string" ? event.delta : "";
+        if (!delta) break;
+        setPendingBash((prev) => prev
+          ? { ...prev, output: (prev.output + delta).slice(-PENDING_BASH_OUTPUT_CAP) }
+          : prev);
+        break;
+      }
+      case "thinking_level_changed":
+        setLiveThinkingLevel(asConcreteThinkingLevel(event.level as string));
+        break;
+      case "session_info_changed":
+        // Renames from other windows/extensions arrive here; the server bumps
+        // sessionListVersion on this event, so the sidebar refreshes itself.
+        break;
+      case "entry_appended": {
+        // Entries appended outside a run (extension custom entries, cache
+        // warming) — refresh the transcript, throttled, when idle.
+        const sid = sessionIdRef.current;
+        if (!sid || agentRunningRef.current || bashRunningRef.current) break;
+        const now = Date.now();
+        if (now - externalAppendRefreshAtRef.current < 2000) break;
+        externalAppendRefreshAtRef.current = now;
+        loadSession(sid);
+        break;
+      }
       case "extension_ui_request":
         handleExtensionUiRequest(event as ExtensionUiRequest);
         break;
@@ -1739,11 +1815,15 @@ const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.cur
     if (agentRunningRef.current || bashRunningRef.current) return;
     const inputText = `${excludeFromContext ? "!!" : "!"}${command}`;
     bashRunningRef.current = true;
-    setPendingBash({ command, excludeFromContext });
+    setPendingBash({ command, excludeFromContext, output: "" });
     setBashRunning(true);
     try {
       const sid = sessionIdRef.current ?? session?.id ?? await ensureNewSession();
       if (!sid) throw new Error("Unable to create a session for the shell command");
+      // Connect SSE before dispatching: `bash_execution_update` chunks stream
+      // through the per-session event stream, without which a long `!command`
+      // shows nothing until it finishes.
+      await ensureEventsConnected(sid);
       await sendAgentCommand(sid, {
         type: "bash",
         command,
@@ -1760,7 +1840,7 @@ const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.cur
       setPendingBash(null);
       setBashRunning(false);
     }
-  }, [addNotice, composerDraftKey, ensureNewSession, loadSession, promoteNewSession, restoreSubmission, session]);
+  }, [addNotice, composerDraftKey, ensureEventsConnected, ensureNewSession, loadSession, promoteNewSession, restoreSubmission, session]);
   executeBashRef.current = executeBash;
 
   const handleAbort = useCallback(async () => {
@@ -1780,6 +1860,58 @@ const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.cur
       console.error("Failed to abort:", e);
     }
   }, []);
+
+  /** Cancel an auto-retry backoff (0.86) without stopping the whole session. */
+  const handleAbortRetry = useCallback(async () => {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    try {
+      await sendAgentCommand(sid, { type: "abort_retry" });
+    } catch (e) {
+      console.error("Failed to abort retry:", e);
+    }
+  }, []);
+
+  /** Toggle auto-compaction / auto-retry / queue delivery modes on the live session. */
+  const handleSetAutomation = useCallback(async (change: {
+    autoCompaction?: boolean;
+    autoRetry?: boolean;
+    steeringMode?: "all" | "one-at-a-time";
+    followUpMode?: "all" | "one-at-a-time";
+  }) => {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    // Optimistic: revert if the command fails.
+    setAutomation((prev) => ({
+      autoCompactionEnabled: change.autoCompaction ?? prev.autoCompactionEnabled,
+      autoRetryEnabled: change.autoRetry ?? prev.autoRetryEnabled,
+      steeringMode: change.steeringMode ?? prev.steeringMode,
+      followUpMode: change.followUpMode ?? prev.followUpMode,
+    }));
+    try {
+      if (change.autoCompaction !== undefined) {
+        await sendAgentCommand(sid, { type: "set_auto_compaction", enabled: change.autoCompaction });
+      }
+      if (change.autoRetry !== undefined) {
+        await sendAgentCommand(sid, { type: "set_auto_retry", enabled: change.autoRetry });
+      }
+      if (change.steeringMode !== undefined) {
+        await sendAgentCommand(sid, { type: "set_steering_mode", mode: change.steeringMode });
+      }
+      if (change.followUpMode !== undefined) {
+        await sendAgentCommand(sid, { type: "set_follow_up_mode", mode: change.followUpMode });
+      }
+    } catch (e) {
+      console.error("Failed to apply automation setting:", e);
+      addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
+      // Re-sync from the server's actual state.
+      try {
+        const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
+        const d = await res.json() as { state?: AgentStateResponse };
+        syncLiveModel(d.state);
+      } catch { /* leave optimistic value; next reconcile fixes it */ }
+    }
+  }, [addNotice, syncLiveModel]);
 
   const handleFork = useCallback(async (entryId: string) => {
     if (bashRunningRef.current) return;
@@ -1992,6 +2124,25 @@ const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.cur
           setCompactResult(readCompactResult(result, "manual"));
           if (await loadSession(sid, true)) promoteNewSession();
           return complete({ handled: true, message: "Compacted context" });
+        }
+
+        case "auto-compact": {
+          if (!sid) return complete({ handled: true, error: "No active session" });
+          // Read the live wrapper (this POST starts it if idle) so the toggle
+          // follows settings.json, not the React default of `true`.
+          const liveState = await sendAgentCommand<AgentStateResponse>(sid, { type: "get_state" });
+          const nextEnabled = !(liveState?.autoCompactionEnabled ?? true);
+          await sendAgentCommand(sid, {
+            type: "set_auto_compaction",
+            enabled: nextEnabled,
+          });
+          setAutoCompactionEnabled(nextEnabled);
+          return complete({
+            handled: true,
+            message: nextEnabled
+              ? "Auto-compaction enabled"
+              : "Auto-compaction disabled",
+          });
         }
 
         case "reload": {
@@ -2241,6 +2392,8 @@ const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.cur
     const { scrollTop, clientHeight, scrollHeight } = container;
     isNearBottomRef.current = scrollTop + clientHeight >= scrollHeight - CHAT_SCROLL_TAIL_TOLERANCE;
     if (agentRunningRef.current && !isNearBottomRef.current) completionScrollAllowedRef.current = false;
+    const shouldShow = shouldShowScrollToLatest(scrollTop, clientHeight, scrollHeight);
+    setShowScrollToBottom((previous) => (previous === shouldShow ? previous : shouldShow));
   }, []);
 
   // Load session on mount
@@ -2444,12 +2597,13 @@ const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.cur
     isAutoThinkingSelection: isNew && newSessionThinkingLevel === null,
     agentPhase,
     isNew,
+    showScrollToBottom,
     // Refs
     sessionIdRef, scrollContainerRef,
     initialScrollDoneRef,
     isNearBottomRef, messagesEndRef,
     // Actions
-    applyTaskSetup, handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
+    applyTaskSetup, handleSend, handleAbort, handleAbortRetry, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,
@@ -2457,7 +2611,7 @@ const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.cur
     handleToolPresetChange, handleThinkingLevelChange, loadTools, loadSlashCommands, setActiveLeafId, setData, setMessages, loadContext,
     scrollToBottom, scrollToMessage,
     dispatch, setAgentRunning, setForkingEntryId,
-    bashRunning, pendingBash,
+    bashRunning, pendingBash, summarizationRetry, automation, handleSetAutomation,
     // Subscriptions
     handleAgentEventRef,
   };

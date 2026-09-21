@@ -111,6 +111,13 @@ export function computeSessionStats(entries: SessionEntry[]): SessionFileStats {
   const stats = emptyStats();
 
   for (const entry of entries) {
+    if (entry.type === "usage") {
+      // Standalone usage records (prompt-cache warming on pi ≥ 0.86): the SDK
+      // counts them in getSessionStats(), so skipping them here made the web
+      // token/cost panel under-report against the TUI.
+      addUsage(stats, entry.usage);
+      continue;
+    }
     if (entry.type === "compaction" || entry.type === "branch_summary") {
       addUsage(stats, entry.usage);
       continue;

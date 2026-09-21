@@ -1232,10 +1232,11 @@ export function AppShell() {
   const handleOpenFile = useCallback((
     filePath: string,
     fileName: string,
-    options?: { sourceSessionId?: string | null; modeHint?: "diff" },
+    options?: { sourceSessionId?: string | null; modeHint?: "diff"; page?: number },
   ) => {
     const sourceSessionId = options?.sourceSessionId;
     const modeHint = options?.modeHint;
+    const page = options?.page;
     if (modeHint === "diff") {
       setReviewFilePath(filePath); setChangesExpanded(true); setRightPanelMode("files"); setRightPanelOpen(true);
       if (isMobile) setSidebarOpen(false);
@@ -1246,6 +1247,7 @@ export function AppShell() {
       fileName,
       filePath,
       modeHint,
+      page,
       sourceSessionId,
       tabId,
     }));
@@ -1970,6 +1972,10 @@ export function AppShell() {
                 />
               )}
               {(() => {
+                // Persisted stats win so compressed sessions can still name
+                // themselves; the file message count covers sessions whose
+                // stats were never computed. Transient (not-yet-flushed)
+                // sessions must never trigger JSONL-dependent naming.
                 const hasMessages = Boolean(
                   selectedSession
                   && ((sessionStats?.userMessages ?? 0) > 0 || selectedSession.messageCount > 0),
@@ -2491,10 +2497,11 @@ export function AppShell() {
                   initialDisplayMode={activeFileTab.initialDisplayMode}
                   onReviewDiff={() => handleOpenFile(activeFileTab.filePath!, activeFileTab.label, { modeHint: "diff" })}
                   onMentionLines={rightPanelOpen ? handleFileLineMention : undefined}
-                  onOpenFile={(filePath) => handleOpenFile(
+                  initialPage={activeFileTab.page}
+                  onOpenFile={(filePath, page) => handleOpenFile(
                     filePath,
                     getFileName(filePath),
-                    { sourceSessionId: activeFileTab.sourceSessionId },
+                    { sourceSessionId: activeFileTab.sourceSessionId, page },
                   )}
                 />
               ) : !terminalTabs.some(tab => tab.id === activeFileTabId) ? (

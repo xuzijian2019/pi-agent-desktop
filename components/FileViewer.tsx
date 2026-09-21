@@ -8,7 +8,7 @@ import ReactMarkdown from "react-markdown";
 import { useTheme } from "@/hooks/useTheme";
 import { DOCX_PREVIEW_MAX_BYTES, getFileExt, isAudioPath, isDocumentPreviewPath, isImagePath, isVideoPath } from "@/lib/file-types";
 import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
-import { resolveLocalFileHref, shouldOpenLocalFileInApp } from "@/lib/file-links";
+import { parsePdfPageFragment, resolveLocalFileHref, shouldOpenLocalFileInApp } from "@/lib/file-links";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins, markdownUrlTransform, normalizeDisplayMath } from "@/lib/markdown";
 import { CodeBlock, MermaidBlock } from "./MermaidBlock";
@@ -24,7 +24,7 @@ interface Props {
   filePath: string;
   cwd?: string;
   sourceSessionId?: string | null;
-  onOpenFile?: (filePath: string) => void;
+  onOpenFile?: (filePath: string, page?: number) => void;
   onReviewDiff?: () => void;
   onMentionLines?: (relativePath: string, startLine: number, endLine: number) => void;
   /** Insert this file's relative path into the chat input (@ mention). */
@@ -32,6 +32,8 @@ interface Props {
   gitRefreshKey?: number;
   controlsSlot?: HTMLElement | null;
   initialDisplayMode?: DisplayMode;
+  /** PDF page to open on first render (`#page=N` from a markdown link). */
+  initialPage?: number;
   initialState?: FileViewerState;
   onStateChange?: (state: FileViewerState) => void;
   watchEnabled?: boolean;
@@ -824,7 +826,7 @@ function VideoViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
   );
 }
 
-function DocumentViewer({ filePath, sourceSessionId, watchEnabled = true }: Props) {
+function DocumentViewer({ filePath, sourceSessionId, initialPage, watchEnabled = true }: Props) {
   const { t } = useI18n();
   const [bust, setBust] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -832,8 +834,9 @@ function DocumentViewer({ filePath, sourceSessionId, watchEnabled = true }: Prop
 
   const ext = getFileExt(filePath);
   const isPdf = ext === "pdf";
+  const pageFragment = isPdf && initialPage && initialPage > 0 ? `#page=${initialPage}` : "";
   const previewUrl = isPdf
-    ? getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined)
+    ? `${getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined)}${pageFragment}`
     : getFileApiUrl(filePath, "preview", sourceSessionId, bust ? { v: bust } : undefined);
 
   useEffect(() => {
@@ -906,7 +909,7 @@ function DocumentViewer({ filePath, sourceSessionId, watchEnabled = true }: Prop
   );
 }
 
-export function FileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onReviewDiff, controlsSlot, onAtMention, onMentionLines, gitRefreshKey, initialDisplayMode, initialState, onStateChange, watchEnabled = true }: Props) {
+export function FileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onReviewDiff, controlsSlot, onAtMention, onMentionLines, gitRefreshKey, initialDisplayMode, initialPage, initialState, onStateChange, watchEnabled = true }: Props) {
   if (isImagePath(filePath)) {
     return <ImageViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} watchEnabled={watchEnabled} />;
   }
@@ -917,7 +920,7 @@ export function FileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onRevie
     return <VideoViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} watchEnabled={watchEnabled} />;
   }
   if (isDocumentPreviewPath(filePath)) {
-    return <DocumentViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} watchEnabled={watchEnabled} />;
+    return <DocumentViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} initialPage={initialPage} watchEnabled={watchEnabled} />;
   }
   return <TextFileViewer controlsSlot={controlsSlot} onReviewDiff={onReviewDiff} onAtMention={onAtMention} filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} onOpenFile={onOpenFile} onMentionLines={onMentionLines} gitRefreshKey={gitRefreshKey} initialDisplayMode={initialDisplayMode} initialState={initialState} onStateChange={onStateChange} watchEnabled={watchEnabled} />;
 }
@@ -1517,7 +1520,7 @@ function TextFileViewer({
                   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
                     if (!shouldOpenLocalFileInApp(event)) return;
                     event.preventDefault();
-                    onOpenFile(linkedFile);
+                    onOpenFile(linkedFile, parsePdfPageFragment(href) ?? undefined);
                   };
 
                   return <a href={href} {...props} onClick={handleClick}>{children}</a>;

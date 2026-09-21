@@ -47,7 +47,9 @@ export async function GET(req: Request) {
       });
 
       // Subscribe BEFORE taking the initial snapshot so no state change can slip
-      // through the gap between snapshot and subscription.
+      // through the gap between snapshot and subscription. Every frame carries
+      // the session-list version: renames/deletes/creates in other windows bump
+      // it, letting connected sidebars refetch without waiting for focus.
       const nextUnsubscribe = subscribeRunningSessions((ids) => {
         encode(snapshot(ids));
       });

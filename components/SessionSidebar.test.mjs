@@ -7,6 +7,7 @@ const jiti = createJiti(import.meta.url, { jsx: { runtime: "automatic" }, tsconf
 const { getSessionListIndices } = await jiti.import("./SessionSidebar.tsx");
 
 const source = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
+const globalStyles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const sessionItemSource = source.slice(source.indexOf("function SessionItem("));
 
 test("scrolling keeps the focused session and the viewport mounted without expanding the whole window", () => {
@@ -40,6 +41,15 @@ test("only Shift+click bypasses session deletion confirmation", () => {
     sessionItemSource,
     /if \(e\.shiftKey\)\s*\{?\s*void performDelete\(\);\s*\}?\s*else\s*\{?\s*setConfirmDelete\(true\);/,
   );
+});
+
+test("keeps the project-tree sidebar without an inline explorer section", () => {
+  // Upstream's resizable sidebar explorer (ed50d88) is deliberately not
+  // adopted: this fork renders the file explorer in the right panel and the
+  // sidebar as a project tree. The upstream quick-filter stays.
+  assert.match(source, /sidebar-search-input/);
+  assert.match(source, /Project tree \(Codex-style\)/);
+  assert.doesNotMatch(source, /data-resize-handle="sidebar-sections"/);
 });
 
 test("does not register row-level session deletion shortcuts", () => {
@@ -129,7 +139,7 @@ test("lifecycle refreshes bypass the cache while cross-window polling reuses it"
 
 test("does not expose disk-backed actions for transient sessions", () => {
   assert.match(sessionItemSource, /if \(session\.transient\) return;/);
-  assert.match(sessionItemSource, /\{hovered && !session\.transient && \(/);
+  assert.match(sessionItemSource, /\{\(hovered \|\| touchMode\) && !session\.transient && \(/);
 });
 
 test("hides subagent rows and aggregates their state into the main session row", () => {

@@ -13,6 +13,8 @@ import type {
 } from "@earendil-works/pi-agent-core";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 
+export type { PiAgentMessage };
+
 export interface ContextUsage {
   percent: number | null;
   contextWindow: number;
@@ -133,8 +135,15 @@ export interface AgentSessionLike {
   readonly sessionFile: string | undefined;
   readonly isStreaming: boolean;
   readonly isCompacting: boolean;
+  /** pi ≥ 0.86: false while retries, branch summaries, or queued continuations are pending. */
+  readonly isIdle?: boolean;
   readonly autoCompactionEnabled: boolean;
   readonly autoRetryEnabled: boolean;
+  /** pi ≥ 0.86: current auto-retry attempt, 0 when not retrying. */
+  readonly retryAttempt?: number;
+  /** pi ≥ 0.86: queued-message delivery mode ("all" | "one-at-a-time"). */
+  readonly steeringMode?: string;
+  readonly followUpMode?: string;
   readonly model: ModelLike | undefined;
   readonly modelRuntime: {
     getModel: (provider: string, modelId: string) => ModelLike | undefined;
@@ -149,6 +158,10 @@ export interface AgentSessionLike {
       thinkingLevel?: string;
       streamingMessage?: PiAgentMessage;
     };
+    transformContext?: (
+      messages: PiAgentMessage[],
+      signal?: AbortSignal,
+    ) => Promise<PiAgentMessage[]>;
     prepareNextTurnWithContext?: (
       context: PrepareNextTurnContext,
       signal?: AbortSignal,
@@ -178,6 +191,12 @@ export interface AgentSessionLike {
     deliverAs?: "steer" | "followUp" | "nextTurn";
   }): Promise<void>;
   abort(): Promise<void>;
+  /** pi ≥ 0.86: cancel an in-flight auto-retry backoff. */
+  abortRetry?(): void;
+  setSteeringMode?(mode: "all" | "one-at-a-time"): void;
+  setFollowUpMode?(mode: "all" | "one-at-a-time"): void;
+  /** pi ≥ 0.86: thinking levels the current model actually supports. */
+  getAvailableThinkingLevels?(): string[];
   executeBash(command: string, onChunk?: (chunk: string) => void, options?: {
     excludeFromContext?: boolean;
     operations?: BashOperations;

@@ -1852,6 +1852,10 @@ function SessionItem({
 }) {
   const { locale, t } = useI18n();
   const [hovered, setHovered] = useState(false);
+  // Coarse pointers have no hover: the "…" action menu must be permanently
+  // visible there, otherwise rename/delete are unreachable on touch.
+  const [touchMode, setTouchMode] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   // Downstream hook (extensions/desktop) may claim the row's context menu;
   // when it handles the event the built-in menu never opens.
   const [renaming, setRenaming] = useState(false);
@@ -1873,6 +1877,10 @@ function SessionItem({
     }
   }, [renaming]);
 
+  useEffect(() => {
+    setTouchMode(window.matchMedia?.("(hover: none)").matches ?? false);
+  }, []);
+
   // A stored first message may be an SDK-expanded <skill> block; collapse it
   // back to the compact /skill:name args command the user typed before using
   // it as the auto-name fallback, mirroring MessageView's rendering.
@@ -1885,6 +1893,11 @@ function SessionItem({
     setRenaming(true);
   }, [session.name, session.transient, displayFirstMessage, session.id]);
 
+  const reportActionError = useCallback((message: string) => {
+    setActionError(message);
+    window.setTimeout(() => setActionError((current) => current === message ? null : current), 3500);
+  }, []);
+
   const commitRename = useCallback(async () => {
     invalidateSessionData(session.id);
     const name = renameValue.trim();
@@ -1895,16 +1908,20 @@ function SessionItem({
     // a skill-invoked session stays a no-op instead of persisting raw XML.)
     if (renameValue === title || name === (session.name ?? "")) return;
     try {
-      await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(d.error ?? `HTTP ${res.status}`);
+      }
       onRenamed?.();
-    } catch {
-      // ignore
+    } catch (e) {
+      reportActionError(t("sidebar.renameFailed", { error: e instanceof Error ? e.message : String(e) }));
     }
-  }, [renameValue, session.id, session.name, onRenamed, title]);
+  }, [renameValue, session.id, session.name, onRenamed, reportActionError, t, title]);
 
   const performDelete = useCallback(async () => {
     invalidateSessionData(session.id);
@@ -1912,12 +1929,17 @@ function SessionItem({
     setConfirmDelete(false);
     setDeleting(true);
     try {
-      await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" });
+      const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(d.error ?? `HTTP ${res.status}`);
+      }
       onDeleted?.(session.id);
-    } catch {
+    } catch (e) {
       setDeleting(false);
+      reportActionError(t("sidebar.deleteFailed", { error: e instanceof Error ? e.message : String(e) }));
     }
-  }, [session.id, session.transient, onDeleted]);
+  }, [session.id, session.transient, onDeleted, reportActionError, t]);
 
   // "…" menu: fixed-position portal so the sidebar's overflow/backdrop-filter can't clip it
   const MENU_WIDTH = 190;
@@ -2098,9 +2120,10 @@ function SessionItem({
             </button>
           )}
 
-          {/* Action buttons — shown on hover; transient runtime rows expose
-              no disk-backed actions. Also stays up for selection/open menu. */}
-          {hovered && !session.transient && (
+          {/* Action buttons — shown on hover (or always on touch devices,
+              which have no hover); transient runtime rows expose no
+              disk-backed actions. Also stays up for selection/open menu. */}
+          {(hovered || touchMode) && !session.transient && (
             <button
               ref={menuButtonRef}
               onClick={toggleMenu}
@@ -2171,6 +2194,25 @@ function SessionItem({
                   </div>
                 )}
               </div>
+            </div>,
+            document.body,
+          )}
+
+          {actionError && createPortal(
+            <div
+              role="alert"
+              style={{
+                position: "fixed", bottom: 26, left: "50%", transform: "translateX(-50%)",
+                zIndex: 1000, maxWidth: "80vw",
+                background: "color-mix(in srgb, var(--bg-panel) 94%, #000)",
+                color: "var(--danger)",
+                border: "1px solid color-mix(in srgb, var(--danger) 35%, transparent)",
+                padding: "8px 14px", borderRadius: 8, fontSize: 12,
+                boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+                overflowWrap: "anywhere",
+              }}
+            >
+              {actionError}
             </div>,
             document.body,
           )}

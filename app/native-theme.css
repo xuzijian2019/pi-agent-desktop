@@ -4886,6 +4886,19 @@ span.linenumber {
   opacity: 0.7;
 }
 
+.composer-status-action {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* Draft persistence indicators ------------------------------------------- */
 .composer-draft-anchor {
   position: relative;
@@ -6272,6 +6285,19 @@ span.linenumber {
   color: var(--text-dim);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+}
+
+.msg-tool-cancelled {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.msg-tool[data-status="aborted"] .msg-tool-name {
+  color: var(--text-dim);
 }
 
 /* Every pane stacked under a tool header carries the card's tint on its top

@@ -190,7 +190,10 @@ Four states, not one: `newSessionThinkingLevel` (composer pre-send), `newSession
 Pi stores toolCall blocks as `{type:"toolCall", id, name, arguments}` but `ToolCallContent` uses `{toolCallId, toolName, input}`. `normalizeToolCalls()` in `lib/normalize.ts` handles this — called in both `session-reader.ts` (file load) and `ChatWindow.handleAgentEvent()` (streaming).
 
 ### New session tool preset
-Tool names are passed at session creation (`POST /api/agent/new` → `toolNames[]`). For existing sessions, the active preset is inferred on mount via `get_tools` → `getPresetFromTools()`. When tools are fully disabled (`toolNames = []`), `rpc-manager.ts` passes an empty tool allow-list and keeps an empty prompt after startup/reload/resource discovery through `lib/exact-system-prompt.ts`. Pi 0.86 makes `agent.state.systemPrompt` read-only; update transcript system messages while retaining tool declarations instead. Opening an existing conversation must not append tool-selection metadata.
+Tool names are passed at session creation (`POST /api/agent/new` → `toolNames[]`). For existing sessions, the active preset is inferred on mount via `get_tools` → `getPresetFromTools()`. When tools are fully disabled (`toolNames = []`), `rpc-manager.ts` passes an empty tool allow-list and applies the exact system prompt after startup/reload/resource discovery. Opening an existing conversation must not append tool-selection metadata.
+
+### pi ≥ 0.86: `state.systemPrompt` is read-only — project, never assign
+`AgentState.systemPrompt` became a getter replayed from the transcript's system messages; assigning it throws at runtime (tsc only catches this in code typed against the real SDK — `rpc-manager.ts` goes through the structural `AgentSessionLike`, where it is invisible). `AgentSessionWrapper.applyExactSystemPrompt()` therefore installs an `agent.transformContext` projection that collapses each outgoing request's head system message to the exact prompt (the same mechanism pi itself uses for `before_agent_start` forced prompts); `get_state` reports `exactSystemPrompt()` directly so the UI's tools-disabled gate keeps working. Stream functions take a `TranscriptContext` now — fold a `Context` with `normalizeContext()` before calling one (see `lib/session-title.ts`). The session-list scanner replicates 0.86 `listAll()` ordering: modified descending, ties by stat mtime then basename descending.
 
 ### Model defaults for new sessions
 `GET /api/models` returns `defaultModel` read from `~/.pi/agent/settings.json`. `ChatWindow` pre-selects this on mount for new sessions. Explicit browser model/thinking selections are applied atomically during AgentSession construction, then `lib/startup-preferences.ts` persists their effective values without replaying `set_model`/`set_thinking_level`; implicit `enabledModels` fallbacks and thinking pins are not persisted.
@@ -204,8 +207,32 @@ The `enabledModels` setting uses pi's `--models` syntax: minimatch globs against
 ### SSE reconnect on page refresh mid-stream
 On `ChatWindow` mount, `GET /api/agent/[id]` is called. If `state.isStreaming === true`, SSE is reconnected automatically. `thinkingLevel` and `isCompacting` are also synced from this response.
 
-### Compaction SSE events
-Newer pi emits `compaction_start` / `compaction_end`; older versions emitted `auto_compaction_start` / `auto_compaction_end`. `handleAgentEvent` accepts both sets to keep `isCompacting` in sync. Manual compact is a blocking POST — the button stays disabled until the response returns.
+### Compaction & summarization-retry SSE events
+pi 0.86 emits `compaction_start`/`compaction_end` (the legacy `auto_compaction_*` names are gone — do not re-add their cases) plus `summarization_retry_scheduled/attempt_start/finished` when summary generation enters backoff. `handleAgentEvent` keeps `isCompacting` in sync and mirrors the retry counter into `summarizationRetry`, shown as "Compacting… (retry n/m)" on the compact control. `compaction_end.willRetry` deliberately leaves the counter in place so the countdown stays visible between compaction passes. Manual compact is a blocking POST — the button stays disabled until the response returns. The compact block renders whenever `onCompact && (!isStreaming || isCompacting)`: an auto-compaction mid-run must stay visible and abortable, which is exactly when `isStreaming && isCompacting`.
+
+### 0.86 event surface — the wire forwards everything, the client switch must keep up
+`agent-event-wire.ts` whitelists by omission (only `turn_start/turn_end` dropped), so any new SDK event reaches the browser and is silently ignored unless `handleAgentEvent` has a case. Currently handled beyond the message lifecycle: `bash_execution_update` (live `!command` output, tail-capped by `PENDING_BASH_OUTPUT_CAP`), `thinking_level_changed` (immediate selector sync), `session_info_changed` (server invalidates the list cache), `entry_appended` (throttled idle-only transcript refresh — the SDK fires it for extension custom entries and cache warming, never for normal streaming). `executeBash` must `ensureEventsConnected(sid)` *before* dispatching the bash command, or the chunks have no stream to arrive on.
+
+### `isRunning()` must consult the SDK's `isIdle`
+pi ≥ 0.86 `isIdle` stays false through auto-retry backoff, branch summaries, and queued continuations — states where `isStreaming/isCompacting/isBashRunning` are all false between events. `AgentSessionWrapper.isRunning()` therefore ORs `inner.isIdle === false` into the flag check; dropping it re-introduces mid-retry wrapper eviction (`evictIfDiskAhead`) and premature idle shutdown. `IDLE_RESET_EVENT_TYPES` includes the retry-backoff events for the same reason.
+
+### Running-state and cross-window propagation
+`notifyRunningChange()` fires on `agent_start` as well as `agent_end` (idle → running was never pushed, so other windows' sidebars missed starts), and every `/api/agent/running/events` frame carries `sessionListVersion` — the sidebar refetches the list when the version moves. `session_info_changed` (renames from any window/extension) invalidates the list cache *and* broadcasts a running frame, because that frame is the version's only delivery channel; the running set itself is unchanged.
+
+### Session automation surface (0.86)
+`get_state` reports `autoCompactionEnabled`, `autoRetryEnabled`, `steeringMode`, `followUpMode`; the composer's gear popover toggles them through `set_auto_compaction` / `set_auto_retry` / `set_steering_mode` / `set_follow_up_mode`, and `abort_retry` backs the "Cancel retry" link in the retry banner. `useAgentSession.automation` mirrors the four values inside `syncLiveModel` — every get_state path updates them automatically; a new session shows no gear until a wrapper exists (values null). Thinking levels come from `getSupportedThinkingLevels` per model; do not reintroduce a manual DeepSeek xhigh clamp — 0.86 `setThinkingLevel` clamps to `getAvailableThinkingLevels()` itself and a manual `state.thinkingLevel` write bypasses the append/emit path.
+
+### Composer send path is single-shot and guarded
+`ChatInput.handleSend` routes slash commands through `runBuiltinCommand` (the pending-guard wrapper) and sends exactly one `onSend` with the `#session`-mention-resolved text. A merge once left a second raw `onSend(msg, …)` behind it: the first send flips `agentRunningRef`, the second hits the running guard and *restores the just-sent text back into the composer* — every message appeared to "stick". `components/ChatInput.test.mjs` runs the extracted handler in a VM to pin one-send semantics.
+
+### `!command` output renders live, then collapses
+The pending bash bubble accumulates `bash_execution_update` deltas into `pendingBash.output` and renders them through `BashExecutionView` as a synthesized partial result, default-expanded while running (`ToolCallBlock defaultExpanded`). When the run finishes the persisted message mounts collapsed like any other tool call — live-watched, then folded, is intentional.
+
+### Stats count standalone usage entries
+pi 0.86 cache warming appends `type:"usage"` entries (`kind: "cache_warm"`); `lib/session-stats.ts` folds them in exactly like the SDK's `getSessionStats()`. Skipping them under-reported tokens/cost against the TUI.
+
+### Touch affordances
+Session rows render the "…" action menu when `(hovered || touchMode)` — `touchMode` is a post-mount `matchMedia("(hover: none)")` check, so hover styling is untouched on desktop and rename/delete stay reachable on touch. On narrow screens a compact Stop button renders *outside* the collapsed "More controls" row while a run is active. Rename/delete failures surface a fixed-position toast (`sidebar.renameFailed` / `sidebar.deleteFailed`) instead of being swallowed.
 
 ### Running state polling + reconciliation
 - The sidebar uses `/api/agent/running/events` for running status. Its heartbeat carries the session-list version so external Pi writes also refresh the catalog. Fork-owned running/activity streams register with the shared shutdown drain; the session-list response remains the initial fallback.
@@ -269,6 +296,18 @@ Switching chats does **not** remount `ChatWindow` — `AppShell.handleSelectSess
 This repo is a fork of `agegr/pi-web` and periodically merges upstream. `components/fork-extractions.test.mjs` guards the failure mode that a clean merge can still be wrong: code this fork *moved* to another file reappears at its origin, or a fork change is silently reverted. Git does not track cross-file moves, so neither shows up in `tsc`, eslint, or the upstream suite.
 
 When one of those assertions fails, the default is to restore the behaviour, not to delete the assertion. A failure saying a marker is "absent from the origin but also from the extraction targets — it looks deleted, not moved" means the feature is probably gone: that is exactly how the project-picker filter box was found missing after a restyle had left every project past the 7-row cap unreachable. Risk levels live in `scripts/fork-ownership.json`; the reasoning is in `docs/ownership-boundaries.md`.
+
+### Topbar, chat column, and right panel — who contains whom
+Upstream segment D (0e36743) restructured `AppShell.tsx`'s main region in ways this fork's layout cannot survive; all three are pinned by `components/AppShell.right-panel-row.test.mjs`:
+
+1. The "Center: chat" column must contain BOTH the topbar's chat content AND the chat wrapper. A merge variant closed the column right after the topbar, making the chat wrapper a second `flex: 1` row child — the viewport split 50/50 between an empty topbar-only column and the chat ("huge blank middle column, chat clipped at the right edge").
+2. The right-panel toggle/backdrop/resizer/panel block must be inside the row, not after its close: as flex-**column** children of `.app-shell` the closed panel's content height still stole vertical space (`height: 432px` at `width: 0`), floating the composer.
+3. The topbar block sits directly under `.app-shell` (full width, above the row) — NOT inside the center column. Inside the column, the right panel's tab strip rose to `y=0` beside the header (overlapping the window buttons) and the topbar shrank to leftover width.
+
+The topbar renders exactly ONE toolbar group (`app-topbar-actions`: history/branches/more + `renderSessionStatsButton`). Segment D also left a second desktop group (`renderChatToolbarActions(false)` — history/generate-title/system/tools) next to it; the duplicate is removed, its unique entries (Sub-agents, Tools) live in the More menu via `handleSystemInfoToggle` (keeping the lazy dormant-session start), and its generate-title guards (persisted-stats counting + `selectedSession.transient` check) were merged into the group-A button — pinned by `AppShell.auto-name.test.mjs`. JSX indentation in AppShell.tsx is unreliable; verify structure with the TS AST or the DOM, not by counting whitespace. `fileContentBlock()` in `AppShell.file-viewer-state.test.mjs` slices source by the panel's closing-div sequence — keep in sync.
+
+### Segment E merge (1eb5e66) — what was adopted and what was declined
+Merged upstream 974c8bb..1eb5e66 on top of v0.10.0. Adopted: scroll-to-latest button (with upstream's empty-session branding header, rebranded to PRODUCT_NAME and stripped of the NEXT_PUBLIC version badge per fork branding policy), streaming first-chunk dedup, PDF `#page=` fragments (MarkdownBody's link context + widened onOpenFile signatures), selection-toolbar z-index, subagent/provider fixes. Declined: upstream's sidebar explorer + resizable session/explorer panes (ed50d88) — this fork keeps the project-tree sidebar and the FileExplorer in the right panel; `SessionSidebar.test.mjs` pins that decision, so a future merge that re-adds `data-resize-handle="sidebar-sections"` should be treated as the merge re-introducing declined UI, not as a test to satisfy. Upstream's `/auto-compact` command is superseded by the composer automation gear.
 
 ## Pi Session File Format
 

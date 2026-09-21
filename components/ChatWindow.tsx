@@ -8,7 +8,7 @@ import { createPortal } from "react-dom";
 import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, BlockingExtensionUiRequest, ExtensionUiRequest, SessionInfo, SessionTreeNode, ToolResultMessage, UserMessage, CustomMessage } from "@/lib/types";
 import { normalizeCustomPanelLines } from "@/lib/ansi";
 import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
-import { countToolCallBlocks, getDisplayableAssistantBlocks, splitFinalAssistantBlocks } from "@/lib/message-display";
+import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantBlocks, isAssistantTruncated, splitFinalAssistantBlocks } from "@/lib/message-display";
 import { extractTurnWrittenFiles, type WrittenFile } from "@/lib/turn-written-files";
 import { buildQuotedSelection } from "@/lib/quoted-selection";
 import { MessageView } from "./MessageView";
@@ -68,7 +68,7 @@ interface Props {
   onSelectProject?: () => void;
   projectOptions?: string[];
   onProjectChange?: (projectRoot: string) => void;
-  onOpenFile?: (filePath: string) => void;
+  onOpenFile?: (filePath: string, page?: number) => void;
   /** Fired after non-image drops are copied into the session cwd (so the explorer can refresh). */
   onProjectFilesImported?: () => void;
   /** Open the provider/auth configuration modal (offered by the scope-warning banner). */
@@ -206,7 +206,9 @@ function getFinalSplit(message: AssistantMessage): FinalSplitEntry {
       processMessage: processBlocks.length > 0
         ? withAssistantBlocks(message, processBlocks, { omitUsage: true })
         : null,
-      answerMessage: answerBlocks.length > 0
+      // Errors and output-limit truncation surface in the answer slot even
+      // when the model produced no answer text.
+      answerMessage: answerBlocks.length > 0 || getAssistantErrorMessage(message) || isAssistantTruncated(message)
         ? withAssistantBlocks(message, answerBlocks)
         : null,
     };
@@ -306,8 +308,8 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
     addNotice,
     isNew,
     sessionIdRef, messagesEndRef, scrollContainerRef, loadContext, activeLeafId, scrollToMessage,
-    isNearBottomRef,
-    applyTaskSetup, handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
+    isNearBottomRef, showScrollToBottom,
+    applyTaskSetup, handleSend, handleAbort, handleAbortRetry, handleFork, handleNavigate, handleModelChange,
     handleSteer, handleFollowUp, handlePromptWithStreamingBehavior,
     dismissModelScopeWarnings,
     handleRecallQueue,
@@ -1236,6 +1238,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
       availableThinkingLevels={availableThinkingLevels}
       thinkingLevelMap={currentThinkingLevelMap}
       retryInfo={retryInfo}
+      onAbortRetry={handleAbortRetry}
       queuedMessages={queuedMessages}
       inputHistory={inputHistory}
       onRecallQueue={handleRecallQueue}
@@ -1265,8 +1268,16 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
 
   if (error) {
     return (
-      <div className="flex h-full items-center justify-center text-red-400">
-        {error}
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-red-400">
+        <div>{error}</div>
+        <button
+          type="button"
+          className="file-viewer-icon-button"
+          onClick={retryLoad}
+          style={{ width: "auto", height: 32, gap: 5, padding: "0 12px", border: "none", fontSize: 12, fontWeight: 500 }}
+        >
+          {t("common.retry")}
+        </button>
       </div>
     );
   }
@@ -1441,7 +1452,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
                 message={{
                   role: "bashExecution",
                   command: pendingBash.command,
-                  output: "",
+                  output: pendingBash.output,
                   excludeFromContext: pendingBash.excludeFromContext,
                 } as BashExecutionMessage}
                 sessionId={session?.id ?? sessionIdRef.current ?? undefined}
@@ -1477,7 +1488,22 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
             <ExtensionWidgets widgets={belowEditorWidgets} />
           </div>
         </div>
-        <div inert={!!searchPreview}>{chatInputElement}</div>
+        <div inert={!!searchPreview} className="relative">
+          <div className="chat-scroll-to-bottom-anchor">
+            <button
+              type="button"
+              className={`chat-scroll-to-bottom${showScrollToBottom ? " is-visible" : ""}`}
+              title={t("chat.scrollToLatest")}
+              aria-label={t("chat.scrollToLatest")}
+              onClick={() => scrollToBottom("smooth")}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 5v14M5 12l7 7 7-7" />
+              </svg>
+            </button>
+          </div>
+          {chatInputElement}
+        </div>
       </div>
       </div>
       </>
@@ -1492,7 +1518,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
             position: "fixed",
             top: quotedSelection.top,
             left: quotedSelection.left,
-            zIndex: 130,
+            zIndex: 260,
             display: "flex",
             flexWrap: "wrap",
             gap: 3,

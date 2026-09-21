@@ -274,10 +274,22 @@ export interface SessionInfoEntry extends SessionEntryBase {
   name?: string;
 }
 
+/** pi ≥ 0.86: standalone usage records (e.g. prompt-cache warming) — counted
+ *  by session stats so the token/cost panel matches the SDK's totals. */
+export interface UsageSessionEntry extends SessionEntryBase {
+  type: "usage";
+  kind: string;
+  provider: string;
+  model: string;
+  usage: AgentUsage;
+  note?: string;
+}
+
 export type SessionEntry =
   | SessionMessageEntry
   | ThinkingLevelChangeEntry
   | ModelChangeEntry
+  | UsageSessionEntry
   | CompactionEntry
   | BranchSummaryEntry
   | CustomEntry

@@ -1,4 +1,3 @@
-import { withExactSystemPrompt } from "./exact-system-prompt";
 import { beginActivity, patchActivity, finishActivity } from "./activity";
 import { withCheckoutGuard, checkoutRoot } from "./checkout-guard";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
@@ -20,8 +19,16 @@ import { notifySessionComplete } from "./web-push";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
 import type { AgentSession, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import { PRODUCT_NAME } from "./branding";
-import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-types";
-import type { ExtensionUiRequest, ExtensionUiResponse, ExtensionWidgetItem, SessionEntry, SessionInfo, SessionMessageEntry } from "./types";
+import type { AgentSessionLike, ExtensionUiContextLike, PiAgentMessage, ToolInfo } from "./pi-types";
+import { getCurrentSystemMessage } from "@earendil-works/pi-ai";
+import type {
+  ExtensionUiRequest,
+  ExtensionUiResponse,
+  ExtensionWidgetItem,
+  SessionEntry,
+  SessionInfo,
+  SessionMessageEntry,
+} from "./types";
 import { createHeadlessCustomUiTui, DEFAULT_CUSTOM_UI_COLUMNS, type HeadlessCustomUiTui } from "./custom-ui-terminal";
 import { createSubagentExtension, preferPiWebSubagentExtension } from "./subagent-extension";
 import { listSubagentProfiles, readSubagentRun, readSubagentSessionResources, SUBAGENT_CONTROL_TOOL_NAMES } from "./subagents";
@@ -103,8 +110,13 @@ type AgentSessionWrapperOptions = {
 const IDLE_RESET_EVENT_TYPES = new Set([
   "agent_end",
   "agent_settled",
-  "auto_compaction_end",
   "compaction_end",
+  // Retry backoffs can wait minutes between events; each schedule/attempt
+  // resets the idle timer so a mid-retry wrapper is never disposed.
+  "auto_retry_start",
+  "auto_retry_end",
+  "summarization_retry_scheduled",
+  "summarization_retry_attempt_start",
 ]);
 
 const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
@@ -230,6 +242,7 @@ export class AgentSessionWrapper {
   private extensionBindingPromise: Promise<void> | null = null;
   private extensionBindingError: unknown = null;
   private readonly exactSystemPrompt?: () => string;
+  private exactPromptProjection: ((messages: PiAgentMessage[], signal?: AbortSignal) => Promise<PiAgentMessage[]>) | null = null;
   private readonly chatOnly: boolean;
   private readonly onAgentRunComplete?: AgentRunCompleteListener;
   private readonly suppressCompletionNotifications: boolean;
@@ -249,7 +262,6 @@ export class AgentSessionWrapper {
     this.chatOnly = options.chatOnly ?? false;
     this.onAgentRunComplete = options.onAgentRunComplete;
     this.suppressCompletionNotifications = options.suppressCompletionNotifications ?? false;
-    this.installExactSystemPromptContinuation();
     this.applyExactSystemPrompt();
   }
 
@@ -287,7 +299,20 @@ export class AgentSessionWrapper {
   }
 
   isRunning(): boolean {
-    return this._alive && (this.pendingPromptCount > 0 || this.extensionRunActive || this.pendingUiRequests.size > 0 || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning);
+    // `isIdle` (pi ≥ 0.86) spans the whole post-run pipeline — auto-retry
+    // backoff, branch summaries, queued continuations — which the four flags
+    // below cannot see (an agent_end with willRetry=false on the flags looks
+    // idle until the next agent_start). Older SDKs fall back to the flags.
+    const sdkIdle = this.inner.isIdle;
+    return this._alive && (
+      this.pendingPromptCount > 0
+      || this.inner.isStreaming
+      || this.inner.isCompacting
+      || this.inner.isBashRunning
+      || sdkIdle === false
+      || this.extensionRunActive
+      || this.pendingUiRequests.size > 0
+    );
   }
 
   /**
@@ -319,10 +344,21 @@ export class AgentSessionWrapper {
       if (event.type === "agent_start") {
         if (this.pendingPromptCount === 0 && !this.extensionRunActive) this.runId = randomUUID();
         this.extensionRunActive = true;
+        this.agentRunNeedsCompletion = true;
+        // Cross-window liveness: idle → running must reach other windows'
+        // sidebars through the running-events stream, not just this one's SSE.
+        notifyRunningChange();
       }
       if (event.type === "agent_settled") this.extensionRunActive = false;
-      if (event.type === "agent_start") this.agentRunNeedsCompletion = true;
       if (event.type === "agent_end") {
+        invalidateSessionListCache();
+        notifyRunningChange();
+      }
+      // Renames (this window, another window, or an extension) bump the list
+      // version so every sidebar refetches titles. The running-events frame is
+      // the delivery channel for the version, so broadcast even though the
+      // running set itself is unchanged.
+      if (event.type === "session_info_changed") {
         invalidateSessionListCache();
         notifyRunningChange();
       }
@@ -450,24 +486,31 @@ export class AgentSessionWrapper {
   }
 
   private applyExactSystemPrompt(): void {
-    if (!this.exactSystemPrompt || !this.inner.agent.state) return;
-    const state = this.inner.agent.state;
-    if (state.messages) state.messages = withExactSystemPrompt(state.messages, this.exactSystemPrompt());
-  }
-
-  private installExactSystemPromptContinuation(): void {
-    if (!this.exactSystemPrompt) return;
-    const previous = this.inner.agent.prepareNextTurnWithContext;
-    this.inner.agent.prepareNextTurnWithContext = async (turn, signal) => {
-      const prepared = await previous?.(turn, signal);
-      return {
-        ...prepared,
-        context: {
-          ...(prepared?.context ?? turn.context),
-          messages: withExactSystemPrompt((prepared?.context ?? turn.context).messages, this.exactSystemPrompt!()),
-        },
-      };
+    if (!this.exactSystemPrompt || !this.inner.agent?.state) return;
+    // pi >= 0.86 derives the request system prompt from the transcript's system
+    // messages, and `state.systemPrompt` is a read-only replay of them — assigning
+    // it throws. Project the exact prompt onto the outgoing request instead via
+    // `agent.transformContext`, the same mechanism pi itself uses for
+    // `before_agent_start` forced prompts: the head system message collapses to the
+    // exact text (keeping the current tool declarations) while the transcript and
+    // the persisted session stay untouched. The prompt is read per request, so
+    // "re-apply after reload/tool changes" only means ensuring this is installed.
+    if (this.inner.agent.transformContext === this.exactPromptProjection) return;
+    const previous = this.inner.agent.transformContext;
+    const exact = this.exactSystemPrompt;
+    const projection = async (messages: PiAgentMessage[], signal?: AbortSignal) => {
+      const transformed = previous ? await previous(messages, signal) : messages;
+      const current = getCurrentSystemMessage(transformed);
+      const head: PiAgentMessage = {
+        role: "system",
+        content: exact(),
+        ...(current?.toolsAdded ? { toolsAdded: current.toolsAdded } : {}),
+        timestamp: current?.timestamp ?? Date.now(),
+      } as PiAgentMessage;
+      return [head, ...transformed.filter((message) => message.role !== "system")];
     };
+    this.exactPromptProjection = projection;
+    this.inner.agent.transformContext = projection;
   }
 
   setActiveToolSelection(toolNames: string[]): void {
@@ -764,6 +807,11 @@ export class AgentSessionWrapper {
         }
       }
 
+      case "abort_retry":
+        // Cancel an in-flight auto-retry backoff without aborting the whole run.
+        this.inner.abortRetry?.();
+        return null;
+
       case "abort":
         this.activityOutcome = "stopped";
         this.forceShutdownOnIdle = true;
@@ -789,6 +837,8 @@ export class AgentSessionWrapper {
           isCompacting: this.inner.isCompacting,
           autoCompactionEnabled: this.inner.autoCompactionEnabled,
           autoRetryEnabled: this.inner.autoRetryEnabled,
+          steeringMode: this.inner.steeringMode,
+          followUpMode: this.inner.followUpMode,
           model: model ? { id: model.id, provider: model.provider } : undefined,
           messageCount: 0,
           pendingMessageCount: this.inner.pendingMessageCount,
@@ -799,7 +849,7 @@ export class AgentSessionWrapper {
           contextUsage: contextUsage
             ? { percent: contextUsage.percent, contextWindow: contextUsage.contextWindow, tokens: contextUsage.tokens }
             : null,
-          systemPrompt: this.inner.agent.state?.systemPrompt ?? "",
+          systemPrompt: this.exactSystemPrompt?.() ?? this.inner.agent.state?.systemPrompt ?? "",
           thinkingLevel: this.inner.agent.state?.thinkingLevel ?? "off",
           extensionStatuses: this.getExtensionStatuses(),
           extensionWidgets: this.getExtensionWidgets(),
@@ -929,14 +979,10 @@ export class AgentSessionWrapper {
       }
 
       case "set_thinking_level": {
-        const level = command.level as string;
-        this.inner.setThinkingLevel(level);
-        // setThinkingLevel clamps xhigh→high for models where supportsXhigh()===false.
-        // If the model has DeepSeek thinking compat (reasoningEffortMap maps xhigh→max),
-        // force the state back so the compat layer can use it correctly.
-        if (level === "xhigh" && (this.inner.model as { compat?: { thinkingFormat?: string } } | null)?.compat?.thinkingFormat === "deepseek" && this.inner.agent?.state) {
-          this.inner.agent.state.thinkingLevel = "xhigh";
-        }
+        // 0.86: setThinkingLevel clamps to getAvailableThinkingLevels() and
+        // DeepSeek-compat models include their mapped levels in that list —
+        // no manual state force-back needed anymore.
+        this.inner.setThinkingLevel(command.level as string);
         invalidateSessionListCache();
         return null;
       }
@@ -1079,6 +1125,16 @@ export class AgentSessionWrapper {
 
       case "set_auto_retry": {
         this.inner.setAutoRetryEnabled(command.enabled as boolean);
+        return null;
+      }
+
+      case "set_steering_mode": {
+        this.inner.setSteeringMode?.(command.mode as "all" | "one-at-a-time");
+        return null;
+      }
+
+      case "set_follow_up_mode": {
+        this.inner.setFollowUpMode?.(command.mode as "all" | "one-at-a-time");
         return null;
       }
 

@@ -293,7 +293,8 @@ function queueIndexPersist(): void {
 /**
  * Incremental equivalent of SessionManager.listAll(): rescans only files whose
  * (size, mtimeMs) changed since the last pass. Output ordering matches the SDK
- * catalogue (modified descending).
+ * catalogue: modified descending, ties broken like the SDK's candidate order
+ * (stat mtime descending, then basename descending).
  */
 export async function listSessionsIncremental(): Promise<ScannedSessionInfo[]> {
 	loadPersistedIndex();
@@ -327,7 +328,16 @@ export async function listSessionsIncremental(): Promise<ScannedSessionInfo[]> {
 
 	const changed: Array<{ filePath: string; fp: Fingerprint; resultIndex: number }> = [];
 	const results: (ScannedSessionInfo | null)[] = new Array(files.length).fill(null);
-	for (const [resultIndex, { filePath, fp }] of fingerprints.entries()) {
+	const ordered = fingerprints
+		// SDK listAll() candidate order: stat mtime descending, ties by basename
+		// descending. The final modified-time sort below is stable, so this decides
+		// timestamp ties exactly like the catalogue does.
+		.sort(
+			(a, b) =>
+				(b.fp?.mtimeMs ?? Number.NEGATIVE_INFINITY) - (a.fp?.mtimeMs ?? Number.NEGATIVE_INFINITY) ||
+				basename(b.filePath).localeCompare(basename(a.filePath)),
+		);
+	for (const [resultIndex, { filePath, fp }] of ordered.entries()) {
 		if (!fp) {
 			index.delete(filePath);
 			continue;

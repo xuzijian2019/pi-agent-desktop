@@ -1,26 +1,53 @@
 "use client";
 
-import { memo, useMemo, type MouseEvent } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import { createContext, memo, useContext, useMemo, type ComponentProps, type MouseEvent } from "react";
+import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
 import { PinOutputButton } from "./workbench/PinOutputButton";
-import { resolveLocalFileHref, shouldOpenLocalFileInApp } from "@/lib/file-links";
+import { parsePdfPageFragment, resolveLocalFileHref, shouldOpenLocalFileInApp } from "@/lib/file-links";
 import { encodeFilePathForApi } from "@/lib/file-paths";
 import { markdownRehypePlugins, markdownRemarkPlugins, markdownUrlTransform, normalizeDisplayMath } from "@/lib/markdown";
+import { ImagePreview } from "./ImagePreview";
 import { MermaidBlock, CodeBlock } from "./MermaidBlock";
 import { handleExternalLinkClick } from "@/lib/desktop-native";
+
+const MarkdownLinkContext = createContext(false);
 
 interface MarkdownBodyProps {
   children: string;
   className?: string;
   isStreaming?: boolean;
   cwd?: string;
-  onOpenFile?: (filePath: string) => void;
+  onOpenFile?: (filePath: string, page?: number) => void;
+}
+
+function MarkdownImage({
+  src,
+  alt,
+  cwd,
+  ...props
+}: ComponentProps<"img"> & ExtraProps & { cwd?: string }) {
+  const insideLink = useContext(MarkdownLinkContext);
+  delete props.node;
+  const href = typeof src === "string" ? src : undefined;
+  const filePath = href ? resolveLocalFileHref(href, cwd) : null;
+  const imageSrc = filePath
+    ? `/api/files/${encodeFilePathForApi(filePath)}?type=read`
+    : href;
+  // Dynamic local paths are served directly by the file API.
+  // eslint-disable-next-line @next/next/no-img-element
+  const image = <img src={imageSrc} alt={alt ?? ""} loading="lazy" {...props} />;
+  if (!imageSrc || insideLink) return image;
+  return (
+    <ImagePreview src={imageSrc} alt={alt ?? ""} className="markdown-image">
+      {image}
+    </ImagePreview>
+  );
 }
 
 function buildComponents(
   isStreaming: boolean | undefined,
   cwd: string | undefined,
-  onOpenFile: ((filePath: string) => void) | undefined,
+  onOpenFile: ((filePath: string, page?: number) => void) | undefined,
 ): Components {
   return {
     code({ className, children, ...props }) {
@@ -58,15 +85,17 @@ function buildComponents(
       const openFile = onOpenFile;
       if (!filePath || !openFile) {
         return (
-          <a
-            href={href}
-            {...props}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(event) => handleExternalLinkClick(event, href)}
-          >
-            {children}
-          </a>
+          <MarkdownLinkContext.Provider value={true}>
+            <a
+              href={href}
+              {...props}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(event) => handleExternalLinkClick(event, href)}
+            >
+              {children}
+            </a>
+          </MarkdownLinkContext.Provider>
         );
       }
 
@@ -75,24 +104,19 @@ function buildComponents(
         const target = event.currentTarget.getAttribute("target");
         if (target && target !== "_self") return;
         event.preventDefault();
-        openFile(filePath);
+        openFile(filePath, parsePdfPageFragment(href) ?? undefined);
       };
 
       return (
-        <span className="file-link-with-pin"><a href={href} {...props} onClick={handleClick}>
-          {children}
-        </a><PinOutputButton path={filePath} /></span>
+        <MarkdownLinkContext.Provider value={true}>
+          <span className="file-link-with-pin"><a href={href} {...props} onClick={handleClick}>
+            {children}
+          </a><PinOutputButton path={filePath} /></span>
+        </MarkdownLinkContext.Provider>
       );
     },
-    img({ src, alt, ...props }) {
-      delete props.node;
-      const filePath = typeof src === "string" ? resolveLocalFileHref(src, cwd) : null;
-      const imageSrc = filePath
-        ? `/api/files/${encodeFilePathForApi(filePath)}?type=read`
-        : src;
-      // Dynamic local paths are served directly by the file API.
-      // eslint-disable-next-line @next/next/no-img-element
-      return <img src={imageSrc} alt={alt ?? ""} loading="lazy" {...props} />;
+    img(props) {
+      return <MarkdownImage cwd={cwd} {...props} />;
     },
     table({ children }) {
       return (

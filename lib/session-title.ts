@@ -300,6 +300,8 @@ export async function generateSessionTitle(source: AgentSession): Promise<Genera
   const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS);
 
   try {
+    // pi >= 0.86 stream functions take a TranscriptContext: fold the system prompt
+    // into a leading system message with the SDK's own normalizer.
     const stream = await sourceAgent.streamFunction(model, normalizeContext(context), requestOptions);
     return titleFromAssistant(await stream.result());
   } catch (error) {
