@@ -2646,11 +2646,23 @@ pre, code {
   padding: 6px 10px;
   text-align: left;
   vertical-align: top;
-  /* `anywhere` (not `break-word`) also shrinks min-content sizing: without it
-     one column of long unbreakable tokens (paths, identifiers) claims its full
-     width and starves breakable columns — CJK text then collapses to a single
-     character per line no matter how wide the window is. */
-  overflow-wrap: anywhere;
+}
+/* Tables fill the chat column and wrap their cells. Only a table whose widest
+   unbreakable tokens cannot fit side by side scrolls.
+   - `width: auto` overrides globals.css's `width: max-content` (#650), which
+     turned off wrapping entirely: every cell ran on one line, so a table of
+     sentences scrolled far past any chat width.
+   - `overflow-wrap`/`word-break: normal` keep identifiers and paths whole.
+     `anywhere` (or `.markdown-body`'s inherited `break-word`) shrinks every
+     column's minimum width to about one character, which squeezed wide tables
+     (#649).
+   - `min-width` keeps breakable (prose, CJK) columns readable when another
+     column holds long tokens. That starvation was why cells used `anywhere`. */
+.markdown-table-wrap > table { width: auto; }
+.markdown-table-wrap :is(th, td) {
+  overflow-wrap: normal;
+  word-break: normal;
+  min-width: 7em;
 }
 .markdown-body tr:last-child td { border-bottom: 0; }
 .markdown-body th {

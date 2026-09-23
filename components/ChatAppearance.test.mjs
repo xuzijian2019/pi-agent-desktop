@@ -48,3 +48,18 @@ test("chat font size preserves the default and bounds stored or supplied values"
   assert.equal(clampChatContentFontSize(18.7), 19);
   assert.equal(clampChatContentFontSize(30), 24);
 });
+
+test("markdown tables wrap to the chat width instead of running on one line", async () => {
+  const nativeTheme = await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8");
+  // globals.css (upstream) keeps `width: max-content`, and native-theme.css must override it.
+  // With max-content, cells never wrap, so a table of sentences scrolls past any chat width.
+  assert.match(nativeTheme, /\.markdown-table-wrap > table \{ width: auto; \}/);
+  // Cells keep tokens whole (`anywhere` shrinks columns to one character, #649) and keep
+  // a minimum width so prose/CJK columns are not starved by long-token columns.
+  const cellRule = nativeTheme.match(/\.markdown-table-wrap :is\(th, td\) \{([^}]*)\}/)?.[1] ?? "";
+  assert.match(cellRule, /overflow-wrap: normal;/);
+  assert.match(cellRule, /word-break: normal;/);
+  assert.match(cellRule, /min-width: \d+(\.\d+)?em;/);
+  const baseCellRule = nativeTheme.match(/\.markdown-body th, \.markdown-body td \{([^}]*)\}/)?.[1] ?? "";
+  assert.doesNotMatch(baseCellRule, /overflow-wrap: anywhere/);
+});
