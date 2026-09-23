@@ -45,3 +45,36 @@ export function userMessageKey(message: Partial<AgentMessage>): string {
     images: content.map(imageSignature).filter(Boolean),
   });
 }
+
+/**
+ * Folds a delivered user `message_end` into the transcript, consuming the
+ * optimistic bubble `handleSend` appended for the same prompt.
+ *
+ * The bubble is not always the last message. When the system prompt changed
+ * (first prompt of a session, or tools/skills/context files/date changed since
+ * the last one), pi's `prompt()` unshifts a `role: "system"` section-update
+ * message ahead of the user message, so its `message_end` lands first. Trailing
+ * system messages are skipped when looking for the bubble. Without that, the
+ * prompt showed twice while streaming and once after the post-run reload.
+ *
+ * Returns `prev` unchanged when the bubble already shows the delivered content,
+ * replaces it when pi delivered different content (e.g. an expanded prompt
+ * template), and appends otherwise (steering/follow-up deliveries).
+ */
+export function reconcileDeliveredUserMessage(
+  prev: AgentMessage[],
+  delivered: AgentMessage,
+  optimisticKey: string | null,
+): AgentMessage[] {
+  if (optimisticKey) {
+    let index = prev.length - 1;
+    while (index >= 0 && (prev[index] as { role?: string }).role === "system") index -= 1;
+    const candidate = prev[index];
+    if (candidate?.role === "user" && userMessageKey(candidate) === optimisticKey) {
+      return userMessageKey(delivered) === optimisticKey
+        ? prev
+        : [...prev.slice(0, index), delivered, ...prev.slice(index + 1)];
+    }
+  }
+  return [...prev, delivered];
+}

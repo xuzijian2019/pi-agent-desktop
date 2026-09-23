@@ -16,7 +16,7 @@ import { getPreferredToolPreset, setPreferredToolPreset } from "@/lib/tool-prese
 import { getPresetFromToolNames, getToolNamesForPreset, type ToolEntry, type ToolPreset } from "@/lib/tool-presets";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { mergeSessionStats, type SessionFileStats } from "@/lib/session-stats";
-import { userMessageKey } from "@/lib/prompt-recovery";
+import { reconcileDeliveredUserMessage, userMessageKey } from "@/lib/prompt-recovery";
 import { AgentEventConnection } from "@/lib/agent-event-connection";
 import { getToolExecutionProgress } from "@/lib/tool-execution-progress";
 import { updateExtensionWidgets } from "@/lib/extension-widgets";
@@ -1520,20 +1520,12 @@ const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.cur
           // Delivered steering/follow-up messages surface here as user
           // messages. The run's initial prompt also emits one, but handleSend
           // already appended it optimistically. Consume only the still-adjacent
-          // optimistic bubble; later same-text queue deliveries must render.
+          // optimistic bubble (allowing for a system-prompt update pi emits
+          // ahead of it); later same-text queue deliveries must render.
           const delivered = normalizeToolCalls(completed);
-          const deliveredKey = userMessageKey(delivered);
           const optimisticKey = optimisticUserMessageKeyRef.current;
           optimisticUserMessageKeyRef.current = null;
-          setMessages((prev) => {
-            const last = prev[prev.length - 1];
-            if (optimisticKey && last?.role === "user" && userMessageKey(last) === optimisticKey) {
-              return optimisticKey === deliveredKey
-                ? prev
-                : [...prev.slice(0, -1), delivered];
-            }
-            return [...prev, delivered];
-          });
+          setMessages((prev) => reconcileDeliveredUserMessage(prev, delivered, optimisticKey));
         } else if (completed) {
           setMessages((prev) => [...prev, normalizeToolCalls(completed)]);
           if (completed.role === "assistant") {
