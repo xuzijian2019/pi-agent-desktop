@@ -173,7 +173,7 @@ function buildSessionTree(sessions: SessionInfo[]): SessionTreeNode[] {
   return roots;
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onProjectsChange, actionsRef, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange, headerControls }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onProjectsChange, actionsRef, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange, headerControls, onOpenTerminal }: Props) {
   const { t, locale } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [sessionListVersion, setSessionListVersion] = useState<number | null>(null);
@@ -1626,6 +1626,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           style={{ top: projectMenuPos.top, left: projectMenuPos.left }}
           role="menu"
         >
+          {onOpenTerminal && (
+            <button type="button" role="menuitem" onClick={() => {
+              const cwd = projectMenu.root;
+              setProjectMenu(null);
+              onOpenTerminal(cwd);
+            }}>{t("sidebar.openTerminalHere")}</button>
+          )}
           <button
             type="button"
             role="menuitem"

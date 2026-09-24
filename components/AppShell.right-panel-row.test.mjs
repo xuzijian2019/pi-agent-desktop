@@ -28,6 +28,14 @@ test("chat wrapper stays inside the center column (no 50/50 topbar split)", () =
   );
 });
 
+test("topbar dropdowns reserve sidebar and split file-panel space", () => {
+  assert.match(source, /const sidebarReserved = sidebarOpen && !isMobile \? sidebarResizer\.width : 0/);
+  assert.match(source, /const panelReserved = rightPanelOpen && !isMobile && wideSplitLayout \? rightPanelWidth : 0/);
+  assert.match(source, /width: Math\.min\(AGENT_PANEL_WIDTH, available\)/);
+  assert.match(source, /reserveLeft=\{sidebarOpen && !isMobile \? sidebarResizer\.width : 0\}/);
+  assert.match(source, /reserveRight=\{rightPanelOpen && !isMobile && wideSplitLayout \? rightPanelWidth : 0\}/);
+});
+
 test("right panel block is a row child (row closes after the panel, not before)", () => {
   const rowOpen = source.indexOf('display: "flex", flex: 1, minHeight: 0, overflow: "hidden"');
   assert.ok(rowOpen !== -1, "row container not found");

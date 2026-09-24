@@ -198,7 +198,7 @@ function VersionChip({
   );
 }
 
-export function AppSettings({ onClose }: { onClose: () => void }) {
+export function AppSettings({ onClose, embedded = false }: { onClose: () => void; embedded?: boolean }) {
   const { t, locale, setLocale, supportedLocales } = useI18n();
   const { theme, setThemePreference } = useTheme();
   const { mode: diffViewMode, setMode: setDiffViewMode } = useDiffViewMode();
@@ -330,68 +330,17 @@ export function AppSettings({ onClose }: { onClose: () => void }) {
     }
   };
 
-  return (
-    <div
-      className="native-modal-backdrop"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !upgradeProgress) onClose();
-      }}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1200,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 18,
-        background: "rgba(0,0,0,0.4)",
-      }}
-    >
-      <section
-        className="native-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="app-settings-title"
-        style={{
-          width: "min(620px, 100%)",
-          maxHeight: "min(720px, calc(100vh - 36px))",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-          border: "1px solid var(--border)",
-          borderRadius: 12,
-          background: "var(--bg-panel)",
-          color: "var(--text)",
-          boxShadow: "0 22px 70px rgba(0,0,0,0.32)",
-        }}
-      >
-        <header className="native-modal-header" style={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "18px 22px 16px", borderBottom: "1px solid var(--border)" }}>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <h2 className="native-modal-title" id="app-settings-title" style={{ margin: 0, fontSize: 18, lineHeight: 1.25 }}>
-              {PRODUCT_NAME}
-            </h2>
-            <div style={{ marginTop: 5, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.6 }}>
-              {t(desktop ? "appSettings.tagline" : "appSettings.taglineWeb", { product: PRODUCT_NAME })}
-              <br />
-              {t("appSettings.taglineDetails")}
-            </div>
+  const bodyContent = (
+    <div style={embedded ? { display: "flex", flexDirection: "column", gap: 12 } : { overflowY: "auto", padding: "18px 22px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+      {embedded && (
+        <div style={{ marginBottom: 4 }}>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "var(--text)" }}>{PRODUCT_NAME}</h2>
+          <div style={{ marginTop: 4, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
+            {t(desktop ? "appSettings.tagline" : "appSettings.taglineWeb", { product: PRODUCT_NAME })} · {t("appSettings.taglineDetails")}
           </div>
-          <button
-            className="native-modal-close"
-            type="button"
-            onClick={onClose}
-            disabled={Boolean(upgradeProgress)}
-            aria-label={t("appSettings.close")}
-            title={t("appSettings.close")}
-            style={{ padding: "1px 5px", border: 0, background: "transparent", color: "var(--text-muted)", cursor: upgradeProgress ? "default" : "pointer", fontSize: 21, lineHeight: 1, opacity: upgradeProgress ? 0.35 : 1 }}
-          >
-            ×
-          </button>
-        </header>
-
-        <div style={{ overflowY: "auto", padding: "18px 22px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
-          <div className="native-settings-card" style={sectionCardStyle}>
+        </div>
+      )}
+      <div className="native-settings-card" style={sectionCardStyle}>
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
               <div>
                 <div style={sectionTitleStyle}>{t("appSettings.updatesSection")}</div>
@@ -605,6 +554,77 @@ export function AppSettings({ onClose }: { onClose: () => void }) {
             </div>
           )}
         </div>
+  );
+
+  if (embedded) {
+    return (
+      <div className="settings-desktop-embedded" style={{ padding: "16px 20px" }}>
+        {bodyContent}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="native-modal-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !upgradeProgress) onClose();
+      }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1200,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 18,
+        background: "rgba(0,0,0,0.4)",
+      }}
+    >
+      <section
+        className="native-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="app-settings-title"
+        style={{
+          width: "min(620px, 100%)",
+          maxHeight: "min(720px, calc(100vh - 36px))",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          border: "1px solid var(--border)",
+          borderRadius: 12,
+          background: "var(--bg-panel)",
+          color: "var(--text)",
+          boxShadow: "0 22px 70px rgba(0,0,0,0.32)",
+        }}
+      >
+        <header className="native-modal-header" style={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "18px 22px 16px", borderBottom: "1px solid var(--border)" }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <h2 className="native-modal-title" id="app-settings-title" style={{ margin: 0, fontSize: 18, lineHeight: 1.25 }}>
+              {PRODUCT_NAME}
+            </h2>
+            <div style={{ marginTop: 5, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.6 }}>
+              {t(desktop ? "appSettings.tagline" : "appSettings.taglineWeb", { product: PRODUCT_NAME })}
+              <br />
+              {t("appSettings.taglineDetails")}
+            </div>
+          </div>
+          <button
+            className="native-modal-close"
+            type="button"
+            onClick={onClose}
+            disabled={Boolean(upgradeProgress)}
+            aria-label={t("appSettings.close")}
+            title={t("appSettings.close")}
+            style={{ padding: "1px 5px", border: 0, background: "transparent", color: "var(--text-muted)", cursor: upgradeProgress ? "default" : "pointer", fontSize: 21, lineHeight: 1, opacity: upgradeProgress ? 0.35 : 1 }}
+          >
+            ×
+          </button>
+        </header>
+
+        {bodyContent}
       </section>
     </div>
   );

@@ -339,6 +339,7 @@ export function AppShell() {
     if (typeof window === "undefined" || !window.matchMedia) return;
     const mql = window.matchMedia(`(max-width: ${SPLIT_PANEL_MIN_WIDTH - 1}px)`);
     const checkWidth = () => {
+      setWideSplitLayout(!mql.matches);
       if (mql.matches) setRightPanelOpen(false);
     };
     checkWidth();
@@ -415,6 +416,7 @@ export function AppShell() {
   // Single active panel — only one dropdown open at a time
   const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [wideSplitLayout, setWideSplitLayout] = useState(false);
 
   const toggleTopPanel = useCallback((panel: "agents" | "branches" | "system" | "tools", keepMobileToolbarOpen = false) => {
     if (isMobile) setSidebarOpen(false);
@@ -579,21 +581,23 @@ export function AppShell() {
     if (!activeTopPanel || !topBarRef.current) return;
     const update = () => {
       const topBarRect = topBarRef.current!.getBoundingClientRect();
+      // Fixed dropdowns still paint within the topbar's stacking context;
+      // reserve columns that can cover them in the desktop split layout.
+      const sidebarReserved = sidebarOpen && !isMobile ? sidebarResizer.width : 0;
+      const panelReserved = rightPanelOpen && !isMobile && wideSplitLayout ? rightPanelWidth : 0;
+      const left = topBarRect.left + sidebarReserved;
+      const available = Math.max(0, topBarRect.width - sidebarReserved - panelReserved);
       if (activeTopPanel === "agents") {
-        setTopPanelPos({
-          top: topBarRect.bottom,
-          left: topBarRect.left,
-          width: Math.min(AGENT_PANEL_WIDTH, topBarRect.width),
-        });
+        setTopPanelPos({ top: topBarRect.bottom, left, width: Math.min(AGENT_PANEL_WIDTH, available) });
         return;
       }
-      setTopPanelPos({ top: topBarRect.bottom, left: topBarRect.left, width: topBarRect.width });
+      setTopPanelPos({ top: topBarRect.bottom, left, width: available });
     };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(topBarRef.current);
     return () => ro.disconnect();
-  }, [activeTopPanel, isMobile]);
+  }, [activeTopPanel, isMobile, sidebarOpen, sidebarResizer.width, rightPanelOpen, rightPanelWidth, wideSplitLayout]);
 
   // Files unmount when inactive; workspace terminals stay mounted until closed.
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
@@ -1969,6 +1973,8 @@ export function AppShell() {
                   open={activeTopPanel === "branches"}
                   onToggle={() => toggleTopPanel("branches")}
                   hasSession
+                  reserveLeft={sidebarOpen && !isMobile ? sidebarResizer.width : 0}
+                  reserveRight={rightPanelOpen && !isMobile && wideSplitLayout ? rightPanelWidth : 0}
                 />
               )}
               {(() => {
@@ -2652,7 +2658,7 @@ export function AppShell() {
       />
     )}
     {appSettingsOpen && <AppSettings onClose={() => setAppSettingsOpen(false)} />}
-    <UpdateReminder onOpenSettings={() => setAppSettingsOpen(true)} />
+    <UpdateReminder onOpenSettings={() => setSettingsSection("desktop")} />
     </>
   );
 }

@@ -7,10 +7,17 @@ export const filePanelFixture = `<!doctype html><html><body style="margin:20px;m
 <script>window.previewInstance = Math.random();</script></body></html>`;
 
 export async function checkFilePanel(page, filePath) {
-  const showSidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
-  if (await showSidebar.isVisible()) await showSidebar.click();
-  await page.locator(`[title="${filePath}"]`).click();
+  const hideSidebar = page.getByRole("button", { name: "Hide sidebar", exact: true });
+  if (await page.locator("#session-sidebar").evaluate((element) => element.classList.contains("sidebar-open"))) {
+    await hideSidebar.click();
+  }
   const panel = page.locator("#file-panel");
+  const showPanel = page.viewportSize().width <= 640
+    ? page.locator('.right-panel-toggle-button[aria-label="Show file panel"]')
+    : page.locator('.app-topbar button[aria-label="Show file panel"]');
+  await showPanel.click();
+  await panel.waitFor({ state: "visible" });
+  await panel.locator(`[role="button"][title="${filePath}"]`).click();
   const iframe = panel.locator("iframe");
   await iframe.waitFor();
   const frame = await (await iframe.elementHandle()).contentFrame();
@@ -26,7 +33,7 @@ export async function checkFilePanel(page, filePath) {
   const storedWidths = () => page.evaluate(() => [
     localStorage.getItem("pi-sidebar-width"), localStorage.getItem("pi-right-panel-width"),
   ]);
-  const toggle = panel.getByRole("button", { name: "Expand file panel", exact: true });
+  const toggle = panel.getByRole("button", { name: "Expand panel to full width", exact: true });
   if (page.viewportSize().width <= 640) {
     assert.equal(await toggle.isVisible(), false, "Mobile already uses full width");
   } else {
@@ -42,21 +49,21 @@ export async function checkFilePanel(page, filePath) {
       await sessionPopover.waitFor();
       await toggle.click();
       assert.equal(await sessionPopover.count(), 0, "Full-width mode dismisses inert top-bar menus");
-      assert.equal(await panel.getByRole("button", { name: "Restore file panel width", exact: true }).getAttribute("aria-pressed"), "true");
+      assert.equal(await panel.getByRole("button", { name: "Restore panel width", exact: true }).getAttribute("aria-pressed"), "true");
       assert.equal(Math.round(await width()), page.viewportSize().width);
       assert.equal(await page.locator("#session-sidebar").evaluate(el => el.inert), true);
       assert.equal(await frame.evaluate(() => window.previewInstance), instance);
       assert.equal(await frame.evaluate(() => scrollY), 120);
       assert.equal(await frame.locator("#notes").inputValue(), "Keep this note");
       assert.equal(await frame.locator("#filter").inputValue(), "Pending");
-      await panel.getByRole("button", { name: "Restore file panel width", exact: true }).press("Enter");
+      await panel.getByRole("button", { name: "Restore panel width", exact: true }).press("Enter");
       assert.equal(await width(), originalWidth);
       assert.deepEqual(await storedWidths(), originalStored);
       assert.equal(await page.locator("#session-sidebar").evaluate(el => el.inert), false);
     }
     await toggle.click();
     await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
-    await page.getByRole("button", { name: "Show file panel", exact: true }).click();
+    await showPanel.click();
     assert.equal(await toggle.getAttribute("aria-pressed"), "false", "Reopening returns to the split layout");
     assert.equal(await width(), originalWidth);
     assert.equal(await frame.evaluate(() => window.previewInstance), instance);

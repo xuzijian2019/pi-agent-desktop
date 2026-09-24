@@ -1040,7 +1040,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     } finally {
       pendingImageCountRef.current -= imageFiles.length;
     }
-  }, [compact]);
+  }, [appendAttachedImages, compact]);
 
   const removeImage = useCallback((index: number) => {
     setAttachedImages((prev) => {
@@ -1594,7 +1594,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const msg = splicePastedTexts(value, pastedTexts).trim();
     if (!msg && !attachedImages.length) return;
     if (await dispatchBuiltin(msg)) return;
-    if (attachedImages.length) return;
     if (preparingRef.current) return;
     preparingRef.current = true; setPreparationError("");
     try {
@@ -1602,12 +1601,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       const prepared = await prepare();
       if (draftKeyRef.current !== draftKey) return;
       const streamingBehavior = mode === "steer" ? "steer" : "followUp";
-      if (msg.startsWith("/") && onPromptWithStreamingBehavior) onPromptWithStreamingBehavior(prepared.text, streamingBehavior);
-      else if (mode === "steer" && onSteer) onSteer(prepared.text);
-      else if (onFollowUp) onFollowUp(prepared.text);
+      const images = prepared.images.length ? attachedImages : undefined;
+      if (msg.startsWith("/") && onPromptWithStreamingBehavior) onPromptWithStreamingBehavior(prepared.text, streamingBehavior, images);
+      else if (mode === "steer" && onSteer) onSteer(prepared.text, images);
+      else if (onFollowUp) onFollowUp(prepared.text, images);
       if (JSON.stringify(snapshotRef.current()) === original) clearInput();
     } catch (e) { setPreparationError(String(e)); } finally { preparingRef.current = false; }
   }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput, prepare, dispatchBuiltin]);
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
       const nativeEvent = e.nativeEvent;

@@ -2336,8 +2336,14 @@ pre, code {
 }
 
 .chat-composer textarea {
-  font-size: 15px !important;
+  font-size: var(--chat-content-font-size, 14px) !important;
   line-height: 1.55 !important;
+}
+
+@media (max-width: 640px) {
+  .chat-composer textarea {
+    font-size: max(16px, var(--chat-content-font-size, 14px)) !important;
+  }
 }
 
 .chat-composer-controls {
@@ -2513,7 +2519,7 @@ pre, code {
 
 /* react-markdown output styles */
 .markdown-body {
-  font-size: 14px;
+  font-size: calc(14px + var(--chat-font-size-offset, 0px));
   line-height: 1.6;
   color: var(--text);
   word-break: break-word;
@@ -2855,8 +2861,17 @@ pre, code {
 }
 
 /* File workbench */
+@media (min-width: 769px) {
+  .right-panel-container {
+    position: relative;
+  }
+}
+@media (min-width: 960px) {
+  .right-panel-container {
+    z-index: 100;
+  }
+}
 .right-panel-container {
-  position: relative;
   background: var(--surface) !important;
 }
 
@@ -3881,6 +3896,13 @@ span.linenumber {
   }
 
   .right-panel-container {
+    position: fixed !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    height: var(--app-viewport-height, 100dvh) !important;
+    z-index: 250;
     overflow: hidden;
     transition: width var(--dur-base) var(--ease-native), min-width var(--dur-base) var(--ease-native);
     flex-shrink: 0;

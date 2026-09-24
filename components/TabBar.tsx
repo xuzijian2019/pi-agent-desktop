@@ -23,9 +23,10 @@ interface Props {
   activeTabId: string;
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => void;
+  onNewTerminal?: () => void;
 }
 
-export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
+export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onNewTerminal }: Props) {
   const { t } = useI18n();
 
   return (
@@ -74,9 +75,20 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
                 </svg>
-              ) : getFileIcon(tab.label, 14)}
+              ) : getFileIcon(tab.label, 13)}
             </span>
-            <span className="file-tab-label">{tab.label}</span>
+            <span
+              className="file-tab-label"
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                flex: 1,
+                fontWeight: isActive ? 550 : 400,
+              }}
+              title={tab.filePath}
+            >
+              {tab.label}
+            </span>
             <button
               type="button"
               className="file-tab-close"
@@ -96,6 +108,45 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
           </div>
         );
       })}
+      {onNewTerminal && (
+        <div className="file-tab-add-anchor">
+          <button
+            type="button"
+            className="file-tab-add"
+            onClick={onNewTerminal}
+            title={t("terminal.newTerminal")}
+            aria-label={t("terminal.newTerminal")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 28,
+              height: 28,
+              margin: "0 4px 4px 4px",
+              background: "none",
+              border: "none",
+              borderRadius: 4,
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              flexShrink: 0,
+              transition: "background 0.1s, color 0.1s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "var(--bg-hover)";
+              e.currentTarget.style.color = "var(--text)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "none";
+              e.currentTarget.style.color = "var(--text-muted)";
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -90,10 +90,15 @@ const FORK_FEATURES = [
       "WindowControls",
       "dragRegionProps",
       "app-topbar--mac-inset",
-      "AppSettings",
+      "SettingsPanel",
       "UpdateReminder",
       "PRODUCT_NAME",
     ],
+  },
+  {
+    name: "desktop settings remain embedded in the settings panel",
+    file: "components/SettingsPanel.tsx",
+    markers: ["AppSettings embedded", "sectionHost(\"desktop\""],
   },
   {
     name: "FileViewer toolbar",

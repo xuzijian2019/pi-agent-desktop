@@ -20,8 +20,17 @@ import { reconcileDeliveredUserMessage, userMessageKey } from "@/lib/prompt-reco
 import { AgentEventConnection } from "@/lib/agent-event-connection";
 import { getToolExecutionProgress } from "@/lib/tool-execution-progress";
 import { updateExtensionWidgets } from "@/lib/extension-widgets";
-import { CHAT_SCROLL_TAIL_TOLERANCE, shouldShowScrollToLatest } from "@/lib/chat-lazy-load";
-import { INITIAL_STREAMING_STATE, streamReducer, type ClientAssistantMessageEvent } from "@/lib/streaming-message";
+import {
+  CHAT_SCROLL_TAIL_TOLERANCE,
+  isScrollAtTail,
+  shouldShowScrollToLatest,
+} from "@/lib/chat-lazy-load";
+import { findChatScrollAnchor, type ChatScrollPosition } from "@/lib/chat-scroll-position";
+import {
+  INITIAL_STREAMING_STATE,
+  streamReducer,
+  type ClientAssistantMessageEvent,
+} from "@/lib/streaming-message";
 
 export interface SessionData {
   sessionId: string;
@@ -174,6 +183,7 @@ export interface UseAgentSessionOptions {
   onSessionStatsPanelOpen?: () => void;
   setToolPreset?: (preset: ToolPreset) => void;
   deferInitialScroll?: boolean;
+  onScrollPositionChange?: (sessionId: string, position: ChatScrollPosition) => void;
 }
 
 export type ThinkingLevelOption = "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -453,8 +463,25 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // and the browser clamps scrollTop to 0 before any effect cleanup runs —
       // saving from a cleanup would record 0 for every switch.
       if (previousIdentity && scrollContainerRef.current) {
-        rememberScrollPosition(previousIdentity, scrollContainerRef.current);
+        const container = scrollContainerRef.current;
+        rememberScrollPosition(previousIdentity, container);
+        if (opts.onScrollPositionChange) {
+          if (isScrollAtTail(container.scrollTop, container.clientHeight, container.scrollHeight)) {
+            opts.onScrollPositionChange(previousIdentity, { atBottom: true });
+          } else {
+            const viewportTop = container.getBoundingClientRect().top;
+            const candidates = Array.from(
+              container.querySelectorAll<HTMLElement>("[data-entry-id]:not([data-message-role])"),
+            ).map((element) => {
+              const rect = element.getBoundingClientRect();
+              return { entryId: element.dataset.entryId ?? "", top: rect.top, bottom: rect.bottom };
+            }).filter((candidate) => candidate.entryId);
+            const anchor = findChatScrollAnchor(candidates, viewportTop);
+            if (anchor) opts.onScrollPositionChange(previousIdentity, { atBottom: false, ...anchor, oldestEntryId: historyCursor });
+          }
+        }
       }
+      pendingInitialScrollTopRef.current = sessionScrollTops.get(sessionIdentity) ?? null;
       // Point the active id at the new session immediately so in-flight
       // loadSession/SSE handlers for the previous id become no-ops.
       if (session?.id) sessionIdRef.current = session.id;
@@ -653,9 +680,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, []);
 
   const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false, options?: { force?: boolean }) => {
-    const generation = sessionGenerationRef.current;
+    const sessionGeneration = sessionGenerationRef.current;
     const readId = ++sessionReadIdRef.current;
-const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.current === generation && sessionReadIdRef.current === readId;
+    const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.current === sessionGeneration && sessionReadIdRef.current === readId;
 
     let messagesLoaded = false;
     try {
@@ -669,6 +696,7 @@ const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.cur
       const res = await fetchWithRetry(`/api/sessions/${encodeURIComponent(sid)}?${params}`, {
         shouldRetry: isCurrent,
       });
+      if (!isCurrent()) return null;
       if (res.status === 404) {
         if (showLoading) {
           setData(null);
@@ -763,6 +791,10 @@ const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.cur
       const d = await res.json() as { context: SessionData["context"] };
       if (!sessionHookMountedRef.current) return false;
       if (!isCurrent()) return false;
+      // A "before" request prepends history; it is not a new tail message.
+      // Keep the message-length layout effect from pulling the reader back to
+      // the bottom before the browser delivers its pending scroll event.
+      if (before) isNearBottomRef.current = false;
       setHistoryCursor(d.context.oldestEntryId);
       setHasEarlierMessages(d.context.hasMore);
       setData((prev) => {
@@ -2388,7 +2420,8 @@ const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.cur
     setShowScrollToBottom((previous) => (previous === shouldShow ? previous : shouldShow));
   }, []);
 
-  // Load session on mount
+  // Load session on mount and whenever the stable ChatWindow changes identity.
+  // AppShell deliberately keeps the component mounted so the composer does not flash.
   useEffect(() => {
     sessionHookMountedRef.current = true;
     pendingInitialScrollTopRef.current = sessionScrollTops.get(sessionIdentity) ?? null;
@@ -2434,6 +2467,8 @@ const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.cur
       cancelEventStreamGrace();
       closeEvents();
     };
+    // The identity is the intentional trigger. The callbacks are stable for
+    // the lifetime of this hook and including them would restart live sessions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionIdentity]);
 
@@ -2477,12 +2512,15 @@ const isCurrent = () => sessionIdRef.current === sid && sessionGenerationRef.cur
         const savedScrollTop = pendingInitialScrollTopRef.current;
         pendingInitialScrollTopRef.current = null;
         if (savedScrollTop == null) {
+          isNearBottomRef.current = true;
           scrollToBottom("instant");
         } else {
           const container = scrollContainerRef.current;
+          isNearBottomRef.current = false;
           if (container) {
             container.scrollTop = savedScrollTop;
-            isNearBottomRef.current = container.scrollTop + container.clientHeight >= container.scrollHeight - CHAT_SCROLL_TAIL_TOLERANCE;
+            previousScrollTopRef.current = container.scrollTop;
+            isNearBottomRef.current = isScrollAtTail(container.scrollTop, container.clientHeight, container.scrollHeight);
           }
         }
       } else if (!agentRunningRef.current && isNearBottomRef.current) {

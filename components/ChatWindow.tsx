@@ -318,6 +318,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
   } = useAgentSession({
     session, sessionRunning, newSessionCwd, newSessionDraftKey, onAttentionNeeded, onAgentEnd: wrappedOnAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed,
     modelsRefreshKey, chatInputRef, onBranchDataChange: publishBranchData, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen: openStats,
+    deferInitialScroll: Boolean(pendingScrollRestore), onScrollPositionChange,
   });
   const messages = searchPreview?.context.messages ?? liveMessages;
   const entryIds = searchPreview?.context.entryIds ?? liveEntryIds;
@@ -539,10 +540,10 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
   const [visibleCount, setVisibleCount] = useState(
     () => (lazyLoadSessionKey != null ? sessionVisibleCounts.get(lazyLoadSessionKey) : undefined) ?? VISIBLE_PAGE_SIZE,
   );
-  const prevLazyLoadKeyRef = useRef(lazyLoadSessionKey);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const lazyLoadObserverRef = useRef<IntersectionObserver | null>(null);
   const lazyLoadPagingRef = useRef(false);
+  const [appliedLazyLoadSessionKey, setAppliedLazyLoadSessionKey] = useState(lazyLoadSessionKey);
   const messageContentRef = useRef<HTMLDivElement | null>(null);
   const prevScrollDistanceRef = useRef<number | null>(null);
   const loadingOlderRef = useRef(false);
@@ -550,6 +551,27 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
   const pendingScrollRestoreRef = useRef(pendingScrollRestore);
   pendingScrollRestoreRef.current = pendingScrollRestore;
   const [pendingSearchScroll, setPendingSearchScroll] = useState<Props["searchTarget"]>(null);
+
+  // ChatWindow intentionally stays mounted across session switches. Reset all
+  // per-viewport state during render so the next commit cannot paint the old
+  // session's window or consume its pending restoration state.
+  if (lazyLoadSessionKey !== appliedLazyLoadSessionKey) {
+    if (appliedLazyLoadSessionKey != null) {
+      sessionVisibleCounts.set(appliedLazyLoadSessionKey, visibleCount);
+    }
+    setAppliedLazyLoadSessionKey(lazyLoadSessionKey);
+    setVisibleCount(
+      (lazyLoadSessionKey != null ? sessionVisibleCounts.get(lazyLoadSessionKey) : undefined)
+        ?? VISIBLE_PAGE_SIZE,
+    );
+    const nextPosition = searchTarget ? null : initialScrollPosition ?? null;
+    setPendingScrollRestore(nextPosition && !nextPosition.atBottom ? nextPosition : null);
+    setRestoreAnchorReady(false);
+    restoreStartedRef.current = false;
+    loadingOlderRef.current = false;
+    prevScrollDistanceRef.current = null;
+    setPendingSearchScroll(null);
+  }
   const searchMessage = messages[entryIds.indexOf(pendingSearchScroll?.entryId ?? "")];
   const searchBlock = searchMessage?.role === "assistant"
     ? (pendingSearchScroll?.blockIndex === undefined
@@ -558,6 +580,10 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
     : undefined;
   const searchHistoryRef = useRef({ entryIds, historyCursor, hasEarlierMessages });
   searchHistoryRef.current = { entryIds, historyCursor, hasEarlierMessages };
+  const scrollMemorySessionIdRef = useRef(session?.id ?? null);
+  scrollMemorySessionIdRef.current = session?.id ?? null;
+  const onScrollPositionChangeRef = useRef(onScrollPositionChange);
+  onScrollPositionChangeRef.current = onScrollPositionChange;
 
   const [revealEntry, setRevealEntry] = useState<string>();
   useEffect(() => {
@@ -597,14 +623,16 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
 
 
   useLayoutEffect(() => {
-    const sessionId = session?.id;
     const container = scrollContainerRef.current;
     const content = messageContentRef.current;
-    if (!sessionId || !onScrollPositionChange || !container || !content) return;
+    if (!container || !content) return;
     return () => {
+      const sessionId = scrollMemorySessionIdRef.current;
+      const savePosition = onScrollPositionChangeRef.current;
+      if (!sessionId || !savePosition) return;
       if (pendingScrollRestoreRef.current) return;
       if (isScrollAtTail(container.scrollTop, container.clientHeight, container.scrollHeight)) {
-        onScrollPositionChange(sessionId, { atBottom: true });
+        savePosition(sessionId, { atBottom: true });
         return;
       }
       const viewportTop = container.getBoundingClientRect().top;
@@ -615,26 +643,13 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
       });
       const anchor = findChatScrollAnchor(candidates, viewportTop);
       if (!anchor) return;
-      onScrollPositionChange(sessionId, {
+      savePosition(sessionId, {
         atBottom: false,
         ...anchor,
         oldestEntryId: searchHistoryRef.current.historyCursor,
       });
     };
-  }, [loading, onScrollPositionChange, scrollContainerRef, session?.id]);
-
-  useEffect(() => {
-    if (prevLazyLoadKeyRef.current === lazyLoadSessionKey) return;
-    const prevKey = prevLazyLoadKeyRef.current;
-    prevLazyLoadKeyRef.current = lazyLoadSessionKey;
-    if (prevKey != null) {
-      if (visibleCount > VISIBLE_PAGE_SIZE) sessionVisibleCounts.set(prevKey, visibleCount);
-      else sessionVisibleCounts.delete(prevKey);
-    }
-    prevScrollDistanceRef.current = null;
-    lazyLoadPagingRef.current = false;
-    setVisibleCount((lazyLoadSessionKey != null ? sessionVisibleCounts.get(lazyLoadSessionKey) : undefined) ?? VISIBLE_PAGE_SIZE);
-  }, [lazyLoadSessionKey, visibleCount]);
+  }, [scrollContainerRef]);
 
   useEffect(() => {
     const position = pendingScrollRestore;
@@ -1287,7 +1302,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
 
   return (
     <div
-      className="chat-window relative flex h-full min-w-0 flex-col overflow-hidden"
+      className="chat-window chat-content relative flex h-full min-w-0 flex-col overflow-hidden"
       data-session-busy={sessionBusy ? "true" : undefined}
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       onDragEnter={side ? event => { event.preventDefault(); event.stopPropagation(); } : handleDragEnter}

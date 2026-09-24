@@ -1,16 +1,18 @@
 import { NextResponse } from "next/server";
 import type { AppUpdateResponse } from "@/lib/api-types";
 import { getPiWebReleaseUrl, isNewerStableVersion } from "@/lib/app-update";
+import packageJson from "@/package.json";
 
 export const dynamic = "force-dynamic";
 
-const CURRENT_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0";
+const CURRENT_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || packageJson.version || "0.10.0";
 const NPM_LATEST_URL = "https://registry.npmjs.org/@agegr%2Fpi-web/latest";
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 5_000;
 const SKIP_VERSION_CHECK = process.env.PI_WEB_SKIP_VERSION_CHECK === "1";
 
 interface AppUpdateCache {
+  currentVersion: string;
   value?: AppUpdateResponse;
   expiresAt: number;
   inFlight?: Promise<AppUpdateResponse>;
@@ -21,7 +23,14 @@ declare global {
 }
 
 function getCache(): AppUpdateCache {
-  return globalThis.__piWebAppUpdateCache ??= { expiresAt: 0 };
+  const cache = globalThis.__piWebAppUpdateCache;
+  if (!cache || cache.currentVersion !== CURRENT_VERSION) {
+    return globalThis.__piWebAppUpdateCache = {
+      currentVersion: CURRENT_VERSION,
+      expiresAt: 0,
+    };
+  }
+  return cache;
 }
 
 async function fetchLatestVersion(): Promise<AppUpdateResponse> {

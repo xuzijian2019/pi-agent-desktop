@@ -277,6 +277,23 @@ try {
     // The sidebar also displays the first message as the session title.
     assert.deepEqual(rendered.filter((value) => value !== text(0)),
       Array.from({ length: 5000 - oldest }, (_, i) => text(oldest + i)), "Missing, reordered, or duplicate chat messages");
+    if (viewport.width > 600) {
+      const navigator = page.getByRole("slider", { name: "Conversation navigation", exact: true });
+      await navigator.waitFor();
+      await navigator.focus();
+      const before = Number(await navigator.getAttribute("aria-valuenow"));
+      const maximum = Number(await navigator.getAttribute("aria-valuemax"));
+      const direction = before > 1 ? "ArrowUp" : "ArrowDown";
+      await page.keyboard.press(direction);
+      const preview = page.getByRole("status");
+      await preview.waitFor();
+      const after = Number(await navigator.getAttribute("aria-valuenow"));
+      assert.equal(after, before + (direction === "ArrowUp" ? -1 : 1));
+      assert.ok(after >= 1 && after <= maximum);
+      assert.match(await preview.innerText(), /^E2E message \d{4}\nE2E message \d{4}$/);
+      await page.locator("textarea").last().focus();
+      await preview.waitFor({ state: "hidden" });
+    }
     await page.screenshot({ path: join(artifacts, `history-${viewport.width}.png`) });
 
     await page.goto(`${base}/?session=${BRANCH}`, { waitUntil: "domcontentloaded" });
@@ -321,21 +338,8 @@ try {
     const heading = page.getByRole("heading", { name: "E2E compacted heading", exact: true });
     await heading.waitFor({ state: "attached" });
     if (viewport.width > 600) {
-      const node = page.locator("[data-minimap-node-index='0']");
-      await node.waitFor();
-      const rect = await node.boundingBox();
-      assert.ok(rect);
-      await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
-      const preview = page.locator("[data-minimap-preview-box]");
-      await preview.getByRole("button", { name: "E2E compaction anchor", exact: true }).waitFor();
-      await preview.getByRole("button", { name: "E2E compacted heading", exact: true }).click();
-      await page.waitForFunction(() => {
-        const heading = document.querySelector("[data-entry-id='answer'] h2");
-        const scroll = heading?.closest(".overflow-y-auto");
-        return heading && scroll && Math.abs(heading.getBoundingClientRect().top
-          - scroll.getBoundingClientRect().top - scroll.clientHeight * 0.3) < 5;
-      });
-      await page.screenshot({ path: join(artifacts, "compaction-minimap.png") });
+      assert.equal(await page.getByRole("slider", { name: "Conversation navigation", exact: true }).count(), 0,
+        "A compacted page with no loaded user turns must not show an empty conversation navigator");
 
       const selectSession = async (title, entryId) => {
         await page.locator(`[title="${title}"]`).click();
@@ -355,7 +359,10 @@ try {
       const olderPage = page.waitForResponse((response) => response.url().includes(`/api/sessions/${LONG}/context?`));
       await page.getByText("Scroll up to load earlier messages", { exact: true }).evaluate((element) => element.scrollIntoView({ block: "start", behavior: "instant" }));
       await olderPage;
+      await page.locator("[data-entry-id='e4850']").waitFor({ state: "attached" });
       const olderMessage = page.locator("[data-entry-id='e4920']");
+      await olderMessage.waitFor({ state: "visible" });
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       const olderOffset = await positionForReading(olderMessage);
       await selectSession("Render **E2E markdown**", "user");
       const process = page.getByRole("button", { name: /process details/i });
@@ -363,9 +370,36 @@ try {
       const answerHeading = page.getByRole("heading", { name: "E2E reading position", exact: true });
       const answerOffset = await positionForReading(answerHeading);
       await selectSession(text(0), "e4920");
-      assert.ok(Math.abs(await readingOffset(olderMessage) - olderOffset) < 5, "Returning to older history must restore its reading offset");
+      await page.waitForFunction(({ entryId, expected }) => {
+        const element = document.querySelector(`[data-entry-id="${entryId}"]:not([data-message-role])`);
+        const scroll = element?.closest(".overflow-y-auto");
+        if (!element || !scroll) return false;
+        return Math.abs(element.getBoundingClientRect().top - scroll.getBoundingClientRect().top - expected) < 5;
+      }, { entryId: "e4920", expected: olderOffset }, { timeout: 10000 }).catch(async (error) => {
+        const details = await page.evaluate(() => {
+          const element = document.querySelector('[data-entry-id="e4920"]:not([data-message-role])');
+          const scroll = element?.closest(".overflow-y-auto");
+          return {
+            present: Boolean(element),
+            scrollTop: scroll?.scrollTop,
+            scrollHeight: scroll?.scrollHeight,
+            clientHeight: scroll?.clientHeight,
+            actualOffset: element && scroll ? element.getBoundingClientRect().top - scroll.getBoundingClientRect().top : null,
+            visibleEntryIds: Array.from(document.querySelectorAll("[data-entry-id]:not([data-message-role])")).slice(0, 3).map((node) => node.getAttribute("data-entry-id")),
+          };
+        });
+        throw new Error(`Older-history scroll restore expected ${olderOffset}: ${JSON.stringify(details)}`, { cause: error });
+      });
+      const restoredOlderOffset = await readingOffset(olderMessage);
+      assert.ok(Math.abs(restoredOlderOffset - olderOffset) < 5, "Returning to older history must restore its reading offset");
       await selectSession("Render **E2E markdown**", "user");
       assert.equal(await process.getAttribute("aria-expanded"), "false");
+      await page.waitForFunction((expected) => {
+        const element = Array.from(document.querySelectorAll("h2")).find((heading) => heading.textContent === "E2E reading position");
+        const scroll = element?.closest(".overflow-y-auto");
+        if (!element || !scroll) return false;
+        return Math.abs(element.getBoundingClientRect().top - scroll.getBoundingClientRect().top - expected) < 5;
+      }, answerOffset);
       assert.ok(Math.abs(await readingOffset(answerHeading) - answerOffset) < 5, "Collapsing process details on remount must not displace the answer");
 
       // Hold pagination until a different branch has loaded, exercising effect cancellation.
@@ -406,7 +440,7 @@ try {
       await checkChatAppearance(page);
     }
     assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
-    console.log(`PASS: ${viewport.width}px browser pagination, branch, markdown, code, tool call, and compaction navigation`);
+    console.log(`PASS: ${viewport.width}px browser pagination, branch, markdown, code, tool call, and conversation navigation`);
     await context.tracing.stop();
     await context.close();
     context = undefined;

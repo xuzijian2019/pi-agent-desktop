@@ -1,10 +1,10 @@
 {
   "pi": {
     "version": "0.86.1",
-    "reason": "Retained the fork Pi 0.86.1 upgrade while merging upstream/main."
+    "reason": "Retained the fork Pi 0.86.1 upgrade and synced upstream pi-web changes."
   },
   "pi-web": {
-    "version": "0.9.1+main974c8bb",
-    "reason": "Merged upstream through v0.9.1 and main@974c8bb (segments A-D); fork adaptations documented in merge commits 88285a4..0e36743."
+    "version": "0.10.0",
+    "reason": "Merged upstream/main through 3e6350b (package version 0.10.0); fork adaptations documented in the merge commit."
   }
 }

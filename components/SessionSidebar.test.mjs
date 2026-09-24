@@ -52,6 +52,13 @@ test("keeps the project-tree sidebar without an inline explorer section", () => 
   assert.doesNotMatch(source, /data-resize-handle="sidebar-sections"/);
 });
 
+test("keeps session search and virtual list mounted after an upstream sidebar merge", () => {
+  assert.match(source, /sessionSearchOpen && \(/);
+  assert.match(source, /id="session-search-input"/);
+  assert.match(source, /const virtualIndices = getSessionListIndices\(/);
+  assert.match(source, /focusedSessionId/);
+});
+
 test("does not register row-level session deletion shortcuts", () => {
   assert.doesNotMatch(sessionItemSource, /const handleKeyDown/);
   assert.doesNotMatch(sessionItemSource, /onKeyDown=\{handleKeyDown\}/);

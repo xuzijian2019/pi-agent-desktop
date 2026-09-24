@@ -289,7 +289,15 @@ function TreeNode({
   return (
     <div>
       <div
+        role="button"
+        tabIndex={0}
+        title={node.fullPath}
         onClick={handleClick}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          handleClick();
+        }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         style={{

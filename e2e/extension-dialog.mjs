@@ -28,7 +28,7 @@ export async function checkExtensionDialogs(page, artifacts, width) {
   page.on("request", onRequest);
   const start = async (mode) => {
     await page.mouse.move(0, 0);
-    await page.locator("[data-minimap-preview-box]").waitFor({ state: "hidden" });
+    await page.locator(".conversation-navigator-preview").waitFor({ state: "hidden" });
     const input = page.locator("textarea").last();
     await input.fill(`/e2e-dialog ${mode}`);
     await page.getByRole("button", { name: "Send", exact: true }).click();

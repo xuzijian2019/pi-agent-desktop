@@ -54,8 +54,8 @@
     "components/TabBar.tsx": {
       "risk": "medium",
       "drift": 95,
-      "reason": "Accessibility work: role=\"tab\", aria-selected, roving tabIndex, arrow-key navigation, Enter/Space activation, plus an empty state. A generic improvement with no desktop coupling, so it cannot be extracted anywhere — the only ways to remove this drift are upstreaming it or deleting the accessibility support. Kept deliberately. The 2026-09-20 upstream merge keeps this class-based markup while adopting upstream's terminal tabs (terminal icon, closing state, Home/End keys); upstream's own TabBar renders the label twice and dropped the file-tab class, so the fork version is the working one. Structural drift crossed the medium threshold on that merge.",
-      "structuralDrift": 41,
+      "reason": "Accessibility work plus terminal tabs: role=\"tab\", aria-selected, roving tabIndex, keyboard activation, and a New terminal button. Keep the fork's class-based markup and avoid duplicating the tab label when adopting upstream changes.",
+      "structuralDrift": 49,
       "disposition": "accepted"
     },
     "components/ChatWindow.tsx": {
