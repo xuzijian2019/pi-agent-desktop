@@ -22,9 +22,9 @@ interface Props {
   compact?: boolean;
   /** Horizontal px to keep clear on the dropdown's left (e.g. an open sidebar
    *  that paints above the top bar's stacking context) */
-  reserveLeft?: number;
   /** Horizontal px to keep clear on the dropdown's right (e.g. the wide-desktop
-   *  file panel in split layout) */
+   *  file panel in split layout). The dropdown's left edge comes from the
+   *  anchor's own rect, which already excludes the sidebar. */
   reserveRight?: number;
   /** Keep the inline dropdown mounted while another control supplies its trigger */
   hideInlineButton?: boolean;
@@ -260,7 +260,7 @@ function TreeNodeView({ node, activePathIds, depth, isLast, parentLines, onSelec
   );
 }
 
-export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, containerRef, open: openProp, onToggle, hasSession, compact, hideInlineButton, reserveLeft = 0, reserveRight = 0 }: Props) {
+export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, containerRef, open: openProp, onToggle, hasSession, compact, hideInlineButton, reserveRight = 0 }: Props) {
   const { t } = useI18n();
   const [openInternal, setOpenInternal] = useState(false);
   const open = openProp !== undefined ? openProp : openInternal;
@@ -275,15 +275,16 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
       const rect = anchor.getBoundingClientRect();
       setDropdownPos({
         top: rect.bottom,
-        left: rect.left + reserveLeft,
-        width: Math.max(0, rect.width - reserveLeft - reserveRight),
+        // The anchor rect already starts at the sidebar's right edge.
+        left: rect.left,
+        width: Math.max(0, rect.width - reserveRight),
       });
     };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(anchor);
     return () => ro.disconnect();
-  }, [open, inline, containerRef, reserveLeft, reserveRight]);
+  }, [open, inline, containerRef, reserveRight]);
 
   const activePathIds = useMemo(
     () => buildActivePath(tree, activeLeafId),

@@ -31,7 +31,6 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onNewTermin
 
   return (
     <div className="file-tab-bar" role="tablist" aria-label="Open files">
-      {/* No empty-state label: the header's view switch already reads "Files". */}
       {tabs.map((tab) => {
         const isActive = tab.id === activeTabId;
         const closeLabel = t(tab.kind === "terminal" ? "terminal.close" : "i18n.close");
@@ -77,16 +76,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onNewTermin
                 </svg>
               ) : getFileIcon(tab.label, 13)}
             </span>
-            <span
-              className="file-tab-label"
-              style={{
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                flex: 1,
-                fontWeight: isActive ? 550 : 400,
-              }}
-              title={tab.filePath}
-            >
+            <span className="file-tab-label" title={tab.filePath}>
               {tab.label}
             </span>
             <button
@@ -116,29 +106,6 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onNewTermin
             onClick={onNewTerminal}
             title={t("terminal.newTerminal")}
             aria-label={t("terminal.newTerminal")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 28,
-              height: 28,
-              margin: "0 4px 4px 4px",
-              background: "none",
-              border: "none",
-              borderRadius: 4,
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              flexShrink: 0,
-              transition: "background 0.1s, color 0.1s",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "var(--bg-hover)";
-              e.currentTarget.style.color = "var(--text)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "none";
-              e.currentTarget.style.color = "var(--text-muted)";
-            }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <line x1="12" y1="5" x2="12" y2="19" />

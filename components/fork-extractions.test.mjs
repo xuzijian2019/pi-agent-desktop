@@ -13,6 +13,10 @@
  *   EROSION       A fork change is dropped by the merge, silently reverting a
  *                 desktop feature to its upstream form.
  *
+ *   RE-ADOPTION   A region the fork deliberately deleted comes back, because
+ *                 upstream still ships it and the deletion lost the conflict.
+ *                 Covered by a FORK_FEATURES entry's `forbiddenMarkers`.
+ *
  * Neither shows up in tsc, eslint, or the upstream test suite. See
  * docs/ownership-boundaries.md; risk levels live in scripts/fork-ownership.json.
  */
@@ -74,12 +78,46 @@ const EXTRACTIONS = [
     ],
     requiredInOrigin: ["WindowControls", "useDesktopChrome"],
   },
+  {
+    name: "app info panel folded into General settings",
+    origin: "components/SettingsPanel.tsx",
+    // The Version & Updates block and the desktop window/tray switches used to
+    // live in a standalone AppSettings modal reachable as a second settings tab
+    // whose language and theme pickers duplicated General. They moved to
+    // fork-owned files; regrouping them back into the settings panel is the
+    // resurrection this guards against.
+    movedTo: ["components/AppUpdatesSection.tsx", "components/desktop/DesktopAppSection.tsx"],
+    movedDefinitions: ["AppUpdatesSection", "DesktopAppSection"],
+    absentFromOrigin: ["/api/updates", "installLatestDesktopRelease", "closeQuits", "quitAppNative"],
+    requiredInOrigin: ["AppUpdatesSection", "DesktopAppSection"],
+  },
 ];
 
 const FORK_FEATURES = [
   { name: "Right panel single header", file: "components/AppShell.tsx", markers: ["right-panel-tab-strip", "file-panel-viewer-bar", "file-panel-split"] },
   { name: "Composer preparation and branch metadata", file: "components/ChatInput.tsx", markers: ["prepareOutgoingMessage", "<BranchControl", "snapshotRef"] },
   { name: "Checkout admission", file: "lib/rpc-manager.ts", markers: ["withCheckoutGuard", "hasBusyCheckout"] },
+  {
+    name: "ChatWindow new-session header",
+    file: "components/ChatWindow.tsx",
+    // Upstream renders an empty-state branding header (app icon + product name +
+    // version badge) directly above the composer. The fork strips it and keeps
+    // only the update chip, so merging upstream's ChatWindow.tsx would silently
+    // put the branding back — the absence check is the point of this entry.
+    markers: ["NewSessionUpdateLink"],
+    forbiddenMarkers: ["apple-touch-icon", "PRODUCT_NAME"],
+  },
+  {
+    name: "sidebar header controls",
+    file: "components/AppShell.tsx",
+    // The top-right row of the sidebar is settings + collapse only. The sun/moon
+    // theme toggle that used to sit beside them (upstream's "toolbar theme
+    // selector", reachable here through the fork's restyle) was removed on
+    // request; theme selection lives in Settings → General, and its locale keys
+    // (`theme.light` / `theme.dark` / …) went with it.
+    markers: ["settingsMenuButtonRef", "sidebar-chrome-button", "handleSidebarToggle"],
+    forbiddenMarkers: ["theme.light", "aria-pressed={isDark}"],
+  },
   {
     name: "AppShell desktop chrome",
     file: "components/AppShell.tsx",
@@ -96,9 +134,9 @@ const FORK_FEATURES = [
     ],
   },
   {
-    name: "desktop settings remain embedded in the settings panel",
+    name: "app info and desktop preferences live in General settings",
     file: "components/SettingsPanel.tsx",
-    markers: ["AppSettings embedded", "sectionHost(\"desktop\""],
+    markers: ["AppUpdatesSection", "DesktopAppSection", "settings-general-intro"],
   },
   {
     name: "FileViewer toolbar",
@@ -190,8 +228,8 @@ for (const extraction of EXTRACTIONS) {
     for (const marker of extraction.absentFromOrigin) {
       assert.ok(
         !origin.includes(marker),
-        `${extraction.origin} contains "${marker}" again — project-picker logic moved to ` +
-          `${extraction.movedTo[0]} and must not come back.`,
+        `${extraction.origin} contains "${marker}" again — it moved to ` +
+          `${extraction.movedTo.join(" or ")} and must not come back.`,
       );
     }
   });
@@ -239,6 +277,15 @@ for (const feature of FORK_FEATURES) {
         source.includes(marker),
         `${feature.file} lost "${marker}" — an upstream merge likely reverted this file toward ` +
           `its upstream form. Re-apply the fork change rather than deleting this assertion.`,
+      );
+    }
+
+    for (const marker of feature.forbiddenMarkers ?? []) {
+      assert.ok(
+        !source.includes(marker),
+        `${feature.file} contains "${marker}" again — an upstream merge re-adopted upstream's ` +
+          `version of this region. The fork removed it deliberately; re-apply the removal ` +
+          `rather than deleting this assertion.`,
       );
     }
   });

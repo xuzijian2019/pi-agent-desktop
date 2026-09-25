@@ -19,13 +19,12 @@ import { TabBar, type Tab } from "./TabBar";
 // syntax highlighting a second time and only matters once a file tab opens.
 const FileViewer = dynamic(() => import("./FileViewer").then((m) => m.FileViewer), { ssr: false });
 const FileExplorer = dynamic(() => import("./FileExplorer").then((m) => m.FileExplorer), { ssr: false });
-const AppSettings = dynamic(() => import("./AppSettings").then((m) => m.AppSettings), { ssr: false });
 import { ProjectTrustDialog } from "./ProjectTrustDialog";
 import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { UpdateReminder } from "./UpdateReminder";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
-import { useIsMobile, useIsNarrowMobile } from "@/hooks/useIsMobile";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { APP_PREF_KEYS, getPrefBool, getPrefJson, setPref, setPrefJson } from "@/lib/app-prefs";
 import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
@@ -59,7 +58,6 @@ import type { FileViewerState } from "@/lib/file-viewer-state";
 import { getSessionFamily } from "@/lib/session-family";
 import { type SettingsSection } from "@/lib/settings-navigation";
 
-const TOP_BAR_ICON_BUTTON_SIZE = 36;
 // Hover peek for the collapsed sidebar: it stays long enough to aim at a
 // session, and closes on its own when the pointer never arrives or leaves.
 const SIDEBAR_PEEK_IDLE_MS = 2600;
@@ -85,11 +83,15 @@ export function AppShell() {
     getPrefJson<PersistedWorkspace>(APP_PREF_KEYS.workspace)
   ));
   const [initialNavigation, setInitialNavigation] = useState(() => resolveInitialNavigation(searchParams, desktopMode ? persistedWorkspace : null));
-  const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
-  const { isDark, toggleTheme } = useTheme();
+  const [workspaceHydrated, setWorkspaceHydrated] = useState(() => !desktopMode);
+  // Subscribed for its side effects only: this hook installs the shared theme
+  // store's listener for the app's lifetime, so an "auto" preference keeps
+  // following OS scheme changes and the resolved palette keeps being mirrored
+  // into the desktop config while the settings dialog is closed. The sidebar's
+  // sun/moon toggle was removed — theme selection lives in Settings → General.
+  useTheme();
   const { locale, t: translate } = useI18n();
   const isMobile = useIsMobile();
-  const isNarrowMobile = useIsNarrowMobile();
   useViewportHeight();
 
   // Once the user has granted notification permission, register a Web Push
@@ -219,7 +221,7 @@ export function AppShell() {
     };
   }, [settingsMenuOpen, closeSettingsMenu]);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
-  const [appSettingsOpen, setAppSettingsOpen] = useState(false);
+
   const [projectTrust, setProjectTrust] = useState<ProjectTrustStatus | null>(null);
   const [projectTrustDialogOpen, setProjectTrustDialogOpen] = useState(false);
   const [projectTrustBusy, setProjectTrustBusy] = useState(false);
@@ -236,7 +238,6 @@ export function AppShell() {
   useEffect(() => {
     if (!rightPanelOpen || isMobile) setRightPanelExpanded(false);
   }, [rightPanelOpen, isMobile]);
-  const [mobileToolbarMoreOpen, setMobileToolbarMoreOpen] = useState(false);
   const [mobileSidebarReady, setMobileSidebarReady] = useState(false);
   // The desktop window has no native title bar. macOS keeps its traffic lights
   // and only needs the top bar inset for them; other platforms get the buttons
@@ -366,7 +367,6 @@ export function AppShell() {
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const [pendingQuotePrompt, setPendingQuotePrompt] = useState<{ sessionId: string; text: string } | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
-  const mobileToolbarRef = useRef<HTMLDivElement>(null);
   // Branch navigator state — populated by ChatWindow via onBranchDataChange
   const [branchTree, setBranchTree] = useState<SessionTreeNode[]>([]);
   const [branchActiveLeafId, setBranchActiveLeafId] = useState<string | null>(null);
@@ -394,11 +394,26 @@ export function AppShell() {
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const [wideSplitLayout, setWideSplitLayout] = useState(false);
 
-  const toggleTopPanel = useCallback((panel: "agents" | "branches", keepMobileToolbarOpen = false) => {
+  useEffect(() => {
+    if (!sessionHasBranches) {
+      setActiveTopPanel((panel) => panel === "branches" ? null : panel);
+    }
+  }, [sessionHasBranches]);
+
+  useEffect(() => {
+    if (!hasSubagentSessions) {
+      setActiveTopPanel((panel) => panel === "agents" ? null : panel);
+    }
+  }, [hasSubagentSessions]);
+
+  useEffect(() => {
+    if (rightPanelFullWidth) setActiveTopPanel(null);
+  }, [rightPanelFullWidth]);
+
+  const toggleTopPanel = useCallback((panel: "agents" | "branches") => {
     if (isMobile) setSidebarOpen(false);
     setActiveTopPanel((cur) => cur === panel ? null : panel);
-    if (isMobile && isNarrowMobile && keepMobileToolbarOpen) setMobileToolbarMoreOpen(true);
-  }, [isMobile, isNarrowMobile]);
+  }, [isMobile]);
 
   const handleSidebarToggle = useCallback(() => {
     if (isMobile) setActiveTopPanel(null);
@@ -451,7 +466,6 @@ export function AppShell() {
     if (isMobile) {
       if (isMobile) setSidebarOpen(false);
       setActiveTopPanel(null);
-      setMobileToolbarMoreOpen(false);
     }
     setRightPanelOpen((open) => !open);
   }, [isMobile]);
@@ -460,34 +474,6 @@ export function AppShell() {
     setActiveTopPanel(null);
     setRightPanelExpanded((expanded) => !expanded);
   }, []);
-
-  useEffect(() => {
-    if (!mobileToolbarMoreOpen) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const toolbar = mobileToolbarRef.current;
-      if (toolbar && event.composedPath().includes(toolbar)) return;
-      setMobileToolbarMoreOpen(false);
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      setMobileToolbarMoreOpen(false);
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown, true);
-    document.addEventListener("keydown", handleKeyDown, true);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown, true);
-      document.removeEventListener("keydown", handleKeyDown, true);
-    };
-  }, [mobileToolbarMoreOpen]);
-
-  useEffect(() => {
-    setMobileToolbarMoreOpen(false);
-  }, [isMobile, isNarrowMobile, selectedSession?.id, newSessionDraftId]);
-
 
   useEffect(() => {
     if (!activeTopPanel) return;
@@ -513,12 +499,16 @@ export function AppShell() {
     if (!activeTopPanel || !topBarRef.current) return;
     const update = () => {
       const topBarRect = topBarRef.current!.getBoundingClientRect();
-      // Fixed dropdowns still paint within the topbar's stacking context;
-      // reserve columns that can cover them in the desktop split layout.
-      const sidebarReserved = sidebarOpen && !isMobile ? sidebarResizer.width : 0;
+      // The dropdowns are fixed children of the top bar's stacking context
+      // (z-index 90), so the wide-desktop file panel paints over them — keep
+      // them clear of that column. The top bar itself already starts at the
+      // sidebar's right edge (the sidebar is a full-height column of the
+      // shell), so its rect is already the sidebar-cleared region; reserving
+      // the sidebar width again here shifted the dropdown a second time and
+      // left a sidebar-wide dead band on its left.
       const panelReserved = rightPanelOpen && !isMobile && wideSplitLayout ? rightPanelWidth : 0;
-      const left = topBarRect.left + sidebarReserved;
-      const available = Math.max(0, topBarRect.width - sidebarReserved - panelReserved);
+      const left = topBarRect.left;
+      const available = Math.max(0, topBarRect.width - panelReserved);
       if (activeTopPanel === "agents") {
         setTopPanelPos({ top: topBarRect.bottom, left, width: Math.min(AGENT_PANEL_WIDTH, available) });
         return;
@@ -529,7 +519,7 @@ export function AppShell() {
     const ro = new ResizeObserver(update);
     ro.observe(topBarRef.current);
     return () => ro.disconnect();
-  }, [activeTopPanel, isMobile, sidebarOpen, sidebarResizer.width, rightPanelOpen, rightPanelWidth, wideSplitLayout]);
+  }, [activeTopPanel, isMobile, rightPanelOpen, rightPanelWidth, wideSplitLayout]);
 
   // Files unmount when inactive; workspace terminals stay mounted until closed.
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
@@ -1246,7 +1236,7 @@ export function AppShell() {
       case "export":
         if (!selectedSession) return translate("chat.commandNeedsSession");
         handleExportHtml(); return;
-      case "settings": setAppSettingsOpen(true); return;
+      case "settings": setSettingsSection("general"); return;
       case "login":
       case "logout": setSettingsSection("models"); return;
       case "trust":
@@ -1447,31 +1437,10 @@ export function AppShell() {
     document.title = `${prefix}${title}`;
   }, [windowTitle, runFeedback, extensionWindowTitle, selectedSession?.id, activeCwdName]);
 
-  // Theme + collapse controls at the sidebar's own top-right (Claude Desktop
+  // Settings + collapse controls at the sidebar's own top-right (Claude Desktop
   // style). When the sidebar is closed, the topbar shows a reopen button.
   const sidebarHeaderControls = (
     <>
-      <button
-        className="sidebar-chrome-button"
-        onClick={() => toggleTheme()}
-        title={isDark ? translate("theme.light") : translate("theme.dark")}
-        aria-label={isDark ? translate("theme.light") : translate("theme.dark")}
-        aria-pressed={isDark}
-      >
-        {isDark ? (
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="5" />
-            <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
-            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-            <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
-            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-          </svg>
-        ) : (
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-          </svg>
-        )}
-      </button>
       <button
         ref={settingsMenuButtonRef}
         className="sidebar-chrome-button"
@@ -1582,7 +1551,6 @@ export function AppShell() {
       </button>
     );
   };
-
 
   return (
     <>
@@ -1710,23 +1678,20 @@ export function AppShell() {
           {...windowDrag}
           style={{ display: "flex", alignItems: "center", flexShrink: 0, height: "calc(36px + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)", background: "var(--bg-panel)" }}
         >
-          {/* Sidebar reopen — whenever the sidebar (and its own toggle) is hidden */}
-          {!sidebarOpen && (
+          {/* Sidebar reopen — while the sidebar (and its own toggle) is hidden.
+              A wide-panel split keeps this reachable; the full-width panel covers
+              the window, so there the sidebar stays closed until it is restored. */}
+          {!sidebarOpen && !rightPanelFullWidth && (
             <button
               className="native-icon-button"
               onClick={handleSidebarToggle}
               title={translate("sidebar.show")}
               aria-label={translate("sidebar.show")}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
-                background: "none", border: "none", borderRight: "1px solid var(--border)",
-                order: -2,
-                color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
-              }}
+              // Size, hover colour and background come from .native-icon-button, which
+              // declares them with !important — inline overrides here would be dead.
+              style={{ order: -2, flexShrink: 0 }}
               // Hovering this button peeks the sidebar; clicking it pins it open.
-              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; if (!isMobile) openSidebarPeek(); }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
+              onMouseEnter={() => { if (!isMobile) openSidebarPeek(); }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="3" x2="9" y2="21" />
@@ -1787,7 +1752,6 @@ export function AppShell() {
                   open={activeTopPanel === "branches"}
                   onToggle={() => toggleTopPanel("branches")}
                   hasSession
-                  reserveLeft={sidebarOpen && !isMobile ? sidebarResizer.width : 0}
                   reserveRight={rightPanelOpen && !isMobile && wideSplitLayout ? rightPanelWidth : 0}
                 />
               )}
@@ -2342,8 +2306,8 @@ export function AppShell() {
         onConfirm={() => void handleTrustProject()}
       />
     )}
-    {appSettingsOpen && <AppSettings onClose={() => setAppSettingsOpen(false)} />}
-    <UpdateReminder onOpenSettings={() => setSettingsSection("desktop")} />
+    <UpdateReminder onOpenSettings={() => setSettingsSection("general")} />
     </>
+
   );
 }

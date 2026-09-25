@@ -21,6 +21,7 @@ import { revealItemInDirNative } from "@/lib/desktop-native";
 import { isTauriDesktop } from "@/lib/desktop-updater";
 import { getDesktopPlatform, type DesktopPlatform } from "@/lib/desktop-window";
 import { useWindowDrag } from "./desktop";
+import { SessionSearch } from "./SessionSearch";
 import { prefetchSessionData, invalidateSessionData } from "@/lib/session-data-cache";
 import { resolveNewSessionCwd, type SidebarProjectActions } from "@/lib/missing-folder";
 
@@ -203,6 +204,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [wtFilter, setWtFilter] = useState("");
   const runIdsRef = useRef<Record<string, string>>({});
   const [sessionQuery, setSessionQuery] = useState("");
+  // Content search (server-side, across every session) vs. the default title
+  // filter over the loaded project tree. Enter engages it; clearing the box
+  // (Escape or the clear button) drops back to the title filter.
+  const [contentSearch, setContentSearch] = useState(false);
   // Worktree switcher state
   const [worktreeState, setWorktreeState] = useState<WorktreeState | null>(null);
   const lastNotifiedProjectRef = useRef<{ cwd: string | null; key: string | null } | null>(null);
@@ -1540,7 +1545,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         )}
       </div>
 {/* Session search — keeps the original sidebar search styling and
-          narrows the project tree to matching titles / first messages. */}
+          narrows the project tree to matching titles / first messages. Enter is
+          the confirmation for the server-side content search across every
+          session; there is no mode button, so Escape (or the clear button) is
+          the way back to the title filter. */}
       <div className="sidebar-search-wrap" data-no-drag>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="sidebar-search-icon">
           <circle cx="11" cy="11" r="7" />
@@ -1552,12 +1560,22 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           value={sessionQuery}
           onChange={(e) => setSessionQuery(e.target.value)}
           onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              // Committing an IME candidate must not fire the search.
+              if (e.nativeEvent.isComposing || !sessionQuery.trim()) return;
+              e.preventDefault();
+              setContentSearch(true);
+              return;
+            }
             if (e.key === "Escape") {
               e.stopPropagation();
-              if (sessionQuery) setSessionQuery("");
+              // Content results first, then the query, then the field itself.
+              if (contentSearch) setContentSearch(false);
+              else if (sessionQuery) setSessionQuery("");
               else e.currentTarget.blur();
             }
           }}
+          title={t("sidebar.searchAllHint")}
           placeholder={t("sidebar.searchSessions")}
           aria-label={t("sidebar.searchSessions")}
         />
@@ -1565,7 +1583,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           <button
             type="button"
             className="sidebar-search-clear"
-            onClick={() => setSessionQuery("")}
+            onClick={() => {
+              setSessionQuery("");
+              setContentSearch(false);
+            }}
             title={t("sidebar.clearSearch")}
             aria-label={t("sidebar.clearSearch")}
           >
@@ -1607,6 +1628,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               )}
         </div>
       ) : (
+        <SessionSearch
+          open={contentSearch}
+          query={sessionQuery}
+          selectedSessionId={selectedSessionId}
+          onSelectSession={handleSelectSessionFromList}
+        >
         <div className="sidebar-project-tree" onScroll={handleListScroll}>
           <div className="sidebar-project-tree-header">
             <span className="sidebar-project-tree-title">{t("sidebar.projects")}</span>
@@ -1645,6 +1672,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           </div>
           {activeProjects.map((group) => renderProjectGroup(group))}
         </div>
+        </SessionSearch>
       )}
       {projectPathHint && createPortal(
         <div

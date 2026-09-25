@@ -1,5 +1,16 @@
 import assert from "node:assert/strict";
 
+// The fork's sidebar gear opens a section menu (General / Models / Skills /
+// Sub-agents / Plugins) instead of landing on the appearance controls, so
+// every "open settings" step goes through it.
+async function openGeneralSettings(page) {
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const general = page.locator(".settings-entry-menu button", { hasText: "General" });
+  await general.waitFor();
+  await general.click();
+  await page.locator(".settings-general").waitFor();
+}
+
 export async function checkChatAppearanceReset(page) {
   const width = page.getByRole("slider", { name: "Chat content width", exact: true });
   const fontSize = page.getByRole("slider", { name: "Chat font size", exact: true });
@@ -24,7 +35,7 @@ export async function checkChatAppearanceReset(page) {
   await page.reload({ waitUntil: "networkidle" });
   const showSidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
   if (await showSidebar.isVisible()) await showSidebar.click();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await openGeneralSettings(page);
   assert.equal(await width.inputValue(), "820");
   assert.equal(await fontSize.inputValue(), "14");
   assert.equal(await resetWidth.isDisabled(), true);
@@ -34,7 +45,7 @@ export async function checkChatAppearanceReset(page) {
 export async function checkChatAppearance(page) {
   await page.setViewportSize({ width: 2560, height: 1100 });
   const textarea = page.locator(".chat-input-textarea");
-  const openSettings = () => page.getByRole("button", { name: "Settings", exact: true }).click();
+  const openSettings = () => openGeneralSettings(page);
   const closeSettings = () => page.keyboard.press("Escape");
   const width = page.getByRole("slider", { name: "Chat content width", exact: true });
   const fontSize = page.getByRole("slider", { name: "Chat font size", exact: true });

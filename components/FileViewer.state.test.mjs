@@ -54,10 +54,22 @@ test("TextFileViewer snapshots and restores lightweight tab state", () => {
   assert.match(block, /content\.scrollLeft = viewerStateRef\.current\.scrollLeft/);
 });
 
-test("TextFileViewer keeps first-mount preview eligibility across Strict Effects cleanup", () => {
+test("TextFileViewer resolves the preview default before the first content render", () => {
   const block = functionBlock("TextFileViewer", null);
-  assert.match(block, /defaultPreviewEligibleRef = useRef\(/);
-  assert.match(block, /defaultPreviewEligibleRef\.current[\s\S]*updateDisplayMode\("preview"\)/);
+  // The path is part of the initial-mode resolution, so a markdown file's very
+  // first render after the fetch is already the preview. Deciding the default
+  // after the contents arrived painted the source view for a frame first.
+  assert.match(block, /resolveInitialFileDisplayMode\(initialState, initialDisplayMode, filePath\)/);
+  assert.match(block, /useState<DisplayMode>\(requestedInitialDisplayMode\)/);
+  assert.doesNotMatch(block, /updateDisplayMode\("preview"\)/);
+});
+
+test("TextFileViewer falls back to source while the preview is unavailable", () => {
+  const block = functionBlock("TextFileViewer", null);
+  // A truncated (not fully loaded) file has no preview, so a preview default
+  // must not paint a partial document or leave both switch buttons inactive.
+  assert.match(block, /const hasPreview = !data\?\.truncated && \(isHtml \|\| isMarkdown\);/);
+  assert.match(block, /displayMode === "preview" && !hasPreview\s*\? "source"/);
 });
 
 test("markdown table tokens stay inline despite Tailwind's table utility", () => {

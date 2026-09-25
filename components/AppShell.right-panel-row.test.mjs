@@ -34,11 +34,13 @@ test("chat wrapper stays inside the center column (no 50/50 topbar split)", () =
   );
 });
 
-test("topbar dropdowns reserve sidebar and split file-panel space", () => {
-  assert.match(source, /const sidebarReserved = sidebarOpen && !isMobile \? sidebarResizer\.width : 0/);
+test("topbar dropdowns reserve split file-panel space, not the sidebar twice", () => {
+  // The topbar already starts at the sidebar's right edge, so subtracting the
+  // sidebar width again left a dead band. Keep the file-panel reservation.
+  assert.doesNotMatch(source, /const sidebarReserved = sidebarOpen && !isMobile \? sidebarResizer\.width : 0/);
   assert.match(source, /const panelReserved = rightPanelOpen && !isMobile && wideSplitLayout \? rightPanelWidth : 0/);
   assert.match(source, /width: Math\.min\(AGENT_PANEL_WIDTH, available\)/);
-  assert.match(source, /reserveLeft=\{sidebarOpen && !isMobile \? sidebarResizer\.width : 0\}/);
+  assert.doesNotMatch(source, /reserveLeft=\{sidebarOpen && !isMobile \? sidebarResizer\.width : 0\}/);
   assert.match(source, /reserveRight=\{rightPanelOpen && !isMobile && wideSplitLayout \? rightPanelWidth : 0\}/);
 });
 

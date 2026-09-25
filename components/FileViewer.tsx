@@ -54,17 +54,6 @@ const DISPLAY_MODE_LABELS: Record<DisplayMode, string> = {
   diff: "Diff",
 };
 
-function getDefaultDisplayMode(filePath: string, initialDisplayMode?: DisplayMode): DisplayMode {
-  if (initialDisplayMode === "diff") return "diff";
-
-  const extension = getFileExt(filePath);
-  if (extension === "md" || extension === "mdx" || extension === "html" || extension === "htm") {
-    return "preview";
-  }
-
-  return initialDisplayMode ?? "source";
-}
-
 const FILE_CODE_STYLE: CSSProperties = {
   fontFamily: "var(--font-mono)",
   fontSize: 13,
@@ -949,7 +938,10 @@ function TextFileViewer({
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const requestedInitialDisplayMode = resolveInitialFileDisplayMode(initialState, getDefaultDisplayMode(filePath, initialDisplayMode));
+  // The path default is resolved here, before the first fetch, so a markdown or
+  // HTML file renders its preview as the first thing painted. Deciding it after
+  // the contents load painted the source view for a frame first.
+  const requestedInitialDisplayMode = resolveInitialFileDisplayMode(initialState, initialDisplayMode, filePath);
   const initialWrapLines = initialState?.wrapLines ?? false;
   const initialScrollTop = initialState?.scrollTop ?? 0;
   const initialScrollLeft = initialState?.scrollLeft ?? 0;
@@ -963,9 +955,6 @@ function TextFileViewer({
   const gitDiffRequestRef = useRef(0);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const autoDiffAppliedRef = useRef(false);
-  const defaultPreviewEligibleRef = useRef(
-    initialState === undefined && initialDisplayMode === undefined,
-  );
   const scrollRestorePendingRef = useRef(true);
   const viewerStateRef = useRef<FileViewerState>({
     displayMode: requestedInitialDisplayMode,
@@ -1130,21 +1119,6 @@ function TextFileViewer({
     void fetchGitDiff(filePath);
   }, [fetchGitDiff, filePath, gitRefreshKey]);
 
-  useEffect(() => {
-    // HTML gets the same rendered-first treatment as markdown: a generated page
-    // is usually more useful viewed than read as source. Both have a preview
-    // mode already; the source tab stays one click away. A restored choice or
-    // explicit mode hint always wins over this default.
-    if (
-      defaultPreviewEligibleRef.current
-      && !data?.truncated
-      && (data?.language === "markdown" || data?.language === "html")
-    ) {
-      defaultPreviewEligibleRef.current = false;
-      updateDisplayMode("preview");
-    }
-  }, [data?.language, data?.truncated, updateDisplayMode]);
-
   const hasGitDiff = gitDiff?.supported === true && typeof gitDiff.patch === "string";
   const isDeletedDiff = hasGitDiff && gitDiff.status === "deleted";
 
@@ -1177,7 +1151,15 @@ function TextFileViewer({
   const isHtml = language === "html";
   const isMarkdown = language === "markdown";
   const hasPreview = !data?.truncated && (isHtml || isMarkdown);
-  const effectiveDisplayMode = isDeletedDiff ? "diff" : displayMode;
+  // Only the first chunk of a large file is loaded, so preview is unavailable
+  // until the rest arrives; a preview default falls back to source instead of
+  // rendering a partial document. The mode returns to preview once the whole
+  // file is loaded, and the switch keeps showing source as active meanwhile.
+  const effectiveDisplayMode = isDeletedDiff
+    ? "diff"
+    : displayMode === "preview" && !hasPreview
+      ? "source"
+      : displayMode;
   const useLightweightSource = sourceLines.length > SOURCE_HIGHLIGHT_MAX_LINES
     && !(effectiveDisplayMode === "diff" && hasGitDiff)
     && !(effectiveDisplayMode === "preview" && hasPreview);

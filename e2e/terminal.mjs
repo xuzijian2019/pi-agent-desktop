@@ -83,15 +83,36 @@ try {
       if (await button.count()) await button.click();
     };
     const showPanel = () => page.getByRole("button", { name: "Show file panel", exact: true }).click();
+    // The fork opens terminals from the file panel's "+" (the sidebar's project menu
+    // offers "Open terminal here"); upstream's dedicated topbar button is gone.
+    const openWorkspaceTerminal = async () => {
+      const showPanel = page.locator('.app-topbar button[aria-label="Show file panel"]');
+      if (await showPanel.isVisible()) await showPanel.click();
+      await page.locator("#file-panel").getByRole("button", { name: "New terminal", exact: true }).click();
+    };
+
+    // Closes the file panel from whichever control the fork renders for that mode:
+    // the topbar toggle in the desktop split layout, the strip chip in full-width /
+    // mobile (where the topbar toggle is unreachable). Upstream's in-panel button
+    // only exists as that strip chip now.
     const hidePanel = async () => {
-      const button = page.locator("#file-panel").getByRole("button", { name: "Hide file panel", exact: true, includeHidden: true });
-      if (await button.getAttribute("aria-expanded") === "true") await button.click();
+      const controls = [
+        page.locator('.app-topbar button[aria-label="Hide file panel"]'),
+        page.locator('#file-panel [aria-label="Hide file panel"]'),
+      ];
+      for (const control of controls) {
+        if (await control.count() === 0) continue;
+        if (await control.first().isVisible() && await control.first().getAttribute("aria-expanded") === "true") {
+          await control.first().click();
+          return;
+        }
+      }
     };
     try {
       await page.goto(`${base}/?session=terminal-a1`);
       await page.getByText("Terminal session one message", { exact: true }).waitFor();
       await showSidebar();
-      await page.getByRole("button", { name: "Open workspace terminal", exact: true }).click();
+      await openWorkspaceTerminal();
       await ready();
       await run("export PR695_TOKEN=alive; printf '\\nTOKEN:%s:%s\\n' \"$PR695_TOKEN\" \"$$\"");
       await waitOutput("TOKEN:alive:[0-9]+");
@@ -160,7 +181,7 @@ try {
       });
       await hidePanel();
       await showSidebar();
-      await page.getByRole("button", { name: "Open workspace terminal", exact: true }).click();
+      await openWorkspaceTerminal();
       await page.getByRole("button", { name: "Terminate terminal workspace-a", exact: true }).click();
       releaseCreation();
       await page.locator(".terminal-panel").waitFor({ state: "detached" });
@@ -168,7 +189,7 @@ try {
       for (const terminalId of created) assert.equal((await fetch(`${base}/api/terminal/${terminalId}`)).status, 404);
 
       await showSidebar();
-      await page.getByRole("button", { name: "Open workspace terminal", exact: true }).click();
+      await openWorkspaceTerminal();
       await ready();
       await run("export PR695_WORKSPACE=retained");
       await hidePanel();
@@ -176,7 +197,7 @@ try {
       await page.getByRole("button").and(page.getByTitle(workspace, { exact: true })).first().click();
       await page.getByRole("button").and(page.getByTitle(otherWorkspace, { exact: true })).click();
       await page.getByText("Other workspace session", { exact: true }).waitFor();
-      await page.getByRole("button", { name: "Open workspace terminal", exact: true }).click();
+      await openWorkspaceTerminal();
       await ready();
       const workspaceTabs = await page.evaluate(() => JSON.parse(sessionStorage.getItem("pi-web:terminal-tabs")).tabs);
       assert.deepEqual(workspaceTabs.map((tab) => tab.cwd).sort(), [workspace, otherWorkspace].sort());

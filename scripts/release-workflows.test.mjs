@@ -233,3 +233,58 @@ test("desktop staging ships node-pty native prebuilds with executable helpers", 
   assert.match(prepareSource, /\["darwin-arm64", "darwin-x64"\]/);
   assert.match(prepareSource, /chmod\(join\(ptyDestination, "prebuilds", variant, "spawn-helper"\), 0o755\)/);
 });
+
+test("the Tauri crates stay on the npm packages' major/minor", async () => {
+  // `tauri build` aborts six minutes into every platform of a signed release
+  // with "Found version mismatched Tauri packages" when a `tauri-plugin-*`
+  // crate and its `@tauri-apps/plugin-*` npm package (or `tauri` and
+  // `@tauri-apps/api`) sit on different major/minor releases. v0.4.7 died
+  // exactly this way: the component sync ran a plain `npm install`, which
+  // re-resolved the caret ranges to plugin-updater 2.12.0 / plugin-notification
+  // 2.4.0 while Cargo.lock kept 2.10.1 / 2.3.3. Both halves are committed
+  // files, so the comparison the CLI performs belongs in this suite rather than
+  // on three runners.
+  const cargoLock = await readFile(join(root, "src-tauri", "Cargo.lock"), "utf8");
+  const npmLock = JSON.parse(await readFile(join(root, "package-lock.json"), "utf8"));
+  const release = (version) => version.split(".").slice(0, 2).join(".");
+
+  const crateVersions = new Map();
+  for (const [, name, version] of cargoLock.matchAll(
+    /\[\[package\]\]\nname = "([^"]+)"\nversion = "([^"]+)"/g,
+  )) {
+    crateVersions.set(name, version);
+  }
+
+  const npmVersions = new Map();
+  for (const [path, entry] of Object.entries(npmLock.packages)) {
+    const name = path.match(/(?:^|\/)node_modules\/(@tauri-apps\/[^/]+)$/)?.[1];
+    if (!name) continue;
+    npmVersions.set(name, [...(npmVersions.get(name) ?? []), entry.version]);
+  }
+
+  // Same pairing and the same skip rule as the CLI: a crate without an npm twin
+  // (tauri-plugin-fs here) is not compared, only what both sides install.
+  const pairs = [["tauri", "@tauri-apps/api"]];
+  for (const crate of crateVersions.keys()) {
+    if (crate.startsWith("tauri-plugin-")) {
+      pairs.push([crate, `@tauri-apps/plugin-${crate.slice("tauri-plugin-".length)}`]);
+    }
+  }
+
+  const mismatched = [];
+  for (const [crate, npm] of pairs) {
+    const crateVersion = crateVersions.get(crate);
+    if (!crateVersion || !npmVersions.has(npm)) continue;
+    for (const npmVersion of npmVersions.get(npm)) {
+      if (release(crateVersion) !== release(npmVersion)) {
+        mismatched.push(`${crate} (v${crateVersion}) : ${npm} (v${npmVersion})`);
+      }
+    }
+  }
+
+  assert.deepEqual(
+    mismatched,
+    [],
+    "align them in src-tauri/Cargo.lock (cargo update -p <crate> --precise <version>)",
+  );
+});

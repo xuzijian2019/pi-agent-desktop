@@ -3,6 +3,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useTheme } from "@/hooks/useTheme";
+import { useDiffViewMode } from "@/hooks/useDiffViewMode";
+import { PRODUCT_NAME } from "@/lib/branding";
+import { APP_PREF_KEYS, getPrefBool, setPrefBool } from "@/lib/app-prefs";
+import { openPathNative, isTauriDesktop } from "@/lib/desktop-native";
 import { THEME_OPTIONS } from "@/lib/theme";
 import { ThemeIcon } from "./ThemeIcon";
 import {
@@ -29,7 +33,8 @@ import { setupPushSubscription } from "@/lib/push-client";
 import { SkillsConfig } from "./SkillsConfig";
 import { AgentsConfig } from "./AgentsConfig";
 import { PluginsConfig } from "./PluginsConfig";
-import { AppSettings } from "./AppSettings";
+import { AppUpdatesSection } from "./AppUpdatesSection";
+import { DesktopAppSection } from "./desktop";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
 
 interface Props {
@@ -64,10 +69,20 @@ export function SettingsSectionIcon({ section, size = 16, strokeWidth = 1.8 }: {
   return <svg {...common}><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>;
 }
 
-function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, onQuoteSelectionChange }: Pick<Props, "sessionId" | "onSessionReloaded" | "quoteSelectionEnabled" | "onQuoteSelectionChange">) {
+function GeneralSettings({
+  sessionId,
+  onSessionReloaded,
+  quoteSelectionEnabled,
+  onQuoteSelectionChange,
+  onBusyChange,
+}: Pick<Props, "sessionId" | "onSessionReloaded" | "quoteSelectionEnabled" | "onQuoteSelectionChange"> & {
+  onBusyChange: (busy: boolean) => void;
+}) {
   const { locale, setLocale, supportedLocales, t } = useI18n();
   const { preference, setThemePreference } = useTheme();
+  const { mode: diffViewMode, setMode: setDiffViewMode } = useDiffViewMode();
   const { width: chatContentWidth, setWidth: setChatContentWidth, fontSize, setFontSize } = useChatAppearance();
+  const desktop = isTauriDesktop();
   const [shellSettings, setShellSettings] = useState<ShellToolSettingsResponse | null>(null);
   const [shellSaving, setShellSaving] = useState(false);
   const [shellError, setShellError] = useState<string | null>(null);
@@ -77,6 +92,9 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
   const [webAuthEnabled, setWebAuthEnabled] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState("");
+  const [customCssBusy, setCustomCssBusy] = useState(false);
+  const [customCssError, setCustomCssError] = useState<string | null>(null);
+  const [autoTitle, setAutoTitle] = useState(() => getPrefBool(APP_PREF_KEYS.autoTitle, true));
 
   useEffect(() => {
     setThinkingExpanded(isThinkingExpandedByDefault());
@@ -159,9 +177,34 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
     }
   };
 
+  const openCustomCss = async () => {
+    setCustomCssBusy(true);
+    setCustomCssError(null);
+    try {
+      const response = await fetch("/api/custom-css", { method: "POST" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = (await response.json()) as { path?: string };
+      if (!data.path) throw new Error("Missing path in response");
+      await openPathNative(data.path);
+    } catch (error) {
+      console.error("Failed to open custom.css:", error);
+      setCustomCssError(t("appSettings.customCssOpenError"));
+    } finally {
+      setCustomCssBusy(false);
+    }
+  };
+
   return (
     <div className="settings-general">
       <h2 className="settings-general-title">{t("settings.general")}</h2>
+
+      <div className="settings-general-intro">
+        <p className="settings-general-tagline">{t(desktop ? "appSettings.tagline" : "appSettings.taglineWeb", { product: PRODUCT_NAME })}</p>
+        <p className="settings-general-tagline">{t("appSettings.taglineDetails")}</p>
+      </div>
+
+      <AppUpdatesSection onBusyChange={onBusyChange} />
+
       <div className="settings-general-columns">
         <div className="settings-general-col">
           <section className="settings-general-section">
@@ -188,6 +231,26 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
                 );
               })}
             </div>
+            <div className="settings-option-list">
+              <div className="settings-option">
+                <span className="settings-option-text">
+                  <span className="settings-option-title">{t("appSettings.customCss")}</span>
+                  <span className="settings-option-hint">{t("appSettings.customCssHint")}</span>
+                </span>
+                {desktop && (
+                  <ConfigButton
+                    variant="secondary"
+                    size="small"
+                    className="settings-option-action"
+                    disabled={customCssBusy}
+                    onClick={() => void openCustomCss()}
+                  >
+                    {customCssBusy ? t("appSettings.customCssOpening") : t("appSettings.customCssOpen")}
+                  </ConfigButton>
+                )}
+              </div>
+            </div>
+            {customCssError && <p role="alert" className="settings-general-error">{customCssError}</p>}
           </section>
 
           <section className="settings-general-section">
@@ -268,6 +331,40 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
                   onChange={onQuoteSelectionChange}
                 />
               </div>
+              <div className="settings-chat-option settings-chat-switch-option">
+                <span title={t("appSettings.autoTitleHint")}>{t("appSettings.autoTitle")}</span>
+                <ConfigSwitch
+                  checked={autoTitle}
+                  label={t("appSettings.autoTitle")}
+                  onChange={(enabled) => {
+                    setAutoTitle(enabled);
+                    setPrefBool(APP_PREF_KEYS.autoTitle, enabled);
+                  }}
+                />
+              </div>
+              <div className="settings-chat-option settings-chat-choice-option">
+                <span title={t("appSettings.diffViewModeHint")}>{t("appSettings.diffViewMode")}</span>
+                <div className="settings-choice-group" role="radiogroup" aria-label={t("appSettings.diffViewMode")}>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={diffViewMode === "split"}
+                    className={`config-button config-button-small ${diffViewMode === "split" ? "config-button-primary" : "config-button-secondary"}`}
+                    onClick={() => setDiffViewMode("split")}
+                  >
+                    {t("appSettings.diffViewModeSplit")}
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={diffViewMode === "unified"}
+                    className={`config-button config-button-small ${diffViewMode === "unified" ? "config-button-primary" : "config-button-secondary"}`}
+                    onClick={() => setDiffViewMode("unified")}
+                  >
+                    {t("appSettings.diffViewModeUnified")}
+                  </button>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -340,6 +437,8 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
             </div>
           </section>
 
+          <DesktopAppSection />
+
           {webAuthEnabled && (
             <section className="settings-general-section">
               <ConfigButton variant="secondary" disabled={loggingOut} onClick={() => void logOut()}>
@@ -363,7 +462,6 @@ export const SETTINGS_SECTION_ITEMS: { id: SettingsSection; labelKey: string; re
   { id: "skills", labelKey: "common.skills", requiresProject: true },
   { id: "agents", labelKey: "common.agents", requiresProject: true },
   { id: "plugins", labelKey: "common.plugins", requiresProject: true },
-  { id: "desktop", labelKey: "appSettings.desktopSection", requiresProject: false },
 ];
 
 export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessionReloaded, quoteSelectionEnabled, onQuoteSelectionChange }: Props) {
@@ -373,18 +471,21 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
     () => new Set([section]),
   );
   const sections = SETTINGS_SECTION_ITEMS.map((item) => ({ ...item, label: t(item.labelKey) }));
+  // A signed desktop update installs and relaunches the app; the dialog must not
+  // be dismissible from under it (the Version & Updates block reports the phase).
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => setLastSettingsSection(initialSection), [initialSection]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (event.key !== "Escape" || event.defaultPrevented || busy) return;
       event.preventDefault();
       onClose();
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, [onClose, busy]);
 
   useEffect(() => {
     if (cwd || (section !== "skills" && section !== "agents" && section !== "plugins")) return;
@@ -414,7 +515,7 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
       role="dialog"
       aria-modal="true"
       aria-label={t("settings.title")}
-      onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
+      onClick={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}
       className="settings-dialog-backdrop"
     >
       <div className="settings-dialog-surface">
@@ -456,12 +557,11 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
         </div>
 
         <main className="settings-dialog-main">
-          {sectionHost("general", <GeneralSettings sessionId={sessionId} onSessionReloaded={onSessionReloaded} quoteSelectionEnabled={quoteSelectionEnabled} onQuoteSelectionChange={onQuoteSelectionChange} />)}
+          {sectionHost("general", <GeneralSettings sessionId={sessionId} onSessionReloaded={onSessionReloaded} quoteSelectionEnabled={quoteSelectionEnabled} onQuoteSelectionChange={onQuoteSelectionChange} onBusyChange={setBusy} />)}
           {sectionHost("models", <ModelsConfig embedded cwd={cwd} onClose={onClose} />)}
           {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
           {cwd && sectionHost("agents", <AgentsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} onClose={onClose} onReloaded={onSessionReloaded} />)}
           {cwd && sectionHost("plugins", <PluginsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} onClose={onClose} onReloaded={onSessionReloaded} />)}
-          {sectionHost("desktop", <AppSettings embedded onClose={onClose} />)}
         </main>
       </div>
     </div>

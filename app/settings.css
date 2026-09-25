@@ -649,7 +649,7 @@
 
 .skill-version-value,
 .skill-name-value {
-  color: var(--text-muted);
+  color: var(--text);
   font-family: var(--font-mono);
   font-size: 12px;
 }
@@ -657,10 +657,6 @@
 .skill-version-value.is-update,
 .skill-update-indicator {
   color: var(--accent);
-}
-
-.skill-name-value {
-  color: var(--text);
 }
 
 .skill-update-status {
@@ -937,6 +933,18 @@
   opacity: 0.7;
 }
 
+/* Settings is a preferences *window*, not a page: a desktop client parks a
+   fixed-size window in the middle of the app, so the session stays visible and
+   clicking the scrim behind it is an obvious way out. 1040x700 is sized for the
+   widest section — Models / Agents / Plugins are a 240px list plus a detail pane
+   — and deliberately does not grow with the window: a viewport-filling sheet
+   reads as a second page and hides the chrome the user was just looking at.
+   `min()` only clamps it, so a small window shrinks the surface instead of
+   overflowing, and the 64/96px gutters keep the window's own chrome usable —
+   macOS keeps its traffic lights over the sidebar header (titleBarStyle:
+   overlay) and Windows/Linux render WindowControls in the topbar. The scrim can
+   be lighter than a full sheet's would need to be, but it still has to make the
+   app behind it read as inactive. */
 .settings-dialog-backdrop {
   position: fixed;
   inset: 0;
@@ -944,19 +952,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.38);
+  background: rgba(0, 0, 0, 0.32);
 }
 
 .settings-dialog-surface {
   display: flex;
   flex-direction: column;
-  width: 1080px;
-  max-width: calc(100vw - 16px);
-  height: 84vh;
-  max-height: calc(100dvh - 16px);
+  width: min(1040px, calc(100vw - 64px));
+  height: min(700px, calc(100dvh - 96px));
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--bg);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.22);
 }
@@ -1142,6 +1148,187 @@
   line-height: 1.5;
 }
 
+/* Product intro at the top of General: what this app is, then the update
+   controls that used to live in the standalone "Desktop" settings tab. */
+.settings-general-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+}
+
+.settings-general-tagline {
+  margin: 0;
+  max-width: 640px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.settings-general-tagline:first-child {
+  color: var(--text);
+}
+
+.settings-updates-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-updates-heading {
+  min-width: 0;
+}
+
+.settings-updates-head .config-button {
+  flex-shrink: 0;
+}
+
+.settings-updates .settings-general-description {
+  margin-bottom: 0;
+}
+
+.settings-meta-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.settings-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-decoration: none;
+}
+
+.settings-meta-chip:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.settings-meta-chip.is-highlight {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.settings-meta-chip-label {
+  opacity: 0.72;
+  font-weight: 500;
+}
+
+.settings-meta-chip-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-meta-chip-value.is-latest {
+  font-weight: 800;
+}
+
+.settings-meta-chip-divider {
+  width: 1px;
+  height: 13px;
+  background: currentColor;
+  opacity: 0.2;
+}
+
+.settings-meta-chip-badge {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg-panel);
+  font-size: 9px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.settings-updates-note {
+  margin: 8px 0 0;
+  color: var(--text-dim);
+}
+
+.settings-updates-release-link {
+  margin-left: 6px;
+  color: inherit;
+  font-weight: 650;
+}
+
+/* Title + hint rows with a trailing control (custom stylesheet, desktop
+   behaviour), matching the .settings-shell-option row used above them. */
+.settings-option-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  max-width: 420px;
+  margin-top: 12px;
+}
+
+.settings-option {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 5px;
+  background: var(--bg-panel);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.settings-option-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-option-title {
+  font-weight: 600;
+}
+
+.settings-option-hint {
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.settings-option .config-switch {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.settings-option-action {
+  flex-shrink: 0;
+}
+
+.settings-option-list + .settings-option-action {
+  margin-top: 10px;
+}
+
+.settings-choice-group {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
 .settings-theme-options {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1203,7 +1390,8 @@
   font-size: 12px;
 }
 
-.settings-chat-switch-option {
+.settings-chat-switch-option,
+.settings-chat-choice-option {
   display: flex;
   align-items: center;
   justify-content: space-between;

@@ -67,7 +67,7 @@ is highly concentrated — three files carry 80% of it:
 | `components/TabBar.tsx` | 66 | accessibility: tab roles, roving focus, arrow-key navigation |
 | `components/FileExplorer.tsx` | 61 | selection highlighting; git status colours on CSS variables |
 | `hooks/useTheme.ts` | 57 | follows the OS colour scheme until the user chooses |
-| `components/ChatWindow.tsx` | 35 | branding copy, empty state |
+| `components/ChatWindow.tsx` | 35 | empty state; the branding header above the composer is removed |
 
 Every other shared component is cosmetic-only.
 
@@ -148,7 +148,8 @@ Safe to edit freely; upstream never touches them. Full list in the manifest's
 `forkOwnedPaths`. Broadly: `src-tauri/`, `desktop/`, `scripts/`, `.github/workflows/`,
 `app/native-theme.css`, `app/api/updates/`, `lib/branding.ts`, `lib/app-updates.ts`,
 `lib/desktop-updater.ts`, `lib/desktop-window.ts`, and the desktop-only components
-(`ProjectPicker`, `UpdateReminder`, `AppSettings`, `path-ui`).
+(`ProjectPicker`, `UpdateReminder`, `AppUpdatesSection`, `components/desktop/*`,
+`path-ui`).
 
 ## Deliberate decisions that look like mistakes
 

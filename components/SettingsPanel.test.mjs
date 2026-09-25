@@ -34,6 +34,17 @@ test("keeps every requested configuration surface inside the settings panel", ()
   }
 });
 
+test("keeps one settings surface per concern — no desktop tab duplicating General", () => {
+  // The old Desktop tab repeated General's language and theme pickers; its app
+  // info moved to the top of General and its desktop-only switches ride along
+  // in a self-hiding section, so the tab itself must stay gone.
+  assert.doesNotMatch(panelSource, /id: "desktop"/);
+  assert.match(panelSource, /<AppUpdatesSection onBusyChange=/);
+  assert.match(panelSource, /<DesktopAppSection \/>/);
+  assert.match(panelSource, /settings-general-intro/);
+  assert.match(panelSource, /PRODUCT_NAME/);
+});
+
 test("restores the settings section and each list detail selection", async () => {
   assert.match(panelSource, /setLastSettingsSection\(initialSection\)/);
   assert.match(panelSource, /setLastSettingsSection\(nextSection\)/);
@@ -81,11 +92,12 @@ test("groups chat display controls together without row backgrounds", () => {
 
   assert.doesNotMatch(appearanceSection, /settings-chat-content/);
   assert.match(chatSection, /className="settings-chat-options"/);
-  assert.equal((chatSection.match(/className="settings-chat-option(?: |")/g) ?? []).length, 4);
-  assert.equal((chatSection.match(/<ConfigSwitch/g) ?? []).length, 2);
+  assert.equal((chatSection.match(/className="settings-chat-option(?: |")/g) ?? []).length, 6);
+  assert.equal((chatSection.match(/<ConfigSwitch/g) ?? []).length, 3);
   for (const key of ["thinkingExpandedDefault", "chatContentWidth", "chatContentFontSize", "quoteSelection"]) {
     assert.match(chatSection, new RegExp(`t\\("settings\\.${key}"\\)`));
   }
+  assert.match(chatSection, /appSettings\.autoTitle/);
   assert.doesNotMatch(panelSource, /ThinkingIcon|settings-thinking-/);
   const chatOptionStyles = cssSource.match(/\.settings-chat-option \{[\s\S]*?\}/)?.[0] ?? "";
   assert.match(chatOptionStyles, /font-size: 12px/);

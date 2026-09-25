@@ -37,7 +37,9 @@ test('compact command rows, predictable keyboard navigation, search, completion 
  const selected=await input(page).getAttribute('aria-activedescendant');await input(page).press('ArrowLeft');expect(await input(page).getAttribute('aria-activedescendant')).toBe(selected);
  await input(page).fill('/zeb');await expect(options).toHaveCount(1);await input(page).press('Tab');await expect(input(page)).toHaveValue('/zebra ');await expect(menu(page)).toHaveCount(0);
  await input(page).fill('/');await expect(menu(page)).toBeVisible();await page.screenshot({path:test.info().outputPath('slash-desktop.png'),animations:'disabled'});
- await page.getByRole('button',{name:'Theme: Dark'}).click();await expect(menu(page)).toBeVisible();await page.screenshot({path:test.info().outputPath('slash-desktop-dark.png'),animations:'disabled'});
+ // Theme lives in Settings → General; flip the document class so the dark screenshot does not depend on the removed sidebar toggle.
+ await page.evaluate(() => document.documentElement.classList.add('dark'));
+ await expect(menu(page)).toBeVisible();await page.screenshot({path:test.info().outputPath('slash-desktop-dark.png'),animations:'disabled'});
  await page.setViewportSize({width:390,height:844});await expect(page.locator('.sidebar-container')).toHaveClass(/sidebar-closed/);await expect(menu(page)).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
  await page.screenshot({path:test.info().outputPath('slash-mobile.png'),animations:'disabled'});

@@ -31,6 +31,30 @@ verifies the same way it runs unit tests.
 
 ---
 
+## Local environment traps
+
+- **Building (or starting a fresh `next dev`) from inside the Pi desktop app's shell
+  fails.** The app exports `NODE_ENV=production`, `__NEXT_PRIVATE_ORIGIN` and
+  `__NEXT_PRIVATE_STANDALONE_CONFIG` (its own serialized Next config, from which function
+  values are gone). Next's CLI prefers that serialized config over `next.config.ts`, so
+  `next build` dies with `TypeError: generate is not a function` and a fresh `next dev`
+  with `Missing field turbopackMemoryEviction` — while a dev server that was already
+  running keeps working, which makes it look like a repo bug. `scripts/prepare-desktop.mjs`
+  deletes both `__NEXT_PRIVATE_*` vars for this exact reason; do the same (or run from a
+  normal terminal) before any `next build` / `npm run test:e2e`.
+- The `node` on `PATH` may not be the one the project runs on: the Pi app bundles its own
+  runtime, while a dev server started from a terminal uses another install. Check with
+  `ps -o command= -p $(lsof -nP -iTCP:30141 -sTCP:LISTEN -t)`.
+- `npm run test:e2e` refuses to start while a dev server holds `.next/dev/lock`, and
+  `E2E_SERVER_MODE=start` (the mode CI uses) needs a production build. Both can be
+  satisfied without touching the dev state by building into the isolated desktop dir and
+  pointing the harness at it:
+  `PI_WEB_DESKTOP_BUILD=1 node_modules/next/dist/bin/next build --webpack` then
+  `E2E_SERVER_MODE=start PI_WEB_DESKTOP_BUILD=1 node e2e/run.mjs` (`next.config.ts` swaps
+  `distDir` to `.next-desktop`, which is gitignored).
+
+---
+
 ## Architecture
 
 ```
@@ -127,6 +151,9 @@ components/
   AgentsConfig.tsx    built-in subagent toggle + agent profile editor
   PluginsConfig.tsx   modal for installed package plugins
   SkillsConfig.tsx    modal for loaded/search/installable skills
+  SettingsPanel.tsx   settings dialog; its General tab hosts the app intro, Version & Updates and the desktop-only switches
+  AppUpdatesSection.tsx  Version & Updates block at the top of General
+  desktop/DesktopAppSection.tsx  window/tray prefs; renders nothing outside Tauri
   FileExplorer.tsx    file tree inside sidebar
   FileIcons.tsx       file icon helpers
   FileViewer.tsx      file content in a tab
@@ -330,8 +357,14 @@ Switching chats does **not** remount `ChatWindow` — `AppShell.handleSelectSess
 - `read-images` caps the file count at `MAX_ATTACHED_IMAGES` from `lib/image-attachments.ts`. Keep it derived from that constant; a separate literal silently 400s selections the composer considered valid.
 - Open a local path with `explorer.exe` on Windows, never `cmd.exe /C start` — Rust's argument escaping does not apply to the cmd parser, so a legal path like `C:\src\R&D\x.txt` would split into commands.
 - `lib/app-prefs.ts` owns every `localStorage` key. Theme is additionally mirrored into the app config dir via the `set_ui_theme` command, because the packaged server's port (and therefore the WebView origin, and therefore `localStorage`) can change between cold starts.
+- `tauri build` refuses to bundle when a `tauri-plugin-*` crate and its `@tauri-apps/plugin-*` npm package sit on different major/minor releases (same for `tauri` ↔ `@tauri-apps/api`), and it only says so six minutes into each platform of a signed release. The npm half moves on its own: a sync that runs a plain `npm install` re-resolves the caret ranges in `package.json` and leaves `src-tauri/Cargo.lock` behind — that is how v0.4.7 failed on all three runners with plugin-updater 2.12.0 against crate 2.10.1. Fix it in the lock (`cargo update -p tauri-plugin-updater --precise 2.12.0`), never by pinning the npm range down; `scripts/release-workflows.test.mjs` pins the pairing.
 - `lib/workspace-state.ts` restores the last session/cwd/file tabs on cold start. URL params always win over the persisted workspace.
 - `useDesktopConnection` polls `/api/home` only in Tauri to drive the offline banner. Its cleanup must stop in-flight probes from rescheduling, otherwise an unmount leaves a timer nobody owns and it pings forever.
+
+### Settings dialog: one tab per concern
+- The settings dialog's tabs are exactly `general`, `models`, `skills`, `agents`, `plugins` (`SETTINGS_SECTION_VALUES`). The former `desktop` tab duplicated General's language and theme pickers, so it was removed: the product blurb and Version & Updates sit at the top of General, the custom-stylesheet and diff-display controls joined General's appearance/chat sections, and the desktop window/tray switches live in `components/desktop/DesktopAppSection.tsx`, which renders nothing in a browser (same self-hiding contract as `WindowControls`). `components/AppUpdatesSection.tsx` owns the update check and its chips.
+- A signed desktop update installs and relaunches the app, so `AppUpdatesSection` reports `busy` up to `SettingsPanel`, which keeps backdrop clicks and Escape from dismissing the dialog mid-upgrade. That is the reason for the `onBusyChange` prop; don't drop it when refactoring the panel.
+- `UpdateReminder` opens the panel at `general`, where the update status now lives. `components/fork-extractions.test.mjs` pins that the update/desktop code stays in those fork-owned files instead of being regrouped into `SettingsPanel.tsx`.
 
 ### Workspace terminals & node-pty staging
 - Terminal tabs load `node-pty` through a runtime-computed path (`prebuilds/${platform}-${arch}/*.node`), which Next's file tracer cannot follow — a bare standalone build ships only `lib/` and breaks at runtime. `prepare-desktop.mjs` copies the whole `prebuilds/` tree and chmods `spawn-helper` for **both** darwin variants (macOS strips the bit in published prebuilds; `bin/prepare-terminal.js` fixes the same thing at npm-install time). If terminal tabs 500 or hang in a packaged app, check that `resources/server/node_modules/node-pty/prebuilds/` exists with executable helpers first.
@@ -340,6 +373,8 @@ Switching chats does **not** remount `ChatWindow` — `AppShell.handleSelectSess
 This repo is a fork of `agegr/pi-web` and periodically merges upstream. `components/fork-extractions.test.mjs` guards the failure mode that a clean merge can still be wrong: code this fork *moved* to another file reappears at its origin, or a fork change is silently reverted. Git does not track cross-file moves, so neither shows up in `tsc`, eslint, or the upstream suite.
 
 When one of those assertions fails, the default is to restore the behaviour, not to delete the assertion. A failure saying a marker is "absent from the origin but also from the extraction targets — it looks deleted, not moved" means the feature is probably gone: that is exactly how the project-picker filter box was found missing after a restyle had left every project past the 7-row cap unreachable. Risk levels live in `scripts/fork-ownership.json`; the reasoning is in `docs/ownership-boundaries.md`.
+
+The third direction is `forbiddenMarkers` on a `FORK_FEATURES` entry: a region the *fork* deleted that upstream still ships. A clean merge re-adds it silently, so the entry asserts those strings stay absent from the file (currently the new-session branding header in `components/ChatWindow.tsx`). A failure there means "put the removal back", never "drop the marker".
 
 ### Topbar, chat column, and right panel — who contains whom
 Upstream segment D (0e36743) restructured `AppShell.tsx`'s main region in ways this fork's layout cannot survive; all three are pinned by `components/AppShell.right-panel-row.test.mjs`:
@@ -351,7 +386,7 @@ Upstream segment D (0e36743) restructured `AppShell.tsx`'s main region in ways t
 The topbar renders exactly ONE toolbar group (`app-topbar-actions`), right-aligned: Sub-agents (when the session has any) and the forks navigator (when it has forks). The Tools button and the More menu (generate title, system prompt, export HTML) were removed on 2026-09-25 at the user's request — export stays reachable through `/export`; `SystemPromptPanel`/`ToolDefinitionsPanel` remain upstream-owned files the fork no longer mounts, and `fork-extractions.test.mjs` flags a merge that brings them back. JSX indentation in AppShell.tsx is unreliable; verify structure with the TS AST or the DOM, not by counting whitespace. `fileContentBlock()` in `AppShell.file-viewer-state.test.mjs` slices source by the panel's closing-div sequence — keep in sync.
 
 ### Segment E merge (1eb5e66) — what was adopted and what was declined
-Merged upstream 974c8bb..1eb5e66 on top of v0.10.0. Adopted: scroll-to-latest button (with upstream's empty-session branding header, rebranded to PRODUCT_NAME and stripped of the NEXT_PUBLIC version badge per fork branding policy), streaming first-chunk dedup, PDF `#page=` fragments (MarkdownBody's link context + widened onOpenFile signatures), selection-toolbar z-index, subagent/provider fixes. Declined: upstream's sidebar explorer + resizable session/explorer panes (ed50d88) — this fork keeps the project-tree sidebar and the FileExplorer in the right panel; `SessionSidebar.test.mjs` pins that decision, so a future merge that re-adds `data-resize-handle="sidebar-sections"` should be treated as the merge re-introducing declined UI, not as a test to satisfy. Upstream's `/auto-compact` command is superseded by the composer automation gear.
+Merged upstream 974c8bb..1eb5e66 on top of v0.10.0. Adopted: scroll-to-latest button (with upstream's empty-session branding header, rebranded to PRODUCT_NAME and stripped of the NEXT_PUBLIC version badge per fork branding policy — **the icon and PRODUCT_NAME of that header were removed outright later: the new-session row above the composer now renders only `NewSessionUpdateLink`, and `fork-extractions.test.mjs`'s `forbiddenMarkers` pin `apple-touch-icon`/`PRODUCT_NAME` out of `ChatWindow.tsx` so a merge cannot re-adopt it**), streaming first-chunk dedup, PDF `#page=` fragments (MarkdownBody's link context + widened onOpenFile signatures), selection-toolbar z-index, subagent/provider fixes. Declined: upstream's sidebar explorer + resizable session/explorer panes (ed50d88) — this fork keeps the project-tree sidebar and the FileExplorer in the right panel; `SessionSidebar.test.mjs` pins that decision, so a future merge that re-adds `data-resize-handle="sidebar-sections"` should be treated as the merge re-introducing declined UI, not as a test to satisfy. Upstream's `/auto-compact` command is superseded by the composer automation gear.
 
 ### Segment F merge (96966e5, 2026-09-25) — what was adopted and what was declined
 Merged 1eb5e66..96966e5 (v0.9.2 + v0.9.3, pi SDK 0.86.1 → 0.87.1). This was the first merge where the fork and upstream had both independently adapted to the same SDK breaking changes, so the rule "upstream owns SDK adaptation" was applied for real:
@@ -362,7 +397,7 @@ Merged 1eb5e66..96966e5 (v0.9.2 + v0.9.3, pi SDK 0.86.1 → 0.87.1). This was th
 - **Chat scrollbar: upstream's** `scrollbar-subtle` + `useScrollbarVisibility` (grabbable, appears while scrolling) replaced the fork's `[scrollbar-width:none]`; the fork's `pendingScrollRestore && !loading` visibility gate stayed.
 - **AppShell: fork's top-bar design stayed; upstream's per-tab session memory came in** — `initialNavigation` is now settable and `lib/tab-session.ts` rides on top of the fork's desktop workspace restore (`resolveInitialNavigation`).
 - **Declined again, same rule as segment E**: `useResizablePanel` session/explorer pane split, `DirectoryPicker`, `SessionSearch`, sidebar `FileExplorer` and the `ChatMinimap` (fork-deleted, upstream enhanced — stayed deleted, as did README.ja/ru). Upstream's windowing helper `getSessionListIndices` remains only because the fork already virtualizes its list.
-- **Kept fork-only**: models-config literal-key redaction (`mergeStoredLiteralApiKeys`) layered under upstream's `ModelsConfigReadError` handling; the PATCH live-runtime guard for unflushed sessions in `sessions/[id]` (now opening via `openSessionManager({ mutable: true })`); the lazy-wrapper saved-model restore in `startRpcSession`; the workspace/full-height sidebar, desktop i18n, `themeLabelKey`.
+- **Kept fork-only**: models-config literal-key redaction (`mergeStoredLiteralApiKeys`) layered under upstream's `ModelsConfigReadError` handling; the PATCH live-runtime guard for unflushed sessions in `sessions/[id]` (now opening via `openSessionManager({ mutable: true })`); the lazy-wrapper saved-model restore in `startRpcSession`; the workspace/full-height sidebar, desktop i18n. (The sidebar's own sun/moon theme toggle and its `themeLabelKey` copy were removed later: the theme picker in Settings → General is the only switch, and `AppShell` now calls `useTheme()` purely to keep the shared store's system-scheme listener and the desktop `set_ui_theme` mirror alive for the app's lifetime.)
 - **Deps**: pi 0.87.1 (Claude Opus 5.5 / GPT-6 Sol / GPT-6 Luna / Grok 4.7 catalogs), next 16.3.6, semver 7.8.5, undici 8.11.0, upstream's production-install trim (ansi_up, remark-frontmatter → devDependencies); fork keeps `--experimental-strip-types` on its test script plus the `scripts/**` glob upstream doesn't have.
 
 ## Pi Session File Format

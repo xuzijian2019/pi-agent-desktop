@@ -2242,7 +2242,7 @@ span.token.table {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 34px;
+  width: 28px;
   height: 28px;
   padding: 0;
   background: transparent;
@@ -2260,7 +2260,7 @@ span.token.table {
   transform: scale(0.94);
 }
 .file-panel-expand-button[aria-pressed="true"] {
-  background: var(--bg-hover);
+  background: var(--bg-selected);
   color: var(--text);
 }
 .file-panel-expand-button:focus-visible {
