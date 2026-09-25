@@ -1,5 +1,7 @@
 @import "@xterm/xterm/css/xterm.css";
 @import "tailwindcss";
+/* demo/ is a separate project; keep its sources out of this app's class scan. */
+@source not "../demo";
 
 @theme {
   --color-bg: var(--bg);
@@ -431,18 +433,75 @@ html.dark .web-login-error {
   background-color: #111318;
 }
 
+/*
+ * Chromium-only scrollbars. Firefox renders its native ones, which the standard
+ * `scrollbar-width` / `scrollbar-color` properties would only make thinner and
+ * flatter, so this block stays webkit-prefixed on purpose.
+ * The 10px box remains the grab target, but subtle scrollbars stay transparent
+ * until their scroll container is active. This keeps long panels usable without
+ * leaving a permanent rule down the side of every panel.
+ */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background-color: color-mix(in srgb, var(--text-dim) 45%, transparent);
   background-clip: padding-box;
   border: 2px solid transparent;
-  border-radius: 999px;
+  border-radius: 5px;
+}
+/* Only ever set background-color here: the `background` shorthand resets
+   background-clip and would snap the thumb to the full 10px on hover. */
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--text-dim) 72%, transparent);
+}
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--text-dim);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.scrollbar-subtle::-webkit-scrollbar-thumb {
+  background-color: transparent;
+}
+.scrollbar-subtle.scrollbar-visible::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--text-dim) 45%, transparent);
+}
+.scrollbar-subtle.scrollbar-visible::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--text-dim) 72%, transparent);
+}
+.scrollbar-subtle.scrollbar-visible::-webkit-scrollbar-thumb:active {
+  background-color: var(--text-dim);
+}
+
+/* A touch screen scrolls by dragging the content, so the extra width buys
+   nothing there and a phone has none to spare. */
+@media (pointer: coarse) {
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-thumb {
+    border-width: 1px;
+    border-radius: 3px;
+  }
+}
+
+/* The terminal keeps its dark surface in every theme, so --text-dim (a dark
+   grey in the light themes) would disappear against it. */
+.terminal-xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background-color: rgba(156, 163, 175, 0.45);
+}
+.terminal-xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(156, 163, 175, 0.72);
+}
+.terminal-xterm .xterm-viewport::-webkit-scrollbar-thumb:active {
+  background-color: rgb(156, 163, 175);
 }
 
 
@@ -502,12 +561,6 @@ html.dark .web-login-error {
 
 .extension-widget-triggers::-webkit-scrollbar {
   display: none;
-}
-
-.extension-status-shelf.has-widgets.has-status .extension-widget-triggers {
-  flex: 0 0 auto;
-  max-width: 70%;
-  border-right: 1px solid var(--border);
 }
 
 .extension-widget-trigger {
@@ -628,34 +681,21 @@ button.extension-widget-trigger:focus-visible {
   white-space: pre-wrap;
 }
 
-.extension-status-line {
+/* Session-switch loading hint. Delayed fade keeps fast switches free of any
+   visible placeholder while slow (cold-start) loads still get feedback. */
+.chat-loading-hint {
+  min-height: 55vh;
   display: flex;
-  flex: 1 1 0;
-  align-items: flex-start;
-  min-width: 0;
-  min-height: 35px;
-  max-height: min(144px, 18dvh);
-  padding: 8px 12px;
-  overflow: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
-}
-
-.extension-status-text {
-  flex: 1;
-  min-width: 0;
+  align-items: center;
+  justify-content: center;
   color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.45;
-  white-space: pre;
+  font-size: 12.5px;
+  animation: chat-loading-hint-in 0.12s ease 0.24s both;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-dim);
-  background-clip: padding-box;
+@keyframes chat-loading-hint-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
-
 /* Codex-style conversation minimap: scrub between user questions and preview
    the corresponding question/answer without taking space from the chat. */
 .conversation-navigator {
@@ -937,6 +977,56 @@ button.extension-widget-trigger:focus-visible {
 }
 .sidebar-project-context-menu button:hover {
   background: var(--bg-hover);
+}
+.settings-entry-menu {
+  width: 184px;
+}
+.settings-entry-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.settings-entry-menu button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.sidebar-project-context-menu-back {
+  color: var(--text-muted) !important;
+}
+.sidebar-project-context-menu-heading,
+.sidebar-project-context-menu-hint {
+  padding: 5px 10px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.sidebar-project-context-menu-heading {
+  padding-top: 3px;
+  font-weight: 600;
+}
+.sidebar-project-context-menu button[role="menuitem"]:has(.sidebar-project-context-menu-branch-mark) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  font-family: var(--font-mono);
+}
+.sidebar-project-context-menu-branch-mark {
+  width: 12px;
+  flex: 0 0 12px;
+  color: var(--accent);
+  font-family: var(--font-sans);
+}
+.sidebar-project-context-menu-branch-tag {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-family: var(--font-sans);
+  font-size: 9.5px;
+}
+.sidebar-project-context-menu-branch-spinner {
+  margin-left: auto;
+  color: var(--accent);
+  animation: spin 0.8s linear infinite;
 }
 .sidebar-project-tree-empty {
   padding: 24px 16px;
@@ -2152,18 +2242,26 @@ span.token.table {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 28px;
   padding: 0;
-  background: var(--bg-selected);
+  background: transparent;
   border: none;
-  border-left: 1px solid var(--border);
-  color: var(--text);
+  border-radius: 7px;
+  color: var(--text-muted);
   cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
 }
-.file-panel-expand-button:hover,
+.file-panel-expand-button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.file-panel-expand-button:active {
+  transform: scale(0.94);
+}
 .file-panel-expand-button[aria-pressed="true"] {
-  color: var(--accent);
+  background: var(--bg-hover);
+  color: var(--text);
 }
 .file-panel-expand-button:focus-visible {
   outline: 2px solid var(--accent);

@@ -11,7 +11,6 @@ export type SettingsSection = (typeof SETTINGS_SECTION_VALUES)[number];
 export type SettingsDetailSection = Exclude<SettingsSection, "general">;
 
 const STORAGE_KEY = "pi-web:settings-navigation";
-const PROJECT_SECTIONS = new Set<SettingsSection>(["skills", "agents", "plugins"]);
 
 interface StorageLike {
   getItem(key: string): string | null;
@@ -30,11 +29,6 @@ function getBrowserStorage(): StorageLike | null {
   } catch {
     return null;
   }
-}
-
-function isSettingsSection(value: unknown): value is SettingsSection {
-  return typeof value === "string"
-    && SETTINGS_SECTION_VALUES.includes(value as SettingsSection);
 }
 
 function readState(storage: StorageLike): SettingsNavigationState {
@@ -60,20 +54,6 @@ function readState(storage: StorageLike): SettingsNavigationState {
 function selectionKey(section: SettingsDetailSection, cwd?: string | null): string | null {
   if (section === "models" || section === "desktop") return section;
   return cwd ? JSON.stringify([section, cwd]) : null;
-}
-
-export function getLastSettingsSection(
-  cwd: string | null,
-  storage: StorageLike | null = getBrowserStorage(),
-): SettingsSection {
-  if (!storage) return "general";
-  try {
-    const section = readState(storage).section;
-    if (!isSettingsSection(section)) return "general";
-    return PROJECT_SECTIONS.has(section) && !cwd ? "general" : section;
-  } catch {
-    return "general";
-  }
 }
 
 export function setLastSettingsSection(

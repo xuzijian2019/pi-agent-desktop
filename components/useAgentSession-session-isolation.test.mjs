@@ -28,7 +28,9 @@ test("tool preset loads ignore stale sessions and out-of-order responses", async
   assert.match(body, /requestId = \+\+toolsLoadIdRef\.current/);
   assert.match(body, /sessionIdRef\.current === sid/);
   assert.match(body, /toolsLoadIdRef\.current === requestId/);
-  assert.match(body, /tools && isCurrent\(\)/);
+  // Merged form: the guard moved into one early return with the mounted check;
+  // the pinned semantics (stale responses dropped via isCurrent) are unchanged.
+  assert.match(body, /!tools \|\| !isCurrent\(\) \|\| !sessionHookMountedRef\.current\) return null/);
 });
 
 test("agent-end state refreshes cannot overwrite a switched session or newer run", async () => {
@@ -70,7 +72,9 @@ test("the stable ChatWindow reloads whenever its session identity changes", asyn
   const source = await readFile(sourceUrl, "utf8");
   const effect = functionSlice(source, "// Load session on mount and whenever", "useEffect(() => {\n    onSystemPromptChange");
   assert.match(effect, /sessionIdRef\.current = session\.id/);
-  assert.match(effect, /loadSession\(session\.id, true, true/);
+  // Merged form: showLoading is `!cached` so a restored snapshot skips the
+  // spinner; the forced read is still the freshness check (includeState=true).
+  assert.match(effect, /loadSession\(session\.id, !cached, true, \{ force: true \}\)/);
   assert.match(effect, /\}, \[sessionIdentity\]\)/);
 });
 

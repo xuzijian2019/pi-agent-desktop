@@ -1,10 +1,10 @@
 {
   "pi": {
-    "version": "0.86.1",
-    "reason": "Retained the fork Pi 0.86.1 upgrade and synced upstream pi-web changes."
+    "version": "0.87.1",
+    "reason": "Merged upstream/main a13d258, which pins pi 0.87.1 (segment F)."
   },
   "pi-web": {
     "version": "0.10.0",
-    "reason": "Merged upstream/main through 3e6350b (package version 0.10.0); fork adaptations documented in the merge commit."
+    "reason": "Merged upstream/main a13d258 (package version 0.10.0); fork adaptations documented in the merge handoff."
   }
 }

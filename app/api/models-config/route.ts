@@ -1,13 +1,20 @@
 import { NextResponse } from "next/server";
-import { readModelsConfig, writeModelsConfig } from "@/lib/models-config-store";
+import { ModelsConfigReadError, readModelsConfig, writeModelsConfig } from "@/lib/models-config-store";
 import { mergeStoredLiteralApiKeys, redactModelsJson } from "@/lib/models-config-redaction";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  // Literal apiKey values never leave the server; shell/env references and
-  // every other field are configuration the editor needs to see.
-  return NextResponse.json(redactModelsJson(readModelsConfig()));
+  try {
+    // Literal apiKey values never leave the server; shell/env references and
+    // every other field are configuration the editor needs to see.
+    return NextResponse.json(redactModelsJson(readModelsConfig()));
+  } catch (error) {
+    if (error instanceof ModelsConfigReadError) {
+      return NextResponse.json({ error: error.message }, { status: 422 });
+    }
+    return NextResponse.json({ error: String(error) }, { status: 500 });
+  }
 }
 
 export async function PUT(req: Request) {
@@ -25,6 +32,9 @@ export async function PUT(req: Request) {
     });
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof ModelsConfigReadError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }

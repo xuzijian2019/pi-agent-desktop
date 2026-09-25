@@ -7,8 +7,8 @@ const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8"
 function fileContentBlock() {
   const start = source.indexOf('<div className="file-panel-viewer-body">');
   const end = source.indexOf('{/* Explorer column', start);
-  assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
+  assert.notEqual(start, -1, "file viewer body not found");
+  assert.notEqual(end, -1, "explorer column not found");
   return source.slice(start, end);
 }
 

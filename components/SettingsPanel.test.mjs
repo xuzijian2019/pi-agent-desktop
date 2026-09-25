@@ -13,13 +13,14 @@ const enSource = await readFile(new URL("../lib/i18n/messages/en.ts", import.met
 const zhSource = await readFile(new URL("../lib/i18n/messages/zh-CN.ts", import.meta.url), "utf8");
 const loginSource = await readFile(new URL("../app/login/page.tsx", import.meta.url), "utf8");
 
-test("opens one settings panel from direct sidebar shortcuts", () => {
+test("opens one settings panel from a single sidebar settings entry", () => {
   assert.match(shellSource, /<SettingsPanel/);
-  assert.match(shellSource, /setSettingsSection\(section\)/);
   assert.match(shellSource, /initialSection=\{settingsSection\}/);
   assert.match(shellSource, /translate\("common\.settings"\)/);
-  assert.match(shellSource, /<SettingsSectionIcon section=\{section\} size=\{14\} strokeWidth=\{2\} \/>\s*<span>\{label\}<\/span>/);
-  assert.match(shellSource, /<SettingsSectionIcon section="general" size=\{14\} strokeWidth=\{2\} \/>/);
+  assert.match(shellSource, /aria-haspopup="menu"/);
+  assert.match(shellSource, /SETTINGS_SECTION_ITEMS\.map/);
+  assert.match(shellSource, /setSettingsSection\(item\.id\)/);
+  assert.doesNotMatch(shellSource, /\["models", translate\("common\.models"\)\]/);
   assert.doesNotMatch(shellSource, /\["plugins", translate\("common\.plugins"\)\]/);
   assert.doesNotMatch(shellSource, /setModelsConfigOpen|setSkillsConfigOpen|setAgentsConfigOpen|setPluginsConfigOpen/);
 });
@@ -34,7 +35,6 @@ test("keeps every requested configuration surface inside the settings panel", ()
 });
 
 test("restores the settings section and each list detail selection", async () => {
-  assert.match(shellSource, /getLastSettingsSection\(projectTrustCwd\)/);
   assert.match(panelSource, /setLastSettingsSection\(initialSection\)/);
   assert.match(panelSource, /setLastSettingsSection\(nextSection\)/);
   for (const name of ["ModelsConfig", "SkillsConfig", "AgentsConfig", "PluginsConfig"]) {
@@ -141,7 +141,7 @@ test("keeps password authentication to one login field and one settings action",
   assert.equal((loginSource.match(/type="password"/g) ?? []).length, 1);
   assert.doesNotMatch(loginSource, /type="(?:text|email)"/);
   assert.match(loginSource, /autoComplete="current-password"/);
-  assert.match(loginSource, /!destination\.startsWith\("\/\/"\)/);
+  assert.match(loginSource, /safeLoginDestination\(destination, window\.location\.origin\)/);
   assert.match(panelSource, /fetch\("\/api\/web-auth", \{ method: "DELETE" \}\)/);
   assert.match(panelSource, /t\("auth\.logOut"\)/);
   assert.match(loginSource, /className="web-login-composer"[\s\S]*?type="password"[\s\S]*?<button type="submit"/);

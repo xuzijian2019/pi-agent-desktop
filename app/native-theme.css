@@ -549,8 +549,13 @@ html.dark {
 }
 
 /* The single fixed panel toggle needs its own lane while the panel is hidden. */
-.app-topbar.app-topbar--panel-closed {
-  padding-right: 52px !important;
+/* Mobile keeps the floating panel toggle overlapping the topbar's right edge;
+   desktop renders the toggle inside the topbar, so the reserved gap is dead
+   space there. */
+@media (max-width: 640px) {
+  .app-topbar.app-topbar--panel-closed {
+    padding-right: 52px !important;
+  }
 }
 
 @media (max-width: 640px) {
@@ -672,29 +677,6 @@ pre, code {
   border-right: 1px solid var(--separator) !important;
   -webkit-backdrop-filter: saturate(130%) blur(24px);
   backdrop-filter: saturate(130%) blur(24px);
-}
-
-.sidebar-footer {
-  margin: 0;
-  padding: 6px 8px !important;
-  gap: 3px !important;
-  border-top: 1px solid var(--separator);
-}
-
-.sidebar-footer button {
-  min-width: 0;
-  height: var(--control-height-sm) !important;
-  border-radius: var(--radius-sm) !important;
-  font-size: 12px !important;
-  font-weight: 500;
-  transition:
-    color var(--dur-fast) var(--ease-native),
-    background var(--dur-fast) var(--ease-native),
-    transform var(--dur-base) var(--ease-native) !important;
-}
-
-.sidebar-footer button:active:not(:disabled) {
-  transform: scale(0.94);
 }
 
 .session-sidebar-header {
@@ -1513,8 +1495,8 @@ pre, code {
   height: 48px !important;
   padding: 0 9px;
   gap: 4px;
-  border-bottom: 1px solid var(--separator) !important;
   background: color-mix(in srgb, var(--bg) 88%, var(--surface)) !important;
+  border-bottom: 1px solid var(--separator);
 }
 
 .app-topbar-title {
@@ -1636,7 +1618,7 @@ pre, code {
   display: flex !important;
   height: 34px !important;
   margin-left: auto;
-  margin-right: 2px;
+  margin-right: 8px;
   align-items: center !important;
   gap: 1px;
 }
@@ -2646,6 +2628,10 @@ pre, code {
   min-width: 100%;
   font-size: 13px;
 }
+/* Reverts upstream #650's `width: max-content` (globals.css): tables should
+   wrap prose within the panel, not scroll horizontally. The wrapper keeps
+   overflow-x for genuinely unbreakable overflow. */
+.markdown-table-wrap > table { width: auto; }
 .markdown-body th, .markdown-body td {
   border: 0;
   border-bottom: 1px solid var(--border);
@@ -3007,12 +2993,29 @@ pre, code {
 }
 
 .file-workbench-icon-button:hover:not(:disabled),
+.file-workbench-open-button:hover:not(:disabled),
 .file-workbench-icon-button.is-active {
   background: var(--bg-hover);
   color: var(--text);
 }
 
-.file-workbench-icon-button:disabled {
+/* Toggled-on state keeps the same --bg-hover chip as hover (matches the
+   topbar buttons; a separate stronger shade read as a different control). */
+.file-workbench-icon-button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.file-workbench-open-button {
+  gap: 8px;
+  padding: 0 11px;
+  border-color: var(--separator);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 550;
+}
+
+.file-workbench-icon-button:disabled,
+.file-workbench-open-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
@@ -4109,6 +4112,26 @@ span.linenumber {
   border-color: transparent;
   background: var(--bg-hover);
   color: var(--text);
+}
+
+/* The desktop topbar's panel toggle shares the sidebar chrome-button language:
+   quiet chip at rest, the same --bg-hover highlight for hover and open state. */
+.main-file-toggle {
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.main-file-toggle:hover:not(:disabled),
+.main-file-toggle[aria-expanded="true"] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.main-file-toggle:active:not(:disabled) {
+  transform: scale(0.94);
 }
 
 @media (max-width: 640px) {
@@ -6720,3 +6743,29 @@ span.linenumber {
 .chat-command-hotkeys { margin-top: 16px; font-size: 13px; }
 .chat-command-hotkeys > div { display: grid; grid-template-columns: minmax(100px, 1fr) 2fr; gap: 12px; padding: 8px 0; }
 .chat-command-hotkeys dd { color: var(--text-muted); }
+
+/* Extension footer status. Upstream removed these rules with the status bar;
+   the fork still renders ExtensionStatusBar, so the scroll/pre rules live here. */
+.extension-status-line {
+  display: flex;
+  flex: 1 1 0;
+  align-items: flex-start;
+  min-width: 0;
+  min-height: 35px;
+  max-height: min(144px, 18dvh);
+  padding: 8px 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.extension-status-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre;
+}

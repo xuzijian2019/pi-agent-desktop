@@ -19,13 +19,14 @@ import { useEphemeralConversation } from "@/hooks/useEphemeralConversation";
 import { ChatCommandDialog } from "./ChatCommandDialog";
 import type { AppSlashCommand, ViewSlashCommand } from "@/lib/web-slash-commands";
 import { ChatInput, getUserMessageText, type ChatInputHandle } from "./ChatInput";
-
+import type { AppUpdateResponse } from "@/lib/api-types";
 import { ExtensionWidgets } from "./ExtensionWidgets";
 import { AnsiText } from "./AnsiText";
 import { useI18n } from "@/hooks/useI18n";
 
 import { useAgentSession, type AgentPhase, type NoticeItem } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
+import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { importDroppedProjectFiles, partitionChatDroppedFiles } from "@/lib/chat-file-drop";
 
@@ -262,6 +263,71 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
         </div>
       )}
     </div>
+  );
+}
+
+function NewSessionUpdateLink({
+  label,
+}: {
+  label: (version: string) => string;
+}) {
+  const [update, setUpdate] = useState<AppUpdateResponse | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/app-update", { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json() as Promise<AppUpdateResponse>;
+      })
+      .then((result) => {
+        if (result?.updateAvailable && result.latestVersion && result.releaseUrl) {
+          setUpdate(result);
+        }
+      })
+      .catch(() => {
+        // Update checks are best-effort and must not interrupt a new session.
+      });
+    return () => controller.abort();
+  }, []);
+
+  if (!update) return null;
+  const accessibleLabel = label(update.latestVersion);
+
+  return (
+    <a
+      href={update.releaseUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={accessibleLabel}
+      aria-label={accessibleLabel}
+      onMouseEnter={(event) => { event.currentTarget.style.background = "var(--bg-hover)"; }}
+      onMouseLeave={(event) => { event.currentTarget.style.background = "transparent"; }}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        alignSelf: "center",
+        gap: 3,
+        minHeight: 32,
+        minWidth: 0,
+        padding: "0 4px",
+        background: "transparent",
+        borderRadius: 5,
+        color: "var(--accent)",
+        fontSize: 12,
+        fontWeight: 600,
+        lineHeight: 1.2,
+        textDecoration: "none",
+        transition: "background 0.12s",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>v{update.latestVersion}</span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+        <path d="M7 17 17 7" />
+        <path d="M7 7h10v10" />
+      </svg>
+    </a>
   );
 }
 
@@ -953,6 +1019,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
   }, [messages]);
 
   const isEmptyNew = isNew && !loading && !error && messages.length === 0 && !streamState.isStreaming && !sessionBusy;
+  useScrollbarVisibility(scrollContainerRef, Boolean(session?.id) || !isEmptyNew);
   const hasStreamingContent = Boolean(streamState.streamingMessage?.content.length);
   const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
   const bottomComposerRef = useRef<HTMLDivElement | null>(null);
@@ -1273,14 +1340,6 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
     />
   );
 
-  if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center text-text-muted">
-         {t("chat.loadingSession")}
-      </div>
-    );
-  }
-
   if (error) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-red-400">
@@ -1383,6 +1442,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
         >
           <div className="chat-empty-state w-full">
             <NoticeShelf notices={notices} onPauseChange={setNoticePaused} />
+            <NewSessionUpdateLink label={(version) => t("appUpdate.releaseNotes", { version })} />
             {emptyStateSlot}
             <div inert={!!searchPreview}>{chatInputElement}</div>
           </div>
@@ -1409,8 +1469,8 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
         </div>
         <div
           ref={scrollContainerRef} onPointerUp={captureQuotedSelection}
-          className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto pt-4"
-          style={{ scrollbarGutter: "stable both-edges" }}
+          className="scrollbar-subtle min-w-0 flex-1 overflow-x-hidden overflow-y-auto pt-4"
+          style={{ scrollbarGutter: "stable both-edges", visibility: pendingScrollRestore && !loading ? "hidden" : undefined }}
         >
           <div style={{ minWidth: 0, padding: `0 ${CHAT_COLUMN_PADDING}px` }}>
             <div ref={messageContentRef} style={{ width: "100%", minWidth: 0, maxWidth: "var(--chat-content-max-width, 820px)", margin: "0 auto" }}>

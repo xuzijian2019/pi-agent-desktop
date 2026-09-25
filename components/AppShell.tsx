@@ -16,6 +16,7 @@ import type { SavedTask } from "@/lib/task-types";
 
 
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -41,7 +42,7 @@ import { UpdateReminder } from "./UpdateReminder";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile, useIsNarrowMobile } from "@/hooks/useIsMobile";
-import { APP_PREF_KEYS, getPrefBool, getPrefJson, setPrefJson } from "@/lib/app-prefs";
+import { APP_PREF_KEYS, getPrefBool, getPrefJson, setPref, setPrefJson } from "@/lib/app-prefs";
 import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useDesktopConnection } from "@/lib/desktop-connection";
@@ -53,7 +54,7 @@ import { hasForks } from "@/lib/session-forks";
 import { resolveInitialNavigation, workspaceFileTabsMatchContext, type PersistedWorkspace } from "@/lib/workspace-state";
 import { WindowControls, useDesktopChrome, useWindowDrag } from "./desktop";
 import { openFileTab, saveFileViewerState } from "./file-tab-state";
-import { SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
+import { SETTINGS_SECTION_ITEMS, SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
 import { SystemPromptPanel } from "./SystemPromptPanel";
 import { ToolDefinitionsPanel } from "./ToolDefinitionsPanel";
 import { AgentSessionPanel } from "./AgentSessionPanel";
@@ -62,7 +63,9 @@ import { newTerminalTab, restoreTerminalTabs, TERMINAL_TABS_KEY, type TerminalTa
 import { sendAgentCommand } from "@/lib/agent-client";
 import { claimExtensionAttentionNotification, shouldShowBrowserNotification, showBrowserNotification } from "@/lib/browser-notifications";
 import { setupPushSubscription } from "@/lib/push-client";
-
+import { withTabOpen } from "@/lib/initial-navigation";
+import { clearTabOpenSession, getTabOpen, setTabOpenNewSession, setTabOpenSession } from "@/lib/tab-session";
+import { mergeCatalogRow } from "./session-catalog-helpers";
 import { rekeyDraft } from "@/lib/draft-store";
 import { clearLastOpen, getLastOpenSession, setLastOpenSession, workspaceKeyOf } from "@/lib/workspace-memory";
 import { getDefaultRightPanelWidth, getRightPanelMaxWidth, getSidebarMaxWidth, MOBILE_MAX_WIDTH, RIGHT_PANEL_FALLBACK_WIDTH, RIGHT_PANEL_MAX_WIDTH, RIGHT_PANEL_MIN_WIDTH, SIDEBAR_DEFAULT_WIDTH, SPLIT_PANEL_MIN_WIDTH, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from "@/lib/panel-layout";
@@ -74,7 +77,7 @@ import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { FileViewerState } from "@/lib/file-viewer-state";
 import type { ToolEntry } from "@/lib/tool-presets";
 import { getSessionFamily } from "@/lib/session-family";
-import { getLastSettingsSection, type SettingsSection } from "@/lib/settings-navigation";
+import { type SettingsSection } from "@/lib/settings-navigation";
 
 type AutoNameStatus =
   | { kind: "idle" }
@@ -106,7 +109,7 @@ export function AppShell() {
   const [persistedWorkspace] = useState(() => (
     getPrefJson<PersistedWorkspace>(APP_PREF_KEYS.workspace)
   ));
-  const [initialNavigation] = useState(() => resolveInitialNavigation(searchParams, desktopMode ? persistedWorkspace : null));
+  const [initialNavigation, setInitialNavigation] = useState(() => resolveInitialNavigation(searchParams, desktopMode ? persistedWorkspace : null));
   const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
   const { isDark, toggleTheme } = useTheme();
   const { locale, t: translate } = useI18n();
@@ -124,19 +127,12 @@ export function AppShell() {
   }, [locale]);
   const [quoteSelectionEnabled, setQuoteSelectionEnabled] = useState(false);
   useEffect(() => {
-    try {
-      setQuoteSelectionEnabled(localStorage.getItem("pi-quote-selection-enabled") === "true");
-    } catch {
-      // Browser storage is best-effort.
-    }
+    // Opt-out pref: absent storage means enabled (default on).
+    setQuoteSelectionEnabled(getPrefBool(APP_PREF_KEYS.quoteSelectionEnabled, true));
   }, []);
   const handleQuoteSelectionChange = useCallback((enabled: boolean) => {
     setQuoteSelectionEnabled(enabled);
-    try {
-      localStorage.setItem("pi-quote-selection-enabled", String(enabled));
-    } catch {
-      // Keep the current page usable when storage is unavailable.
-    }
+    setPref(APP_PREF_KEYS.quoteSelectionEnabled, String(enabled));
   }, []);
   const notifiedAttentionRequestIdsRef = useRef(new Set<string>());
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
@@ -153,6 +149,14 @@ export function AppShell() {
   const [availableProjectRoots, setAvailableProjectRoots] = useState<string[]>([]);
   const handleSessionsChange = useCallback((sessions: SessionInfo[]) => {
     setSessionCatalog(sessions);
+    // The sidebar hydrates metadata after the selected session has already
+    // mounted. Merge that update into the active session without changing the
+    // ChatWindow key or restarting its history load.
+    setSelectedSession((current) => {
+      if (!current) return current;
+      const refreshed = sessions.find((session) => session.id === current.id);
+      return refreshed ? mergeCatalogRow(current, refreshed) : current;
+    });
   }, []);
   const sessionsWithSelection = useMemo(() => {
     if (!selectedSession) return sessionCatalog;
@@ -196,6 +200,49 @@ export function AppShell() {
     setExplorerRefreshKey((key) => key + 1);
   }, []);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const [settingsMenuPos, setSettingsMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const settingsMenuRef = useRef<HTMLDivElement>(null);
+  const settingsMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const closeSettingsMenu = useCallback(() => {
+    setSettingsMenuOpen(false);
+    setSettingsMenuPos(null);
+  }, []);
+  const toggleSettingsMenu = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    if (settingsMenuOpen) {
+      closeSettingsMenu();
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const menuWidth = 184;
+    const menuHeight = 236;
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - menuWidth - 8));
+    const below = rect.bottom + 6;
+    const top = below + menuHeight > window.innerHeight - 8
+      ? Math.max(8, rect.top - menuHeight - 6)
+      : below;
+    setSettingsMenuPos({ top, left });
+    setSettingsMenuOpen(true);
+  }, [settingsMenuOpen, closeSettingsMenu]);
+  useEffect(() => {
+    if (!settingsMenuOpen) return;
+    const handleMouseDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (settingsMenuRef.current?.contains(target)) return;
+      // Clicks on the toggle button fall through to its onClick, which closes.
+      if (settingsMenuButtonRef.current?.contains(target)) return;
+      closeSettingsMenu();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) closeSettingsMenu();
+    };
+    document.addEventListener("mousedown", handleMouseDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [settingsMenuOpen, closeSettingsMenu]);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
   const [topMoreOpen, setTopMoreOpen] = useState(false);
   const topMoreRef = useRef<HTMLDivElement>(null);
@@ -692,6 +739,15 @@ export function AppShell() {
   const activeProjectKeyRef = useRef<string | null>(null);
   // True once the initial ?session= URL param has been resolved (or confirmed absent)
   const [initialSessionRestored, setInitialSessionRestored] = useState<boolean>(() => !initialSessionId);
+  // sessionStorage is empty during SSR. Applying the tab's remembered session
+  // in the useState initializer made the first client tree differ from the
+  // server HTML (sidebar "select project" vs ""). Restore after mount instead.
+  useLayoutEffect(() => {
+    const next = withTabOpen(initialNavigation, getTabOpen());
+    if (next === initialNavigation) return;
+    setInitialNavigation(next);
+    if (next.sessionId) setInitialSessionRestored(false);
+  }, [initialNavigation]);
   // Suppresses sessionKey bump in handleCwdChange during the initial URL restore
   const suppressCwdBumpRef = useRef(false);
   // Guards the async workspace restore so a slow response from an earlier
@@ -705,13 +761,21 @@ export function AppShell() {
   // Persist every active-session transition, including new and forked sessions
   // that bypass the sidebar selection handler. Transient sessions do not yet
   // carry projectKey, so use the active project identity until hydration.
+  // The workspace memory is shared by every tab; the tab memory keeps this
+  // tab's own session so a reload does not follow another tab's last pick.
+  // New session is a selection too: remember the composer cwd so reload stays
+  // on that UI instead of resurrecting the previous chat.
   useEffect(() => {
-    if (!selectedSession) return;
-    const projectKey = selectedSession.projectKey
-      ?? activeProjectKeyRef.current
-      ?? workspaceKeyOf(selectedSession);
-    setLastOpenSession(projectKey, selectedSession.id);
-  }, [selectedSession]);
+    if (selectedSession) {
+      const projectKey = selectedSession.projectKey
+        ?? activeProjectKeyRef.current
+        ?? workspaceKeyOf(selectedSession);
+      setLastOpenSession(projectKey, selectedSession.id);
+      setTabOpenSession(selectedSession.id);
+      return;
+    }
+    if (newSessionCwd) setTabOpenNewSession(newSessionCwd);
+  }, [newSessionCwd, selectedSession]);
 
   useEffect(() => {
     const requestedCwd = initialNavigation.requestedCwd;
@@ -741,6 +805,9 @@ export function AppShell() {
         activeNewSessionDraftKeyRef.current = `new:${data.cwd}`;
         setNewSessionCwd(data.cwd);
         setInitialCwdStatus("ready");
+        if (!new URLSearchParams(window.location.search).get("cwd")) {
+          router.replace(`?cwd=${encodeURIComponent(data.cwd)}`, { scroll: false });
+        }
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
@@ -749,7 +816,7 @@ export function AppShell() {
       });
 
     return () => controller.abort();
-  }, [initialNavigation]);
+  }, [initialNavigation, router]);
 
   // Restore the workspace's last open session after switching to it. Called
   // from handleCwdChange once the outgoing context has been reset. The session
@@ -759,44 +826,51 @@ export function AppShell() {
     const token = ++workspaceRestoreTokenRef.current;
     const lastOpenSessionId = getLastOpenSession(projectKey);
     if (!lastOpenSessionId) return;
+    const adopt = (d: { sessions: SessionInfo[] } | null) => {
+      if (token !== workspaceRestoreTokenRef.current) return; // stale switch
+      const s = d?.sessions.find((x) => x.id === lastOpenSessionId);
+      if (!s) {
+        // The list loaded but the remembered session is gone — forget it.
+        // When the list itself failed (d === null) keep the memory so a
+        // later switch retries the restore.
+        if (d) clearLastOpen(projectKey);
+        return;
+      }
+      if (workspaceKeyOf(s) !== projectKey) {
+        // Defensive: the remembered session drifted out of this workspace.
+        clearLastOpen(projectKey);
+        return;
+      }
+      // Keep the temporary composer's draft in its cwd, even when the
+      // remembered session belongs to another worktree of this project.
+      const activeDraftKey = activeNewSessionDraftKeyRef.current;
+      if (activeDraftKey) {
+        rekeyDraft(activeDraftKey, parkedNewSessionDraftKey(cwd));
+      }
+      activeNewSessionDraftKeyRef.current = null;
+      // Selecting the session must remount the chat with the session
+      // present: useAgentSession loads content in a mount-only effect, so
+      // the null-session welcome mount from the switch would never load
+      // the restored session's messages.
+      setSelectedSession(s);
+      setSessionKey((k) => k + 1);
+      if (new URLSearchParams(window.location.search).get("session") !== s.id) {
+        router.replace(`?session=${encodeURIComponent(s.id)}`, { scroll: false });
+      }
+    };
+    // Fast path: the sidebar already delivered the catalogue — restore
+    // without waiting on a fresh /api/sessions round trip.
+    if (sessionCatalog.length > 0) {
+      adopt({ sessions: sessionCatalog });
+      return;
+    }
     void fetch("/api/sessions")
       .then((r) => (r.ok ? (r.json() as Promise<{ sessions: SessionInfo[] }>) : null))
-      .then((d) => {
-        if (token !== workspaceRestoreTokenRef.current) return; // stale switch
-        const s = d?.sessions.find((x) => x.id === lastOpenSessionId);
-        if (!s) {
-          // The list loaded but the remembered session is gone — forget it.
-          // When the list itself failed (d === null) keep the memory so a
-          // later switch retries the restore.
-          if (d) clearLastOpen(projectKey);
-          return;
-        }
-        if (workspaceKeyOf(s) !== projectKey) {
-          // Defensive: the remembered session drifted out of this workspace.
-          clearLastOpen(projectKey);
-          return;
-        }
-        // Keep the temporary composer's draft in its cwd, even when the
-        // remembered session belongs to another worktree of this project.
-        const activeDraftKey = activeNewSessionDraftKeyRef.current;
-        if (activeDraftKey) {
-          rekeyDraft(activeDraftKey, parkedNewSessionDraftKey(cwd));
-        }
-        activeNewSessionDraftKeyRef.current = null;
-        // Selecting the session must remount the chat with the session
-        // present: useAgentSession loads content in a mount-only effect, so
-        // the null-session welcome mount from the switch would never load
-        // the restored session's messages.
-        setSelectedSession(s);
-        setSessionKey((k) => k + 1);
-        if (new URLSearchParams(window.location.search).get("session") !== s.id) {
-          router.replace(`?session=${encodeURIComponent(s.id)}`, { scroll: false });
-        }
-      })
+      .then(adopt)
       .catch(() => {
         // Network hiccup: keep the remembered session for a later retry.
       });
-  }, [router]);
+  }, [router, sessionCatalog]);
 
   const handleCwdChange = useCallback((
     cwd: string | null,
@@ -938,8 +1012,13 @@ export function AppShell() {
       suppressCwdBumpRef.current = true;
     }
     // Native history preserves the mounted composer. Back/Forward is reconciled below.
+    // Tab-memory restore lands on `/` and must still write `?session=` so reload
+    // and copy-link keep this session. replaceState, not router.replace: calling
+    // replace in production Next.js triggers a Suspense remount loop.
     if (!isRestore) {
       window.history.pushState({ ...window.history.state, piSession: session }, "", `?session=${encodeURIComponent(session.id)}`);
+    } else if (new URLSearchParams(window.location.search).get("session") !== session.id) {
+      window.history.replaceState({ ...window.history.state, piSession: session }, "", `?session=${encodeURIComponent(session.id)}`);
     }
   }, [activeCwd, activeFileTabId, invalidateWorkspaceRestore, isMobile, newSessionCwd, selectedSession]);
 
@@ -1043,6 +1122,13 @@ export function AppShell() {
   }, []);
 
   const handleOpenSession = useCallback(async (sessionId: string) => {
+    // Prefer the catalogue the sidebar already delivered: selecting from it
+    // avoids a full detail round trip just to obtain the SessionInfo.
+    const catalogued = sessionCatalog.find((s) => s.id === sessionId);
+    if (catalogued && !catalogued.transient) {
+      handleSelectSession(catalogued);
+      return;
+    }
     try {
       const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" });
       const data = await response.json() as { info?: SessionInfo; error?: string };
@@ -1051,7 +1137,7 @@ export function AppShell() {
     } catch (error) {
       console.error("[pi-web] failed to open session:", error instanceof Error ? error.message : error);
     }
-  }, [handleSelectSession]);
+  }, [handleSelectSession, sessionCatalog]);
 
   // Called by ChatWindow when a new session gets its real id from pi
   const handleSessionCreated = useCallback((session: SessionInfo, sourceDraftKey?: string) => {
@@ -1215,6 +1301,7 @@ export function AppShell() {
     invalidateWorkspaceRestore();
     setRefreshKey((k) => k + 1);
     if (selectedSession?.id === sessionId) {
+      clearTabOpenSession(sessionId);
       const cwd = selectedSession.cwd;
       const draftId = typeof crypto.randomUUID === "function"
         ? crypto.randomUUID()
@@ -1229,7 +1316,7 @@ export function AppShell() {
       setSystemTools(null);
       setSystemInfoLoading(false);
       setActiveTopPanel(null);
-      router.replace(typeof window !== "undefined" ? window.location.pathname : "/", { scroll: false });
+      router.replace(cwd ? `?cwd=${encodeURIComponent(cwd)}` : (typeof window !== "undefined" ? window.location.pathname : "/"), { scroll: false });
     }
   }, [invalidateWorkspaceRestore, selectedSession, router]);
 
@@ -1630,6 +1717,20 @@ export function AppShell() {
         )}
       </button>
       <button
+        ref={settingsMenuButtonRef}
+        className="sidebar-chrome-button"
+        onClick={toggleSettingsMenu}
+        title={translate("common.settings")}
+        aria-label={translate("common.settings")}
+        aria-haspopup="menu"
+        aria-expanded={settingsMenuOpen}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
+      <button
         className="sidebar-chrome-button"
         onClick={handleSidebarToggle}
         // While peeking the same button pins the sidebar open again.
@@ -1669,51 +1770,6 @@ export function AppShell() {
         onRunningSessionIdsChange={handleRunningSessionIdsChange}
         onSessionsChange={handleSessionsChange}
       />
-      <div className="sidebar-footer" style={{ padding: "8px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 4 }}>
-        {([
-          ["models", translate("common.models")],
-          ["skills", translate("common.skills")],
-        ] as const).map(([section, label]) => {
-          const disabled = section !== "models" && !projectTrustCwd;
-          return (
-            <button
-              key={section}
-              type="button"
-              onClick={() => setSettingsSection(section)}
-              disabled={disabled}
-              title={disabled ? translate("settings.projectRequired") : label}
-              aria-label={label}
-              style={{
-                flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                height: 32, padding: 0, background: "none", border: "none",
-                borderRadius: 9, color: "var(--text-muted)", cursor: disabled ? "default" : "pointer",
-                fontSize: 12, opacity: disabled ? 0.35 : 1,
-                transition: "background 0.12s, color 0.12s",
-              }}
-              onMouseEnter={(event) => { if (!disabled) { event.currentTarget.style.background = "var(--bg-hover)"; event.currentTarget.style.color = "var(--text)"; } }}
-              onMouseLeave={(event) => { event.currentTarget.style.background = "none"; event.currentTarget.style.color = "var(--text-muted)"; }}
-            >
-              <SettingsSectionIcon section={section} size={14} strokeWidth={2} />
-              <span>{label}</span>
-            </button>
-          );
-        })}
-        <button
-          type="button"
-          onClick={() => setSettingsSection(getLastSettingsSection(projectTrustCwd))}
-          title={translate("common.settings")}
-          aria-label={translate("common.settings")}
-          style={{
-            flex: "0 0 32px", display: "flex", alignItems: "center", justifyContent: "center",
-            height: 32, padding: 0, background: "none", border: "none",
-            borderRadius: 9, color: "var(--text-muted)", cursor: "pointer",
-          }}
-          onMouseEnter={(event) => { event.currentTarget.style.background = "var(--bg-hover)"; event.currentTarget.style.color = "var(--text)"; }}
-          onMouseLeave={(event) => { event.currentTarget.style.background = "none"; event.currentTarget.style.color = "var(--text-muted)"; }}
-        >
-          <SettingsSectionIcon section="general" size={14} strokeWidth={2} />
-        </button>
-      </div>
     </>
   );
 
@@ -1770,6 +1826,7 @@ export function AppShell() {
       </button>
     );
   };
+
 
   return (
     <>
@@ -1886,15 +1943,16 @@ export function AppShell() {
         />
       )}
 
-      {/* Center: chat */}
-      <div inert={rightPanelFullWidth} style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
+      {/* Main column: everything right of the sidebar. The topbar starts at the
+          center column so the sidebar runs the full window height. */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
         {/* Top bar with sidebar toggle */}
         <div
           ref={topBarRef}
           className={`app-topbar${desktopChrome.isMacOS && (!sidebarOpen || isMobile) ? " app-topbar--mac-inset" : ""}${!rightPanelOpen ? " app-topbar--panel-closed" : ""}`}
           {...desktopChrome.dragRegionProps}
           {...windowDrag}
-          style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--border)", height: "calc(36px + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)", background: "var(--bg-panel)" }}
+          style={{ display: "flex", alignItems: "center", flexShrink: 0, height: "calc(36px + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)", background: "var(--bg-panel)" }}
         >
           {/* Sidebar reopen — whenever the sidebar (and its own toggle) is hidden */}
           {!sidebarOpen && (
@@ -1907,6 +1965,7 @@ export function AppShell() {
                 display: "flex", alignItems: "center", justifyContent: "center",
                 width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
                 background: "none", border: "none", borderRight: "1px solid var(--border)",
+                order: -2,
                 color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
               }}
               // Hovering this button peeks the sidebar; clicking it pins it open.
@@ -2134,13 +2193,7 @@ export function AppShell() {
               })()}
             </div>
           )}
-          {!isMobile && (
-            <>
-              {renderProjectTrustWarning(false)}
-
-
-            </>
-          )}
+          {!isMobile && renderProjectTrustWarning(false)}
           {isMobile && sessionHasBranches && (
             <BranchNavigator
               tree={branchTree}
@@ -2195,6 +2248,9 @@ export function AppShell() {
 
           <WindowControls />
         </div>
+        <div style={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
+      {/* Center: chat */}
+      <div inert={rightPanelFullWidth} style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
         {isMobile && renderProjectTrustWarning(true)}
 
         {/* Chat content */}
@@ -2300,6 +2356,8 @@ export function AppShell() {
         type="button"
         className={`right-panel-toggle-button${rightPanelOpen ? " is-open" : ""}`}
         onClick={handleRightPanelToggle}
+        aria-controls="file-panel"
+        aria-expanded={rightPanelOpen}
         title={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
         aria-label={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
         aria-pressed={rightPanelOpen}
@@ -2630,6 +2688,8 @@ export function AppShell() {
         </div>
         </div>
       </div>
+        </div>
+      </div>
       </div>
     </div>
     {settingsSection && (
@@ -2645,6 +2705,37 @@ export function AppShell() {
         }}
         onSessionReloaded={() => setSessionKey((key) => key + 1)}
       />
+    )}
+    {settingsMenuOpen && settingsMenuPos && createPortal(
+      <div
+        ref={settingsMenuRef}
+        className="sidebar-project-context-menu settings-entry-menu native-popover"
+        style={{ top: settingsMenuPos.top, left: settingsMenuPos.left }}
+        role="menu"
+        aria-label={translate("common.settings")}
+      >
+        {SETTINGS_SECTION_ITEMS.map((item) => {
+          const label = translate(item.labelKey);
+          const disabled = item.requiresProject && !projectTrustCwd;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              role="menuitem"
+              disabled={disabled}
+              title={disabled ? translate("settings.projectRequired") : label}
+              onClick={() => {
+                closeSettingsMenu();
+                setSettingsSection(item.id);
+              }}
+            >
+              <SettingsSectionIcon section={item.id} size={14} strokeWidth={2} />
+              <span>{label}</span>
+            </button>
+          );
+        })}
+      </div>,
+      document.body,
     )}
     {projectTrustDialogOpen && projectTrustCwd && (
       <ProjectTrustDialog

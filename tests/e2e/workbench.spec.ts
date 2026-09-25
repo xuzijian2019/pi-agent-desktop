@@ -154,7 +154,7 @@ test("loading a remotely saved draft restores references and setup atomically", 
   await page.getByRole("button", { name: "Change reasoning level", exact: true }).click();
   await expect(page.locator(".is-thinking .composer-option-row.is-active")).toContainText("auto");
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("button", { name: "Change tool preset", exact: true })).toHaveAttribute("title", /default/);
+  await expect(page.getByRole("button", { name: "Change tool preset", exact: true })).toHaveAttribute("title", /configured/);
   await expect.poll(readSavedDraft).toEqual({ ...plainDraft, references: {} });
 });
 

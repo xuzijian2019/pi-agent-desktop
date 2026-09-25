@@ -6,11 +6,7 @@ import type {
   SlashCommandInfo,
   Theme,
 } from "@earendil-works/pi-coding-agent";
-import type {
-  AgentLoopTurnUpdate,
-  AgentMessage as PiAgentMessage,
-  PrepareNextTurnContext,
-} from "@earendil-works/pi-agent-core";
+import type { AgentMessage as PiAgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 
 export type { PiAgentMessage };
@@ -153,19 +149,12 @@ export interface AgentSessionLike {
   readonly settingsManager: SettingsManager;
   readonly agent: {
     state?: {
+      /** Replayed from the transcript's system messages since Pi 0.86; never assign it. */
       readonly systemPrompt?: string;
       messages?: PiAgentMessage[];
       thinkingLevel?: string;
       streamingMessage?: PiAgentMessage;
     };
-    transformContext?: (
-      messages: PiAgentMessage[],
-      signal?: AbortSignal,
-    ) => Promise<PiAgentMessage[]>;
-    prepareNextTurnWithContext?: (
-      context: PrepareNextTurnContext,
-      signal?: AbortSignal,
-    ) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
   };
   readonly extensionRunner: ExtensionRunnerLike;
   readonly promptTemplates: readonly PromptTemplateLike[];

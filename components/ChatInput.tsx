@@ -22,10 +22,9 @@ import { FolderIcon, getFileIcon } from "./FileIcons";
 
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
-
 import type { ExtensionStatusItem } from "@/lib/types";
-import type { ContextUsage, SessionStatsInfo } from "@/lib/pi-types";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
+import type { ContextUsage, SessionStatsInfo } from "@/lib/pi-types";
 import { ContextUsageRing } from "./ContextUsageRing";
 import { useChatAppearance } from "@/hooks/useChatAppearance";
 import type { ToolPreset } from "@/lib/tool-presets";
@@ -132,9 +131,11 @@ export interface ChatInputHandle {
   restoreSubmission: (text: string, images?: ChatDraftImage[], targetDraftKey?: string) => void;
 }
 
-const TOOL_PRESETS = ["chat-only", "read-only", "default", "full"] as const;
+// "configured" sends no override, so the session follows settings.json defaultTools.
+const TOOL_PRESETS = ["configured", "chat-only", "read-only", "default", "full"] as const;
 type ToolPresetLabel = typeof TOOL_PRESETS[number];
 const TOOL_PRESET_MAP: Record<ToolPresetLabel, ToolPreset> = {
+  configured: "configured",
   "chat-only": "none",
   "read-only": "read-only",
   default: "default",
@@ -811,7 +812,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   useImperativeHandle(ref, () => ({
     snapshot,
-    currentSetup: () => ({ model: model ?? null, effort: thinkingLevel ?? "auto", tools: toolPreset ?? "default" }),
+    currentSetup: () => ({ model: model ?? null, effort: thinkingLevel ?? "auto", tools: toolPreset && toolPreset !== "configured" ? toolPreset : "inherit" }),
     insertIfEmpty(text: string) {
       const ta = textareaRef.current;
       const current = ta ? ta.value : value;
@@ -1942,7 +1943,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (lvl === "auto" || !thinkingLevelMap) return lvl;
     return thinkingLevelMap[lvl] ?? lvl;
   })();
-  const rawToolPresetLabel = Object.entries(TOOL_PRESET_MAP).find(([, v]) => v === (toolPreset ?? "default"))?.[0] ?? "default";
+  const rawToolPresetLabel = Object.entries(TOOL_PRESET_MAP).find(([, v]) => v === (toolPreset ?? "configured"))?.[0] ?? "configured";
   const toolPresetLabel = rawToolPresetLabel === "chat-only" ? t("chat.chatOnly") : rawToolPresetLabel;
 
   // Close dropdowns on outside click
@@ -2725,16 +2726,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     <div className="composer-menu-scroll">
                     {TOOL_PRESETS.map((lvl) => {
                       const preset = TOOL_PRESET_MAP[lvl];
-                      const isActive = (toolPreset ?? "default") === preset;
+                      const isActive = (toolPreset ?? "configured") === preset;
                       let desc: string;
-                      if (lvl === "chat-only") desc = t("chat.chatOnly");
+                      if (lvl === "configured") desc = t("chat.configuredTools");
+                      else if (lvl === "chat-only") desc = t("chat.chatOnly");
                       else if (lvl === "read-only") desc = t("chat.readOnlyTools", { count: 4 });
                       else if (lvl === "default") desc = t("chat.builtInTools", { count: 4 });
                       else desc = t("chat.allBuiltInTools");
                       return (
                         <button
                           key={lvl}
-                          onClick={() => { setToolDropdownOpen(false); if (!isActive) { setDraftSetup(previous => previous ? { ...previous, tools: preset } : previous); onToolPresetChange(preset); } }}
+                          onClick={() => { setToolDropdownOpen(false); if (!isActive) { const tools = preset === "configured" ? "inherit" : preset; setDraftSetup(previous => previous ? { ...previous, tools } : previous); onToolPresetChange(preset); } }}
                           className={`composer-option-row${isActive ? " is-active" : ""}`}
                         >
                           {isActive

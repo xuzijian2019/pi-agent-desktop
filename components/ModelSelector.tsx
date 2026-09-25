@@ -81,6 +81,7 @@ export function ModelSelector({
   const currentName = selectedLabel ?? (value
     ? sortedOptions.find((option) => option.modelId === value.modelId && option.provider === value.provider)?.name ?? value.modelId
     : emptyLabel ?? (sortedOptions.length > 0 ? "Select model" : "No models"));
+  const buttonTitle = busy ? "Switching model" : locked ? currentName : sortedOptions.length > 0 || onClear ? "Change model" : "No available models";
 
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
@@ -162,12 +163,12 @@ export function ModelSelector({
     >
       <button
         type="button"
-        aria-label={ariaLabel}
+        aria-label={ariaLabel ?? buttonTitle}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-busy={busy || undefined}
         disabled={locked}
-        title={busy ? "Switching model" : locked ? currentName : sortedOptions.length > 0 || onClear ? "Change model" : "No available models"}
+        title={buttonTitle}
         style={buttonStyle}
         onClick={(event) => {
           const rect = event.currentTarget.getBoundingClientRect();
