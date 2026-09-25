@@ -29,7 +29,7 @@ test("floats the scroll-to-latest button above the composer", () => {
   // the composer wrapper is positioned so `bottom: 100%` lands above it.
   const marker = source.indexOf('className={`chat-scroll-to-bottom');
   assert.notEqual(marker, -1);
-  const container = source.slice(source.lastIndexOf('<div inert={!!searchPreview} className="relative">', marker), marker);
+  const container = source.slice(source.lastIndexOf('<div className="relative">', marker), marker);
   const block = elementBlock();
 
   assert.match(container, /className="chat-scroll-to-bottom-anchor"/);

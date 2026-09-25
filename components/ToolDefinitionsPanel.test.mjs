@@ -6,11 +6,9 @@ const panelSource = await readFile(new URL("./ToolDefinitionsPanel.tsx", import.
 const systemSource = await readFile(new URL("./SystemPromptPanel.tsx", import.meta.url), "utf8");
 const appShellSource = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
 
-test("keeps System and Tools in separate adjacent toolbar actions", () => {
-  assert.match(appShellSource, /handleSystemInfoToggle\("system", isMobile\)/);
-  assert.match(appShellSource, /handleSystemInfoToggle\("tools", isMobile\)/);
-  assert.match(appShellSource, /activeTopPanel === "system"[\s\S]*?<SystemPromptPanel/);
-  assert.match(appShellSource, /activeTopPanel === "tools"[\s\S]*?<ToolDefinitionsPanel/);
+test("keeps System and Tools as separate panels, not mounted by the fork topbar", () => {
+  // The fork removed the topbar Tools button and More menu; the panels stay upstream-owned.
+  assert.doesNotMatch(appShellSource, /<SystemPromptPanel|<ToolDefinitionsPanel/);
   assert.doesNotMatch(systemSource, /ToolEntry|tools/);
   assert.doesNotMatch(systemSource, /system-prompt-heading/);
   assert.doesNotMatch(panelSource, /tool-definitions-heading/);

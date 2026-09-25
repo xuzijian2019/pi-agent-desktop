@@ -1,6 +1,4 @@
 "use client";
-import { TranscriptReveal, HighlightedSnippet, highlightTranscriptNode, clearTranscriptHighlight } from "./workbench/TranscriptHighlight";
-import type { TranscriptPreview } from "@/lib/transcript-types";
 import { registerAbortHandler } from "@/hooks/useKeyboardShortcuts";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -36,13 +34,8 @@ import { captureScrollDistance, getVisibleRenderWindow, isScrollAtTail, restoreS
 import { sessionVisibleCounts } from "@/lib/scroll-memory";
 
 interface Props {
-  transcriptPreview?: TranscriptPreview;
-  onCloseTranscript?: () => void;
-  /** Fork slot: rendered above the composer on the empty new-task screen. */
-  emptyStateSlot?: ReactNode;
   onSideModeChange?: (open: boolean) => void;
   onAppCommand?: (command: AppSlashCommand) => string | void;
-  onOpenTasks?: () => void;
   onBranchNavigate?: (cwd: string) => void;
   session: SessionInfo | null;
   searchTarget?: { sessionId: string; entryId: string; blockIndex?: number } | null;
@@ -218,12 +211,11 @@ function getFinalSplit(message: AssistantMessage): FinalSplitEntry {
   return cached;
 }
 
-function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = false, reveal = false, children, t, entryIds }: { entryIds: string[]; messageCount: number; toolCallCount: number; defaultExpanded?: boolean; reveal?: boolean; children: ReactNode; t: (key: string, params?: Record<string, string | number>) => string }) {
+function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = false, reveal = false, children, t }: { messageCount: number; toolCallCount: number; defaultExpanded?: boolean; reveal?: boolean; children: ReactNode; t: (key: string, params?: Record<string, string | number>) => string }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   useLayoutEffect(() => {
     if (reveal) setExpanded(true);
   }, [reveal]);
-  useEffect(() => { const reveal = (event: Event) => { if (entryIds.includes((event as CustomEvent).detail.entryId)) setExpanded(true); }; window.addEventListener("pi-reveal-entry", reveal); return () => window.removeEventListener("pi-reveal-entry", reveal); }, [entryIds]);
   const parts = [t("chat.processDetails"), `${messageCount} ${t(messageCount === 1 ? "chat.message" : "chat.messages")}`];
   if (toolCallCount > 0) parts.push(`${toolCallCount} ${t(toolCallCount === 1 ? "chat.toolCall" : "chat.toolCalls")}`);
 
@@ -331,7 +323,7 @@ function NewSessionUpdateLink({
   );
 }
 
-export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onSelectProject, projectOptions, onProjectChange, onOpenFile, onProjectFilesImported, onOpenModelsConfig, emptyStateSlot, onOpenTasks, onBranchNavigate, onAppCommand, onSideModeChange, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionDraftKey, onAttentionNeeded, onSystemToolsChange, onSystemInfoLoaderChange, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed }: Props) {
+export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onSelectProject, projectOptions, onProjectChange, onOpenFile, onProjectFilesImported, onOpenModelsConfig, onBranchNavigate, onAppCommand, onSideModeChange, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionDraftKey, onAttentionNeeded, onSystemToolsChange, onSystemInfoLoaderChange, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed }: Props) {
   const { t } = useI18n();
   const [commandDialog, setCommandDialog] = useState<"fork" | "hotkeys" | "session" | null>(null);
   const openStats = useCallback(() => { onSessionStatsPanelOpen?.(); setCommandDialog("session"); }, [onSessionStatsPanelOpen]);
@@ -339,12 +331,11 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
   // wrapping handleAgentEventRef because useAgentSession overwrites that ref
   // on every render (it syncs the latest callback), which would blow away an
   // externally-installed wrapper after the first re-render.
-  const searchPreview = transcriptPreview?.sessionId === session?.id ? transcriptPreview : undefined;
   const [snapshotLeaf, setSnapshotLeaf] = useState<string | undefined>();
   useEffect(() => setSnapshotLeaf(undefined), [session?.id, newSessionCwd]);
   const publishBranchData = useCallback((tree: SessionTreeNode[], leaf: string | null, change: (id: string | null) => void) => {
-    onBranchDataChange?.(tree, searchPreview?.entryId ?? leaf, id => { setSnapshotLeaf(id ?? undefined); onCloseTranscript?.(); change(id); });
-  }, [onBranchDataChange, onCloseTranscript, searchPreview?.entryId]);
+    onBranchDataChange?.(tree, leaf, id => { setSnapshotLeaf(id ?? undefined); change(id); });
+  }, [onBranchDataChange]);
   const wrappedOnAgentEnd = useCallback(() => {
     onAgentEnd?.();
   }, [onAgentEnd]);
@@ -362,7 +353,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
   const [restoreAnchorReady, setRestoreAnchorReady] = useState(false);
 
   const {
-    loading, error, messages: liveMessages, activeToolResults, entryIds: liveEntryIds, historyCursor, hasEarlierMessages, streamState: liveStreamState,
+    loading, error, messages, activeToolResults, entryIds, historyCursor, hasEarlierMessages, streamState,
     agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
     retryInfo, contextUsage, forkingEntryId,
     compactError, compactResult, displayModel: displayModelValue, modelSwitching, sessionStats,
@@ -386,11 +377,8 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
     modelsRefreshKey, chatInputRef, onBranchDataChange: publishBranchData, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen: openStats,
     deferInitialScroll: Boolean(pendingScrollRestore), onScrollPositionChange,
   });
-  const messages = searchPreview?.context.messages ?? liveMessages;
-  const entryIds = searchPreview?.context.entryIds ?? liveEntryIds;
-  const streamState = searchPreview ? { ...liveStreamState, isStreaming: false } : liveStreamState;
-  const sessionBusy = !searchPreview && (agentRunning || bashRunning);
-  const ephemeral = useEphemeralConversation(session?.id ?? sessionIdRef.current ?? null, session?.cwd ?? newSessionCwd ?? undefined, searchPreview?.entryId ?? snapshotLeaf);
+  const sessionBusy = agentRunning || bashRunning;
+  const ephemeral = useEphemeralConversation(session?.id ?? sessionIdRef.current ?? null, session?.cwd ?? newSessionCwd ?? undefined, snapshotLeaf);
   const { side, recap, recapBusy, recapError, closeSide, cancelRecap, handleLocalCommand } = ephemeral;
   const sideOpen = !!side;
   const sendMain = useCallback((...args: Parameters<typeof handleSend>) => { setSnapshotLeaf(undefined); return handleSend(...args); }, [handleSend]);
@@ -404,8 +392,8 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
   useEffect(() => { onSideModeChange?.(sideOpen); return () => onSideModeChange?.(false); }, [sideOpen, onSideModeChange]);
 
   useEffect(() => setCommandDialog(null), [session?.id, newSessionCwd]);
-  const forkChoices = useMemo(() => liveMessages.flatMap((message, index) => message.role === "user" && liveEntryIds[index]
-    ? [{ id: liveEntryIds[index], text: getUserMessageText(message).replace(/\s+/g, " ").slice(0, 200) || t("chat.imageMessage") }] : []), [liveMessages, liveEntryIds, t]);
+  const forkChoices = useMemo(() => messages.flatMap((message, index) => message.role === "user" && entryIds[index]
+    ? [{ id: entryIds[index], text: getUserMessageText(message).replace(/\s+/g, " ").slice(0, 200) || t("chat.imageMessage") }] : []), [messages, entryIds, t]);
   const handleViewCommand = (command: ViewSlashCommand) => {
     if (command === "fork" || command === "hotkeys") {
       if (command === "fork" && (!session || !forkChoices.length)) return t("chat.noForkMessages");
@@ -651,41 +639,6 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
   const onScrollPositionChangeRef = useRef(onScrollPositionChange);
   onScrollPositionChangeRef.current = onScrollPositionChange;
 
-  const [revealEntry, setRevealEntry] = useState<string>();
-  useEffect(() => {
-    if (!searchPreview || loading) return;
-    setRevealEntry(searchPreview.displayEntryId); setVisibleCount(Number.MAX_SAFE_INTEGER);
-  }, [searchPreview, loading]);
-  useEffect(() => { const reveal = (event: Event) => { const detail = (event as CustomEvent).detail; if (detail.sessionId === session?.id) { setRevealEntry(detail.entryId); setVisibleCount(Number.MAX_SAFE_INTEGER); } }; window.addEventListener("pi-reveal-entry", reveal); return () => window.removeEventListener("pi-reveal-entry", reveal); }, [session?.id]);
-  useEffect(() => {
-    if (!revealEntry || !entryIds.includes(revealEntry)) return;
-    const frame = requestAnimationFrame(() => {
-      window.dispatchEvent(new CustomEvent("pi-reveal-entry", { detail: { entryId: revealEntry } }));
-      requestAnimationFrame(() => { if (!searchPreview) scrollContainerRef.current?.querySelector<HTMLElement>(`[data-entry-id="${CSS.escape(revealEntry)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }); setRevealEntry(undefined); });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [revealEntry, entryIds, scrollContainerRef, searchPreview]);
-
-  useEffect(() => {
-    if (!searchPreview || loading) return;
-    const container = scrollContainerRef.current; if (!container) return;
-    let frame = 0; let revealed = false;
-    const highlight = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        const root = container.querySelector<HTMLElement>(`[data-entry-id="${CSS.escape(searchPreview.displayEntryId)}"]`);
-        if (!root) return;
-        const range = highlightTranscriptNode(root, searchPreview.query);
-        if (range && !revealed) { const box = range.getBoundingClientRect(); if (box.height) { container.scrollTop += box.top - container.getBoundingClientRect().top - container.clientHeight * 0.4; revealed = true; } }
-      });
-    };
-    // Install this browser-native selector directly; the bundled CSS parser predates it.
-    const style = document.createElement("style");
-    style.textContent = "::highlight(transcript-search-match) { background: color-mix(in srgb, var(--warning) 35%, transparent); color: inherit; }";
-    document.head.appendChild(style);
-    const observer = new MutationObserver(highlight); observer.observe(container, { childList: true, subtree: true }); highlight();
-    return () => { observer.disconnect(); cancelAnimationFrame(frame); clearTranscriptHighlight(); style.remove(); };
-  }, [searchPreview, loading, scrollContainerRef]);
 
 
   useLayoutEffect(() => {
@@ -1139,9 +1092,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
         }
       }
       if (options.showTimestamp !== undefined) showTimestamp = options.showTimestamp;
-      const isSearchMatch = !!searchPreview && searchPreview.displayEntryId === entryIds[idx];
       const view = (
-        <TranscriptReveal.Provider key={`${keyPrefix}-view-${idx}`} value={isSearchMatch}>
         <MessageView
           key={`${keyPrefix}-view-${idx}`}
           message={msg}
@@ -1153,23 +1104,20 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
           entryId={entryIds[idx]}
           searchBlock={entryIds[idx] === pendingSearchScroll?.entryId ? searchBlock : undefined}
           writtenFiles={options.writtenFiles}
-          onFork={searchPreview || isNew ? undefined : stableHandleFork}
+          onFork={isNew ? undefined : stableHandleFork}
           forking={forkingEntryId === entryIds[idx]}
-          onNavigate={searchPreview ? undefined : stableHandleNavigate}
-          onEditContent={searchPreview ? undefined : handleEditContent}
+          onNavigate={stableHandleNavigate}
+          onEditContent={handleEditContent}
           showTimestamp={showTimestamp}
           prevTimestamp={idx > 0 ? (messages[idx - 1] as AgentMessage & { timestamp?: number }).timestamp : undefined}
           sessionId={sessionIdForViews ?? sessionIdRef.current ?? undefined}
         />
-        {isSearchMatch && <div className="transcript-exact-match" aria-label={t("wb.exactMatch")}><HighlightedSnippet text={searchPreview.snippet} query={searchPreview.query} /></div>}
-        </TranscriptReveal.Provider>
       );
       if (!isVisible) return view;
       if (options.attachRef === false) return <div key={`${keyPrefix}-${idx}`} data-entry-id={entryIds[idx]}>{view}</div>;
       return (
         <div key={`${keyPrefix}-${idx}`} data-entry-id={entryIds[idx]} data-conversation-turn={turnIndexByMessageIndex.get(idx)}>
           {view}
-          {msg.role === "user" && <button className="save-task-message" onClick={() => window.dispatchEvent(new CustomEvent("pi-save-task-message", { detail: { text: getUserInputText(msg) ?? "" } }))}>{t("wb.saveAsTask")}</button>}
         </div>
       );
     };
@@ -1225,7 +1173,6 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
             key={`process-group-${userIdx}-${finalAssistantIdx}`}
             defaultExpanded={!finalAnswerMessage}
             reveal={Boolean(pendingSearchScroll && [...visibleProcessIndices, finalAssistantIdx].some(i => entryIds[i] === pendingSearchScroll.entryId))}
-            entryIds={[...visibleProcessIndices.map(i => entryIds[i]), entryIds[finalAssistantIdx]]}
             messageCount={processCount}
             t={t}
             toolCallCount={countToolCalls(messages, visibleProcessIndices) + countToolCallBlocks(finalSplit.processBlocks)}
@@ -1261,7 +1208,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
     messages, activeToolResults, hasEarlierMessages, pendingSearchScroll, searchBlock, onOpenSession, entryIds, streamActive, sessionBusy, isNew, forkingEntryId,
     modelNames, messageCwd, onOpenFile, handleEditContent,
     stableHandleFork, stableHandleNavigate, sessionIdForViews,
-    visibleCount, t, sessionIdRef, setSentinelNode, searchPreview,
+    visibleCount, t, sessionIdRef, setSentinelNode,
   ]);
 
   const availableThinkingLevels = displayModelValue
@@ -1290,7 +1237,6 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
     <ChatInput
       ref={chatInputRef}
       showInputHints={isEmptyNew}
-      onOpenTasks={onOpenTasks}
       onBranchNavigate={onBranchNavigate}
       onSetupChange={applyTaskSetup}
       onSend={sendMain}
@@ -1370,7 +1316,6 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
       onDrop={side ? event => { event.preventDefault(); event.stopPropagation(); } : handleDrop}
     >
       <div className="relative flex min-h-0 flex-1 flex-col" inert={!!side} aria-hidden={side ? true : undefined}>
-      {searchPreview && <div className="transcript-preview-banner" role="status"><span>{t("wb.historicalSearch")}</span><button onClick={onCloseTranscript}>{t("wb.returnConversation")}</button></div>}
       {(recapBusy || recapError || recap) && <section className="mx-4 my-2 max-h-[40%] shrink-0 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--bg-panel)] p-4" aria-label={t("recap.title")}>
         <div className="mb-2 flex flex-wrap items-center gap-2 text-sm"><strong>{t("recap.title")}</strong>
           {recapBusy && <><span role="status">{t("recap.loading")}</span><button className="ml-auto text-[var(--accent)]" onClick={cancelRecap}>{t("recap.cancel")}</button></>}
@@ -1443,8 +1388,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
           <div className="chat-empty-state w-full">
             <NoticeShelf notices={notices} onPauseChange={setNoticePaused} />
             <NewSessionUpdateLink label={(version) => t("appUpdate.releaseNotes", { version })} />
-            {emptyStateSlot}
-            <div inert={!!searchPreview}>{chatInputElement}</div>
+            {chatInputElement}
           </div>
         </div>
       ) : (
@@ -1563,7 +1507,7 @@ export function ChatWindow({ transcriptPreview, onCloseTranscript, session, newS
             <ExtensionWidgets widgets={belowEditorWidgets} />
           </div>
         </div>
-        <div inert={!!searchPreview} className="relative">
+        <div className="relative">
           <div className="chat-scroll-to-bottom-anchor">
             <button
               type="button"

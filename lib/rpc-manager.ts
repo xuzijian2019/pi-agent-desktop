@@ -1,4 +1,3 @@
-import { beginActivity, patchActivity, finishActivity } from "./activity";
 import { withCheckoutGuard, checkoutRoot } from "./checkout-guard";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
@@ -240,7 +239,6 @@ export class AgentSessionWrapper {
   private extensionRunActive = false;
   /** Set by the first prompt of an unnamed session; consumed by the user message_end. */
   private autoNamePending = false;
-  private activityOutcome: "completed" | "failed" | "stopped" = "completed";
   runId = randomUUID();
   private activeExtensionWidgets = new Map<string, ActiveExtensionWidget>();
   private extensionWidgetGenerations = new Map<string, number>();
@@ -504,38 +502,13 @@ export class AgentSessionWrapper {
       const result = await generateSessionTitle(this.inner as unknown as AgentSession);
       if (!this._alive || this.inner.sessionManager.getSessionName()) return;
       this.inner.setSessionName(result.title);
-      // The run started before a name existed, so its activity card is still
-      // the untitled placeholder — name it now instead of at the next prompt.
-      patchActivity(this.sessionId, this.runId, { title: result.title });
       invalidateSessionListCache();
     } catch (error) {
       console.warn(`[rpc] auto-name failed for ${this.sessionId}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
-  private startActivity(): void {
-    this.activityOutcome = "completed";
-    beginActivity(this.sessionId, this.runId, this.cwd, this.inner.sessionManager.getSessionName() || this.inner.sessionManager.getHeader()?.cwd || "");
-  }
-
   private emit(event: AgentEvent): void {
-    if (event.type === "agent_start") this.startActivity();
-    if (event.type === "prompt_error") this.activityOutcome = "failed";
-    if (event.type === "message_end") {
-      const msg = event.message as { stopReason?: string } | undefined;
-      if (msg?.stopReason === "error") this.activityOutcome = "failed";
-      if (msg?.stopReason === "aborted") this.activityOutcome = "stopped";
-    }
-    const phase = event.type === "tool_execution_start" ? "running_tools"
-      : event.type === "tool_execution_end" ? "waiting_model"
-      : event.type.includes("compaction_start") ? "compacting"
-      : event.type.includes("compaction_end") ? "waiting_model"
-      : event.type.includes("retry_start") ? "retrying"
-      : event.type.includes("retry_end") ? "waiting_model" : undefined;
-    if (phase) patchActivity(this.sessionId, this.runId, { phase });
-    if (event.type === "extension_ui_request") { if (this.pendingUiRequests.size > 0) this.startActivity(); this.updateActivityInput(); }
-    if (this.pendingUiRequests.size === 0 && (event.type === "agent_settled" && !(this.pendingPromptCount > 0) || event.type === "prompt_done" && !this.extensionRunActive)) finishActivity(this.sessionId, this.runId, this.activityOutcome);
-
     for (const listener of this.listeners) {
       try {
         listener(event);
@@ -546,12 +519,6 @@ export class AgentSessionWrapper {
         );
       }
     }
-  }
-
-  private updateActivityInput(): void {
-    const pendingInput = this.pendingUiRequests.size > 0;
-    patchActivity(this.sessionId, this.runId, { pendingInput, status: pendingInput ? "waiting" : "running" });
-    if (!pendingInput && !this.isRunning()) finishActivity(this.sessionId, this.runId, this.activityOutcome);
   }
 
   private async acquirePromptAdmission(): Promise<() => void> {
@@ -699,7 +666,6 @@ export class AgentSessionWrapper {
           if (!this.isRunning()) this.runId = randomUUID();
           this.autoNamePending = command.autoName !== false && !streamingBehavior
             && !this.inner.sessionManager.getSessionName() && !this.inner.sessionManager.getEntries().some(entry => entry.type === "message");
-          this.startActivity();
           let preflightAccepted = false;
           let preflightSettled = false;
           let promptSettled = false;
@@ -786,7 +752,6 @@ export class AgentSessionWrapper {
         return null;
 
       case "abort":
-        this.activityOutcome = "stopped";
         this.forceShutdownOnIdle = true;
         // Stop must unwind extension commands that have not started the agent yet.
         this.extensionUiAbortController.abort(new DOMException("Extension UI cancelled by Stop", "AbortError"));
@@ -1000,21 +965,18 @@ export class AgentSessionWrapper {
         // Full clear only: pi has no single-item dequeue, and clear+requeue
         // races against the agent loop pulling messages mid-flight.
         const cleared = this.inner.clearQueue();
-        patchActivity(this.sessionId, this.runId, { queueCount: 0 });
         return cleared;
       }
 
       case "steer": {
         const steerImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
         await this.inner.steer(command.message as string, steerImages?.length ? steerImages : undefined);
-        patchActivity(this.sessionId, this.runId, { queueCount: this.inner.pendingMessageCount });
         return null;
       }
 
       case "follow_up": {
         const followImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
         await this.inner.followUp(command.message as string, followImages?.length ? followImages : undefined);
-        patchActivity(this.sessionId, this.runId, { queueCount: this.inner.pendingMessageCount });
         return null;
       }
 
@@ -1117,8 +1079,6 @@ export class AgentSessionWrapper {
           throw new Error("Cannot run a shell command while the session is busy");
         }
         this.runId = randomUUID();
-        this.startActivity();
-        patchActivity(this.sessionId, this.runId, { phase: "running_command" });
         const { execution } = await withCheckoutGuard(this.cwd, async () => ({ execution: this.inner.executeBash(
           command.command as string,
           undefined,
@@ -1133,22 +1093,14 @@ export class AgentSessionWrapper {
         try {
           const result = await execution;
           this.persistBashOnlySession();
-          const outcome = result as { exitCode?: number; cancelled?: boolean };
-          if (outcome.cancelled) this.activityOutcome = "stopped";
-          else if (outcome.exitCode) this.activityOutcome = "failed";
           return result;
-        } catch (error) {
-          this.activityOutcome = "failed";
-          throw error;
         } finally {
-          finishActivity(this.sessionId, this.runId, this.activityOutcome);
           this.resetIdleTimer();
           invalidateSessionListCache();
         }
       }
 
       case "abort_bash": {
-        this.activityOutcome = "stopped";
         this.forceShutdownOnIdle = true;
         this.inner.abortBash();
         return null;
@@ -1164,7 +1116,6 @@ export class AgentSessionWrapper {
 
   destroy(): void {
     if (!this._alive) return;
-    finishActivity(this.sessionId, this.runId, "interrupted");
     this._alive = false;
     // Tell attached SSE listeners to drop this instance so the browser
     // EventSource errors and reconnects instead of staying OPEN on a dead wrapper.
@@ -1618,7 +1569,6 @@ export class AgentSessionWrapper {
         abortSignal.removeEventListener("abort", onAbort);
         this.pendingUiRequests.delete(id);
         this.pendingUiResponses.delete(id);
-        this.updateActivityInput();
         this.emit({ type: "extension_ui_closed", id });
       };
       const settle = (value: T) => {

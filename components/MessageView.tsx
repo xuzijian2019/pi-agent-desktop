@@ -1,5 +1,4 @@
 "use client";
-import { useTranscriptExpansion } from "./workbench/TranscriptHighlight";
 
 import { memo, useState, useRef, useEffect, useMemo } from "react";
 
@@ -316,7 +315,7 @@ function CollapsibleUserText({ text, cwd, onOpenFile }: {
   onOpenFile?: (filePath: string) => void;
 }) {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useTranscriptExpansion();
+  const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -366,7 +365,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
   const { t } = useI18n();
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [expanded, setExpanded] = useTranscriptExpansion();
+  const [expanded, setExpanded] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   const content =
@@ -868,7 +867,7 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
   blockIndex: number;
 }) {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useTranscriptExpansion(isThinkingExpandedByDefault());
+  const [expanded, setExpanded] = useState(isThinkingExpandedByDefault);
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -952,7 +951,7 @@ function isSubagentToolDetails(value: unknown): value is SubagentToolDetails {
 
 function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOpenSession }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number; aborted?: boolean; defaultExpanded?: boolean; onOpenSession?: (sessionId: string) => void }) {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useTranscriptExpansion(defaultExpanded ?? isToolCallExpanded(block.toolCallId));
+  const [expanded, setExpanded] = useState(() => defaultExpanded ?? isToolCallExpanded(block.toolCallId));
   const toggleExpanded = () => {
     const next = !expanded;
     setToolCallExpanded(block.toolCallId, next);
@@ -1508,7 +1507,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
   const { t } = useI18n();
   const isHiddenDisplay = message.display === false;
   const [contentExpanded, setContentExpanded] = useState(!isHiddenDisplay);
-  const [detailsExpanded, setDetailsExpanded] = useTranscriptExpansion();
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const text = getMessageText(message.content);
   const images = getMessageImages(message.content);

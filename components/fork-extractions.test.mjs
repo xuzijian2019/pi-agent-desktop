@@ -77,9 +77,9 @@ const EXTRACTIONS = [
 ];
 
 const FORK_FEATURES = [
-  { name: "Shared right workbench", file: "components/AppShell.tsx", markers: ["PanelModeSelector", "TranscriptSearchPanel", "SavedTasksPanel", "PinnedSection", "ChangesSection", "ActivityPanel", "panelMode: rightPanelMode"] },
+  { name: "Right panel single header", file: "components/AppShell.tsx", markers: ["right-panel-tab-strip", "file-panel-viewer-bar", "file-panel-split"] },
   { name: "Composer preparation and branch metadata", file: "components/ChatInput.tsx", markers: ["prepareOutgoingMessage", "<BranchControl", "snapshotRef"] },
-  { name: "Runtime activity and checkout admission", file: "lib/rpc-manager.ts", markers: ["beginActivity", "finishActivity", "withCheckoutGuard", "hasBusyCheckout"] },
+  { name: "Checkout admission", file: "lib/rpc-manager.ts", markers: ["withCheckoutGuard", "hasBusyCheckout"] },
   {
     name: "AppShell desktop chrome",
     file: "components/AppShell.tsx",
@@ -143,7 +143,7 @@ const REMOVED_UPSTREAM_UI = [
     name: "Outgoing preview composer feature",
     file: "components/AppShell.tsx",
     markers: ["SendPreview", "sendPreview", "draftRevision"],
-    required: ["SavedTasksPanel"],
+    required: ["file-panel-viewer-bar"],
   },
   {
     name: "Compact composer button",
@@ -154,9 +154,16 @@ const REMOVED_UPSTREAM_UI = [
   {
     name: "Full history toolbar button",
     file: "components/AppShell.tsx",
-    // The HTML export lives in the More menu now (handleExportHtml).
+    // The HTML export is reached through the /export slash command (handleExportHtml).
     markers: ["handleViewFullHistory", "history.full", "history.label"],
-    required: ["handleExportHtml", "appshell.exportHtml"],
+    required: ["handleExportHtml"],
+  },
+  {
+    name: "Topbar Tools button and More menu",
+    file: "components/AppShell.tsx",
+    // Removed 2026-09-25: the topbar keeps only title, sub-agents and forks.
+    markers: ["app-topbar-more", "handleSystemInfoToggle", "tools.label", "<SystemPromptPanel", "<ToolDefinitionsPanel"],
+    required: ["panelOwnsTopRight"],
   },
   {
     name: "Session stats top panel",

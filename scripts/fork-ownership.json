@@ -175,34 +175,21 @@
     "docs/ownership-boundaries.md",
     "components/workbench/",
     "app/workbench.css",
-    "app/api/agent/activity/",
     "app/api/git/branches/",
-    "app/api/saved-tasks/",
-    "app/api/sessions/[id]/outputs/",
-    "lib/activity-types.ts",
-    "lib/activity.ts",
     "lib/checkout-guard.ts",
     "lib/git-branch-types.ts",
     "lib/git-branches.ts",
     "lib/i18n/messages/workbench.ts",
-    "lib/output-types.ts",
     "lib/composer-popover.ts",
-    "lib/panel-modes.ts",
     "lib/prepare-outgoing.ts",
-    "lib/saved-tasks.ts",
     "lib/session-forks.ts",
-    "lib/session-outputs.ts",
     "lib/task-types.ts",
     "lib/web-ui-client.ts",
     "lib/web-ui-client.test.mjs",
     "lib/git-inventory.ts",
     "lib/web-ui-route.ts",
     "lib/web-ui-store.ts",
-    "lib/workbench.test.mjs",
-    "lib/transcript-search.ts",
-    "lib/transcript-search.test.mjs",
-    "lib/transcript-types.ts",
-    "app/api/transcript-search/"
+    "lib/workbench.test.mjs"
   ],
   "dispositions": {
     "accepted": "Reviewed and kept. The drift is either the fork's own interaction design or a generic improvement with no desktop coupling, so it cannot be extracted into components/desktop/. Removing it would mean deleting a feature. These files stay permanent review points; that is the running cost of a UI fork, not a backlog item. Do not reopen without new information.",
@@ -233,6 +220,7 @@
     "2026-09-19 — merged upstream v0.8.11 → v0.9.1 → main@974c8bb in four staged merges (88285a4, 7dbd35f, b11eabe, 0e36743). Config modals (Models/Skills/Plugins) now track upstream exactly and left the manifest. Numbers refreshed against main@974c8bb.",
     "2026-09-20 — merged abcwyc/pi-agent-desktop upstream/main 82c8aaf without rewriting fork history. Kept workbench, IndexedDB drafts, side conversations, project order, tail-follow scrolling, and simplified composer. Integrated upstream runtime, subagents, terminals, pagination, security, and settings; retained Pi 0.86.1 and adapted transcript APIs. Shared-file drift measured against pi-web 974c8bb.",
     "2026-09-21 — merged abcwyc/pi-agent-desktop upstream/main 9ccd8fa (26 commits: v0.10.0 pi 0.86.1 batch, pi-web segment E). Adopted upstream's transformContext exact-prompt projection (lib/exact-system-prompt.ts and lib/stream-shutdown.ts removed), scroll-to-latest button, cancel-retry link, PDF #page links, tool-result images while collapsed, cancelled tool badge, live !command output, truncation notice. Kept the fork's simplified composer (no compact button, automation gear, sound toggle or narrow Stop), sidebar-left layout, class-based tool cards and tail-follow scrolling. lib/rpc-manager.ts moved to high. Shared-file drift still measured against pi-web 974c8bb.",
-    "2026-09-25 — merged abcwyc/pi-agent-desktop upstream/main a13d258 (32 commits, including pi-web segment F at 96966e5, pi 0.87.1). Adopted exact-system-prompt via before_agent_start, session-list hydration, enabled-model toggles, catalog refresh, per-tab session memory, and auth/env fixes into the fork layout. Kept the project-tree sidebar, simplified composer, side chat, IndexedDB drafts, SSE running events, and Playwright e2e. Numbers refreshed against the 96966e5 baseline."
+    "2026-09-25 — merged abcwyc/pi-agent-desktop upstream/main a13d258 (32 commits, including pi-web segment F at 96966e5, pi 0.87.1). Adopted exact-system-prompt via before_agent_start, session-list hydration, enabled-model toggles, catalog refresh, per-tab session memory, and auth/env fixes into the fork layout. Kept the project-tree sidebar, simplified composer, side chat, IndexedDB drafts, SSE running events, and Playwright e2e. Numbers refreshed against the 96966e5 baseline.",
+    "2026-09-25 — right-panel workbench removed: the Files/Activity/Search/Saved Tasks mode selector, Pinned and Changes sections, new-task guide, save-as-task and pin-output entry points, their APIs (saved-tasks, transcript-search, sessions/[id]/outputs, agent/activity) and the rpc-manager activity tracker are deleted. The panel keeps upstream's single tab strip (tabs + new terminal, file-tree toggle, expand, close); the viewer row appears only while a file is open, and working-tree changes live in the explorer's changes toggle as upstream ships it. BranchControl stays as the composer's git entry point."
   ]
 }

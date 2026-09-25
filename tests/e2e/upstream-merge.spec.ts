@@ -21,7 +21,7 @@ test("merged shell keeps chat below its header and supports terminal tabs and pa
 
   await page.locator(".right-panel-toggle-button").click();
   const panel = page.locator("#file-panel");
-  await panel.getByRole("button", { name: "Open workspace terminal", exact: true }).click();
+  await panel.getByRole("button", { name: "New terminal", exact: true }).click();
   await expect(page.locator(".terminal-panel:visible .is-ready")).toBeVisible();
   await page.locator(".terminal-panel:visible .xterm-helper-textarea").focus();
   await page.keyboard.type("printf 'MERGE_TERMINAL_%s\\n' OK");

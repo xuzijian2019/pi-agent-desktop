@@ -1,2 +1,0 @@
-export interface OutputOverride { path: string; label: string; revision: number; pinned: boolean; hidden: boolean; sourceEntryIds: string[]; leafId: string | null; observedMtime?: number }
-export interface OutputItem extends OutputOverride { id: string; kind: "documents" | "images" | "audio" | "other"; reason: string; available: boolean; otherBranch: boolean; size?: number; mtime?: number; changed?: boolean; availability?: string }

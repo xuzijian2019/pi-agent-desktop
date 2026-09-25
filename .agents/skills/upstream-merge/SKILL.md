@@ -34,7 +34,7 @@ never force-push.
 
 Resolution rules:
 - **Fork interaction design wins.** This covers the project-tree sidebar, the
-  sidebar-left layout, the simplified composer, workbench/saved tasks,
+  sidebar-left layout, the simplified composer, the composer git-branch chip,
   side/recap, IndexedDB drafts, the class-based `TabBar`, and Playwright as
   `test:e2e`. Adopt upstream *logic* (guards, new features, fixes) into it.
 - If upstream adds an entry to a menu or list the fork restructured, re-apply

@@ -23,7 +23,6 @@ test("switching sessions immediately clears parent-owned session UI", async () =
   assert.match(handler, /setBranchTree\(\[\]\)/);
   assert.match(handler, /setBranchActiveLeafId\(null\)/);
   assert.match(handler, /branchLeafChangeFnRef\.current = null/);
-  assert.match(handler, /setSessionStats\(null\)/);
   assert.match(handler, /setActiveTopPanel\(null\)/);
 });
 
@@ -39,6 +38,6 @@ test("session restore remains desktop-only while panel state supports browsers",
   const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
   assert.match(source, /resolveInitialNavigation\(searchParams, desktopMode \? persistedWorkspace : null\)/);
   assert.match(source, /useDesktopConnection\(\)/);
-  assert.match(source, /panelMode: rightPanelMode/);
+  assert.match(source, /activeFileTabId,\n      rightPanelOpen,\n    \} satisfies PersistedWorkspace/);
   assert.match(source, /if \(!workspaceHydrated\) return/);
 });

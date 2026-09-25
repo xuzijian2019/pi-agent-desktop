@@ -89,16 +89,6 @@ test("opening System or Tools lazily starts a dormant session without sending a 
   assert.match(loadSystemInfoSource, /setSystemPrompt\(state\.systemPrompt \?\? ""\)/);
   assert.match(loaderEffectSource, /onSystemInfoLoaderChange\?\.\(loadSystemInfo\)/);
   assert.match(loaderEffectSource, /onSystemInfoLoaderChange\?\.\(null\)/);
-  assert.match(appShellSource, /onClick=\{\(\) => handleSystemInfoToggle\("system", isMobile\)\}/);
-  assert.match(appShellSource, /onClick=\{\(\) => handleSystemInfoToggle\("tools", isMobile\)\}/);
-  assert.match(appShellSource, /systemInfoLoaderRef\.current/);
-  assert.doesNotMatch(appShellSource, /systemPrompt !== null \|\| systemInfoLoading/);
-  assert.match(appShellSource, /const loadId = \+\+systemInfoLoadIdRef\.current/);
-  assert.match(appShellSource, /systemInfoLoadIdRef\.current === loadId/);
-  assert.match(
-    appShellSource,
-    /handleSystemInfoLoaderChange[\s\S]*?systemInfoLoadIdRef\.current \+= 1;[\s\S]*?setSystemInfoLoading\(false\)/,
-  );
 });
 
 test("new-session promotion rekeys drafts before publishing the real session", () => {
@@ -187,9 +177,9 @@ test("only the session-mount load probes disk for external appends", () => {
 });
 
 test("first user messages expose both branch actions and edit before their own entry", async () => {
-  assert.match(chatWindowSource, /onFork=\{searchPreview \|\| isNew \? undefined : stableHandleFork\}/);
+  assert.match(chatWindowSource, /onFork=\{isNew \? undefined : stableHandleFork\}/);
   assert.match(chatWindowSource, /if \(sessionBusyRef.current\) return/);
-  assert.match(chatWindowSource, /onNavigate=\{searchPreview \? undefined : stableHandleNavigate\}/);
+  assert.match(chatWindowSource, /onNavigate=\{stableHandleNavigate\}/);
 });
 
 test("an empty persisted session displays the model it will use on first send", () => {

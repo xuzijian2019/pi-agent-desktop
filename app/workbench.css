@@ -1,44 +1,18 @@
-/* Shared right panel: one header, quiet rounded surfaces, secondary actions on demand.
+/* Right panel: one header, quiet rounded surfaces, secondary actions on demand.
    Tokens follow native-theme.css (--radius-*, --control-height*, --surface-*, --shadow-*). */
 .right-panel-container { container-type: inline-size; }
 .right-panel-toggle-button.is-open { display: none; }
-
-/* Header: one row for the whole panel — view switch, the view's own controls
-   (open file tabs, changes), and close. Same height and tint as .app-topbar so
-   the panel reads as one continuous bar. */
-.workbench-mode-selector { display: flex; align-items: center; gap: 6px; height: 48px; flex: 0 0 48px; padding: 0 8px !important; border-bottom: 1px solid var(--separator); background: color-mix(in srgb, var(--bg) 88%, var(--surface)) !important; }
-.workbench-mode-close { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 32px; height: 32px; margin-left: auto; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); cursor: pointer; transition: color var(--dur-fast) var(--ease-native), background var(--dur-fast) var(--ease-native); }
-.workbench-mode-close:hover { background: color-mix(in srgb, var(--bg-panel) 65%, var(--surface)); color: var(--text); }
-.workbench-mode-select { display: flex; flex: 0 0 auto; max-width: 40%; min-width: 0; align-items: center; }
-.workbench-mode-select select { max-width: 100%; height: 30px; padding: 0 4px 0 6px; border: 0; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; color: var(--text); background: transparent; cursor: pointer; transition: background var(--dur-fast) var(--ease-native); }
-.workbench-mode-select select:hover { background: var(--bg-hover); }
-.workbench-mode-body, .workbench-files-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
-.workbench-mode-body[hidden], .workbench-files-body[hidden] { display: none; }
-
-/* Changes: a chip in the header row; the diff list opens as a drawer under it. */
-.workbench-changes { display: flex; flex: 0 0 auto; align-items: center; }
-.workbench-chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 9px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); font-size: 12px; font-weight: 550; white-space: nowrap; cursor: pointer; transition: background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native); }
-.workbench-chip:hover { background: var(--bg-hover); color: var(--text); }
-.workbench-chip.is-open { background: var(--bg-selected); color: var(--text); }
-.workbench-chip > svg { flex-shrink: 0; }
-.workbench-changes-drawer { position: absolute; z-index: 20; top: 100%; right: 0; left: 0; max-height: 60vh; display: flex; flex-direction: column; overflow: hidden; border-bottom: 1px solid var(--separator); background: var(--surface); box-shadow: var(--shadow-md, 0 10px 24px rgb(0 0 0 / 28%)); }
-.workbench-changes-drawer .workbench-section-body { flex: 1; min-height: 0; }
-.workbench-changes-title { flex: 1; min-width: 0; padding: 9px 8px; color: var(--text-muted); font-size: 12px; font-weight: 550; }
-@container (max-width: 520px) { .workbench-chip-label { display: none; } }
 
 /* Tabs size to their file name, so more open files fit before the strip
    scrolls; the header no longer repeats the name anywhere else. */
 .right-panel-tab-strip .file-tab { min-width: 0; max-width: 168px; padding: 0 4px 0 9px; gap: 6px; }
 .right-panel-tab-strip .file-tab-close { width: 18px; height: 18px; flex-basis: 18px; }
 
-/* The panel's second row: changes and view controls on the left, the actions
-   that act on a file or on the tree pinned right. */
+/* The viewer's row: view controls on the left, file actions pinned right. */
 .file-panel-viewer-bar { position: relative; z-index: 1; display: flex; flex: 0 0 38px; height: 38px; align-items: center; gap: 4px; padding: 0 6px 0 4px; border-bottom: 1px solid var(--separator); background: var(--bg); }
 .file-panel-viewer-bar > .file-viewer-controls-slot { display: flex; flex: 1; min-width: 0; align-items: center; overflow-x: auto; scrollbar-width: none; }
 .file-panel-viewer-bar > .file-viewer-controls-slot::-webkit-scrollbar { display: none; }
 .file-panel-viewer-bar > .file-workbench-actions { display: flex; flex: 0 0 auto; margin-left: auto; align-items: center; gap: 2px; }
-/* The actions keep their width; the chip gives way first in a narrow panel. */
-.file-panel-viewer-bar > .workbench-changes { flex: 0 1 auto; min-width: 0; overflow: hidden; }
 .file-viewer-controls-slot > .file-viewer-controls { flex: 1; min-width: 0; }
 .file-viewer-mode-switch { height: 26px !important; }
 .file-viewer-action-slot { height: 26px; }
@@ -48,8 +22,6 @@
 .workbench-content p { margin: 8px 0; color: var(--text-muted); line-height: 1.55; overflow-wrap: anywhere; }
 .workbench-content > p:first-of-type { margin-top: 0; margin-bottom: 14px; font-size: 12px; }
 .workbench-content small { display: block; color: var(--text-dim); font-size: 11.5px; overflow-wrap: anywhere; }
-.workbench-content .workbench-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.workbench-content .workbench-empty { margin: 28px 0; padding: 0 16px; color: var(--text-dim); font-size: 12px; text-align: center; }
 .workbench-content pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 var(--font-mono); max-height: 420px; overflow: auto; padding: 10px 12px; border: 1px solid var(--separator); background: var(--bg-subtle); border-radius: var(--radius-md); }
 .workbench-content details { margin: 12px 0; }
 .workbench-content details:not(.workbench-overflow) > summary { display: flex; align-items: center; gap: 6px; list-style: none; cursor: pointer; user-select: none; color: var(--text-muted); font-size: 12px; font-weight: 550; transition: color var(--dur-fast) var(--ease-native); }
@@ -66,33 +38,18 @@
 .workbench-content input:not([type="checkbox"]):hover:not(:disabled), .workbench-content textarea:hover:not(:disabled), .workbench-content select:hover:not(:disabled) { border-color: color-mix(in srgb, var(--text-dim) 54%, var(--border)); }
 .workbench-content input:not([type="checkbox"]):focus, .workbench-content textarea:focus, .workbench-content select:focus { border-color: var(--accent-border); background: var(--surface); outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
 .workbench-content input[type="checkbox"] { margin-right: 6px; vertical-align: -1px; accent-color: var(--accent); }
-.workbench-content button, .workbench-content a, .workbench-files-body > button { display: inline-flex; align-items: center; gap: 5px; min-height: var(--control-height-sm); padding: 4px 10px; border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--text); background: var(--bg-hover); font-size: 12px; font-weight: 500; text-decoration: none; cursor: pointer; transition: background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native); }
+.workbench-content button, .workbench-content a { display: inline-flex; align-items: center; gap: 5px; min-height: var(--control-height-sm); padding: 4px 10px; border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--text); background: var(--bg-hover); font-size: 12px; font-weight: 500; text-decoration: none; cursor: pointer; transition: background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native); }
 .workbench-content button:disabled { opacity: .45; cursor: default; }
-.workbench-content button:hover:not(:disabled), .workbench-content a:hover, .workbench-files-body > button:hover { background: var(--bg-selected); }
+.workbench-content button:hover:not(:disabled), .workbench-content a:hover { background: var(--bg-selected); }
 .workbench-toolbar, .workbench-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
 .workbench-toolbar > * { margin-top: 0 !important; }
 .workbench-toolbar > input, .workbench-toolbar > select { flex: 1; width: auto !important; min-width: 90px; }
 .workbench-toolbar > label { display: inline-flex; align-items: center; margin: 0; white-space: nowrap; }
 .workbench-toolbar > [role="status"] { font-size: 11.5px; color: var(--text-dim); }
-.workbench-card { margin: 10px 0; padding: 14px 16px; border: 1px solid var(--separator); border-radius: var(--radius-md); background: var(--bg-panel); overflow-wrap: anywhere; }
-.workbench-card > strong { font-size: 13px; font-weight: 600; }
-.workbench-card > strong > .workbench-untitled { color: var(--text-dim); font-weight: 500; }
-.workbench-card .workbench-actions { margin-bottom: 0; padding-top: 4px; }
 .workbench-actions button, .workbench-actions a { background: transparent; }
 .workbench-actions > button:first-child { background: var(--bg-hover); }
 .workbench-actions button:hover:not(:disabled), .workbench-actions a:hover { background: var(--bg-hover); }
 .workbench-actions > button:first-child:hover:not(:disabled) { background: var(--bg-selected); }
-.workbench-status { float: right; margin-left: 8px; padding: 1px 7px; border-radius: var(--radius-pill); background: var(--accent-soft); color: var(--accent); font-size: 10.5px; font-weight: 600; white-space: nowrap; }
-.workbench-status.status-failed, .workbench-status.status-interrupted { background: color-mix(in srgb, var(--danger) 12%, transparent); }
-.workbench-status.status-completed, .workbench-status.status-stopped { background: var(--bg-hover); color: var(--text-muted); }
-.status-failed, .status-interrupted, .workbench-content [role="alert"], .workbench-error { color: var(--danger, #d65c5c); }
-.workbench-thumbnail { max-width: 160px; max-height: 120px; object-fit: contain; border-radius: var(--radius-md); margin-bottom: 8px; }
-.workbench-content .workbench-overflow { position: relative; margin: 0 0 0 auto; }
-.workbench-overflow > summary { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; list-style: none; border-radius: var(--radius-sm); color: var(--text-muted); font-size: 15px; letter-spacing: 1px; cursor: pointer; transition: background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native); }
-.workbench-overflow > summary::-webkit-details-marker { display: none; }
-.workbench-overflow > summary:hover, .workbench-overflow[open] > summary { background: var(--bg-hover); color: var(--text); }
-.workbench-overflow > div { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 170px; padding: 5px; }
-.workbench-overflow > div > button { display: flex; width: 100%; text-align: left; padding: 6px 10px; border: 0; background: transparent; }
 
 /* Git branch popover: anchored above the composer trigger, styled as a native popover. */
 .workbench-branch-control { position: relative; min-width: 0; }
@@ -109,93 +66,9 @@
 .chat-composer-controls .workbench-branch-control > button { display: block; max-width: 100%; height: 32px; padding: 5px 8px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); font-size: 12px; transition: background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native); }
 .chat-composer-controls .workbench-branch-control > button:hover, .chat-composer-controls .workbench-branch-control > button[aria-expanded="true"] { background: var(--bg-hover); color: var(--text); }
 
-/* Panel-level error strip */
-.workbench-error { display: flex; align-items: center; gap: 8px; margin: 8px 10px 0; padding: 6px 6px 6px 10px; border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent); border-radius: var(--radius-md); background: color-mix(in srgb, var(--danger) 9%, transparent); font-size: 12px; overflow-wrap: anywhere; }
-.workbench-error > button { flex-shrink: 0; width: 22px; height: 22px; margin-left: auto; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: inherit; font-size: 15px; cursor: pointer; }
-.workbench-error > button:hover { background: color-mix(in srgb, var(--danger) 14%, transparent); }
-
-/* Message-level entry points: hover-revealed, like the existing message actions. */
-.save-task-message { display: flex; width: fit-content; height: 22px; align-items: center; margin: -10px 0 12px auto; padding: 3px 8px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-dim); font-size: 11px; cursor: pointer; opacity: 0; transition: opacity var(--dur-base) var(--ease-native), color var(--dur-fast) var(--ease-native); }
-[data-conversation-turn]:hover > .save-task-message, .save-task-message:focus-visible { opacity: 1; }
-.pin-output-link { margin-left: 3px; padding: 0 2px; border: 0; background: transparent; color: var(--text-dim); font-size: 11px; line-height: 1; vertical-align: 1px; cursor: pointer; opacity: 0; transition: opacity var(--dur-base) var(--ease-native), color var(--dur-fast) var(--ease-native); }
-.file-link-with-pin:hover .pin-output-link, .pin-output-link:focus-visible { opacity: 1; }
-.save-task-message:hover, .pin-output-link:hover { color: var(--accent); }
-.workbench-sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0 !important; margin: -1px !important; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (max-width: 600px) {
   .chat-composer-controls .workbench-branch-control { max-width: 68px; }
   .chat-composer-controls .workbench-branch-control > button { padding-inline: 5px; }
   .chat-composer-controls .chat-project-context { max-width: 94px !important; }
   .workbench-content { padding: 14px 16px 16px; }
 }
-
-/* Collapsible sections inside Files: Changes and Pinned. Quiet by default —
-   a header row that reads as a label until it is opened. */
-.workbench-section { flex: 0 0 auto; border-bottom: 1px solid var(--separator); font-size: 13px; }
-.workbench-section-header { display: flex; align-items: center; gap: 8px; padding: 0 10px 0 4px; }
-.workbench-section-toggle { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; padding: 9px 8px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); font-size: 12px; font-weight: 550; text-align: left; cursor: pointer; transition: color var(--dur-fast) var(--ease-native), background var(--dur-fast) var(--ease-native); }
-.workbench-section-toggle:hover { background: var(--bg-hover); color: var(--text); }
-.workbench-section-toggle > svg { flex-shrink: 0; color: var(--text-dim); transition: transform var(--dur-base) var(--ease-native); }
-.workbench-section-toggle > svg.is-expanded { transform: rotate(90deg); }
-.workbench-section-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 6px; border-radius: var(--radius-sm); background: var(--bg-selected); color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
-.workbench-section-action { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 26px; height: 26px; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-dim); cursor: pointer; transition: color var(--dur-fast) var(--ease-native), background var(--dur-fast) var(--ease-native); }
-.workbench-section-action:hover { background: var(--bg-hover); color: var(--text); }
-.workbench-section-body { max-height: 46vh; overflow: auto; padding-bottom: 10px; scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
-.workbench-section-body > .review-message, .workbench-section-body > .workbench-empty { padding: 20px 16px; color: var(--text-dim); font-size: 12px; text-align: center; }
-.workbench-section-body.workbench-content { padding-top: 4px; }
-.workbench-section-filter { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; color: var(--text-dim); font-size: 11.5px; white-space: nowrap; cursor: pointer; }
-.workbench-section-toggle:focus-visible, .workbench-section-action:focus-visible { outline: none; box-shadow: inset 0 0 0 3px var(--focus-ring); }
-
-/* Review expands in place: filenames and their patches. */
-.review-file-heading:hover { background: var(--bg-hover); color: var(--text); }
-.review-counts { display: inline-flex; gap: 5px; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.review-added { color: var(--success); }
-.review-removed { color: var(--danger); }
-.review-file-heading { display: flex; align-items: center; gap: 9px; width: 100%; padding: 11px 20px; border: 0; background: transparent; text-align: left; color: var(--text); font-size: 12.5px; cursor: pointer; transition: background var(--dur-fast) var(--ease-native); }
-.review-file-heading > svg { flex-shrink: 0; }
-.review-file-heading > svg:first-child { color: var(--text-dim); transition: transform var(--dur-base) var(--ease-native); }
-.review-file-heading > svg.is-expanded:first-child { transform: rotate(90deg); }
-.review-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.review-file-body { margin: 0 12px 12px; border: 1px solid var(--separator); border-radius: var(--radius-md); overflow: hidden; background: var(--bg-panel); }
-.review-patch { overflow-x: auto; font: 12px/1.65 var(--font-mono); }
-.review-line { display: flex; min-width: 100%; width: max-content; white-space: pre; }
-.review-line.is-added { background: color-mix(in srgb, var(--success) 12%, transparent); }
-.review-line.is-removed { background: color-mix(in srgb, var(--danger) 12%, transparent); }
-.review-line-number { width: 48px; text-align: right; padding-right: 12px; color: var(--text-dim); user-select: none; flex-shrink: 0; }
-.review-line-sign { width: 20px; user-select: none; flex-shrink: 0; }
-.review-line.is-added .review-line-sign { color: var(--success); }
-.review-line.is-removed .review-line-sign { color: var(--danger); }
-.review-line code { padding-right: 16px; font: inherit; }
-.review-hunk { padding: 6px 16px; color: var(--text-dim); font-size: 11px; white-space: pre; }
-.review-message { padding: 12px 20px; color: var(--text-muted); font-size: 12px; }
-.review-message[role="alert"] { color: var(--danger); }
-/* Inset: both are full-bleed inside the section scroller. */
-.review-file-heading:focus-visible, .review-patch:focus-visible { outline: none; box-shadow: inset 0 0 0 3px var(--focus-ring); }
-
-/* Transcript search: result cards in the panel, a floating banner and an inline match in the chat. */
-.transcript-filters { display: flex; gap: 6px; margin-bottom: 14px; }
-.transcript-filters select { min-width: 0; flex: 1; margin-top: 0; text-overflow: ellipsis; }
-.workbench-content .transcript-hit { display: block; width: 100%; margin: 8px 0; padding: 12px 14px; border: 1px solid var(--separator); border-radius: var(--radius-md); background: var(--bg-panel); text-align: left; font-size: 12.5px; font-weight: 400; line-height: 1.5; transition: background var(--dur-fast) var(--ease-native), border-color var(--dur-fast) var(--ease-native); }
-.workbench-content .transcript-hit:hover:not(:disabled) { background: var(--surface); border-color: color-mix(in srgb, var(--text-dim) 40%, var(--separator)); }
-.transcript-hit strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.transcript-hit > span { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; color: var(--text-muted); }
-.transcript-hit mark, .transcript-exact-match mark { padding: 0 1px; color: inherit; background: color-mix(in srgb, var(--warning) 35%, transparent); border-radius: 3px; /* off-scale: a highlight on a text run, --radius-sm would pill it */ }
-.transcript-preview-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 16px 0; padding: 5px 6px 5px 12px; border: 1px solid var(--separator); border-radius: var(--radius-md); background: var(--bg-panel); color: var(--text-muted); font-size: 11.5px; font-weight: 550; box-shadow: var(--shadow-control); }
-.transcript-preview-banner button { min-height: 24px; padding: 3px 9px; border: 0; border-radius: var(--radius-sm); color: var(--text); background: var(--bg-hover); font-size: 11.5px; font-weight: 550; cursor: pointer; transition: background var(--dur-fast) var(--ease-native); }
-.transcript-preview-banner button:hover { background: var(--bg-selected); }
-.transcript-exact-match { margin: 8px 0 12px; padding: 10px 12px; border: 1px solid var(--separator); border-left: 2px solid var(--accent); border-radius: var(--radius-md); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg-panel); font: 12px/1.6 var(--font-mono); }
-
-/* New-task guide: one quiet line and up to three recent saved tasks, above the
-   composer on the empty new-task screen. Sized to read as a hint, not a menu. */
-.new-task-guide { margin: 0 0 14px; }
-.new-task-guide-hint { margin: 0; color: var(--text-dim); font-size: 12.5px; line-height: 1.5; text-align: center; }
-.new-task-guide-chips { display: flex; flex-wrap: wrap; align-items: stretch; justify-content: center; gap: 8px; margin-top: 12px; }
-.new-task-chip { display: flex; flex-direction: column; gap: 2px; min-width: 0; max-width: 240px; padding: 8px 12px; border: 1px solid var(--separator); border-radius: var(--radius-md); background: var(--bg-panel); color: var(--text); text-align: left; cursor: pointer; transition: background var(--dur-fast) var(--ease-native), border-color var(--dur-fast) var(--ease-native); }
-.new-task-chip:hover:not(:disabled) { background: var(--surface); border-color: color-mix(in srgb, var(--text-dim) 40%, var(--separator)); }
-.new-task-chip:disabled { opacity: 0.6; cursor: default; }
-/* One line each: a saved task's name and description are free text. */
-.new-task-chip > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 600; }
-.new-task-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); font-size: 11.5px; }
-.new-task-guide-all { align-self: center; padding: 6px 10px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); font-size: 11.5px; font-weight: 550; cursor: pointer; transition: background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native); }
-.new-task-guide-all:hover { background: var(--bg-hover); color: var(--text); }
-.new-task-guide-error { margin: 10px 0 0; color: var(--danger); font-size: 11.5px; text-align: center; }
-@media (max-width: 560px) { .new-task-guide-chips { flex-direction: column; } .new-task-chip { max-width: none; } }

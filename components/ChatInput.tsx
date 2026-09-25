@@ -42,7 +42,6 @@ interface Props {
   /** Show onboarding hints only on a fresh new-task composer. */
   showInputHints?: boolean;
   onSetupChange?: (setup: TaskSetup | undefined) => void;
-  onOpenTasks?: () => void;
   onBranchNavigate?: (cwd: string) => void;
   onAbort: () => void;
   onSteer?: (message: string, images?: AttachedImage[]) => void;

@@ -46,12 +46,3 @@ export async function prepareOutgoingMessage(draft: ChatDraft, fetchImpl: typeof
   combined.throwIfAborted();
   return { text, images: images.map(({ data, mimeType }) => ({ data, mimeType })) };
 }
-
-/** Templates contain reusable prompt text, not attached conversation snapshots. */
-export function taskPromptFromDraft(draft: ChatDraft): string {
-  const value = draft.value.replace(SESSION_REFERENCE_PATTERN, (token, quoted, bare) =>
-    quoted !== undefined || draft.references?.[bare] ? "" : token);
-  return splicePastedTexts(value, (draft.texts ?? []).map(p => ({ ...p, token: buildPasteToken(p.id, p.content) })))
-    .replace(/<referenced-session\b[^>]*>[\s\S]*?<\/referenced-session>/g, "")
-    .replace(/\[Pasted text \d+ · \d+ lines\]/g, "").trim();
-}

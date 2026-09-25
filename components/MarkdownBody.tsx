@@ -2,7 +2,6 @@
 
 import { createContext, memo, useContext, useMemo, type ComponentProps, type MouseEvent } from "react";
 import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
-import { PinOutputButton } from "./workbench/PinOutputButton";
 import { parsePdfPageFragment, resolveLocalFileHref, shouldOpenLocalFileInApp } from "@/lib/file-links";
 import { encodeFilePathForApi } from "@/lib/file-paths";
 import { markdownRehypePlugins, markdownRemarkPlugins, markdownUrlTransform, normalizeDisplayMath } from "@/lib/markdown";
@@ -109,9 +108,9 @@ function buildComponents(
 
       return (
         <MarkdownLinkContext.Provider value={true}>
-          <span className="file-link-with-pin"><a href={href} {...props} onClick={handleClick}>
+          <a href={href} {...props} onClick={handleClick}>
             {children}
-          </a><PinOutputButton path={filePath} /></span>
+          </a>
         </MarkdownLinkContext.Provider>
       );
     },

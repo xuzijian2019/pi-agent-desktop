@@ -19,7 +19,9 @@ const source = readFileSync(new URL("./AppShell.tsx", import.meta.url), "utf8");
  * The third pins the 2026-09 full-height sidebar restructure: the sidebar is
  * a direct child of the outer row and the topbar moved into the main column
  * that follows it, so the topbar starts at the center column and the sidebar
- * runs the full window height (no blank strip above the sidebar).
+ * runs the full window height (no blank strip above the sidebar). Since
+ * 2026-09-25 the right panel is likewise an outer-row child: its header sits
+ * beside the topbar at the top of the window.
  */
 test("chat wrapper stays inside the center column (no 50/50 topbar split)", () => {
   // The column must NOT close between the topbar and the chat content block:
@@ -40,11 +42,13 @@ test("topbar dropdowns reserve sidebar and split file-panel space", () => {
   assert.match(source, /reserveRight=\{rightPanelOpen && !isMobile && wideSplitLayout \? rightPanelWidth : 0\}/);
 });
 
-test("right panel block is a row child (row closes after the panel, not before)", () => {
-  const rowOpen = source.indexOf('display: "flex", flex: 1, minHeight: 0, overflow: "hidden"');
-  assert.ok(rowOpen !== -1, "row container not found");
+test("right panel block is an outer-row child after the main column (full height)", () => {
+  const mainColumn = source.indexOf("Main column: everything right of the sidebar");
+  const toggle = source.indexOf("right-panel-toggle-button");
   const panelIdx = source.indexOf("right-panel-container");
-  assert.ok(panelIdx > rowOpen, "right panel JSX must come after the row opens");
+  assert.ok(mainColumn !== -1 && toggle > mainColumn && panelIdx > toggle, "panel block must follow the main column");
+  // Main column (inner row + column) closes right before the panel block.
+  assert.match(source, /\n        <\/div>\n      <\/div>\n\n      <button\n        type="button"\n        className=\{`right-panel-toggle-button/);
 });
 
 test("topbar sits in the main column after the sidebar (sidebar runs full height)", () => {
@@ -53,12 +57,15 @@ test("topbar sits in the main column after the sidebar (sidebar runs full height
   const topbar = source.indexOf("Top bar with sidebar toggle");
   assert.ok(topbar > sidebarHandle, "topbar must render after the sidebar, inside the main column");
 
-  // The tail must close the file-tree split, panel, inner row, main column,
-  // outer row, and shell. The fork's always-on file tree adds a wrapper, so
-  // the whitespace differs from upstream's five-close sequence; dropping a
-  // close still fails this match.
+  // The tail closes the file-tree split, panel, outer row, and shell.
   const panelIdx = source.indexOf("right-panel-container");
   const tail = source.slice(panelIdx);
-  const nesting = tail.indexOf("        </div>\n        </div>\n      </div>\n        </div>\n      </div>\n      </div>\n    </div>\n    {settingsSection");
-  assert.ok(nesting !== -1, "panel close must be followed by inner row, main column, outer row, then shell close");
+  const nesting = tail.indexOf("        </div>\n      </div>\n      </div>\n    </div>\n    {settingsSection");
+  assert.ok(nesting !== -1, "panel close must be followed by outer row, then shell close");
+});
+
+test("window controls follow the top-right corner into the open panel header", () => {
+  assert.match(source, /const panelOwnsTopRight = rightPanelOpen && !isMobile;/);
+  assert.match(source, /\{!panelOwnsTopRight && <WindowControls \/>\}/);
+  assert.match(source, /\{panelOwnsTopRight && <WindowControls \/>\}/);
 });
