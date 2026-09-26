@@ -45,6 +45,13 @@ test("keeps one settings surface per concern — no desktop tab duplicating Gene
   assert.match(panelSource, /PRODUCT_NAME/);
 });
 
+test("General keeps the web opt-in that lib/desktop-notify.ts gates browser notifications on", () => {
+  // It lived in the deleted AppSettings modal; without a writer the pref is
+  // stuck at false and a browser tab can never notify on completion.
+  assert.match(panelSource, /setPrefBool\(APP_PREF_KEYS\.browserNotifications, enabled\)/);
+  assert.match(panelSource, /\{!desktop && \(\s*<section className="settings-general-section">\s*<h3 className="settings-general-heading">\{t\("settings\.browserNotifications"\)\}/);
+});
+
 test("restores the settings section and each list detail selection", async () => {
   assert.match(panelSource, /setLastSettingsSection\(initialSection\)/);
   assert.match(panelSource, /setLastSettingsSection\(nextSection\)/);

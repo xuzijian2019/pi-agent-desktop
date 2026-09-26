@@ -52,10 +52,25 @@ release-component-pins.json.
 
 - `SessionSidebar.tsx` still carries unused explorer/search state that
   `SessionSidebar.test.mjs` pins as source markers. Lint reports those as unused.
-- Missing i18n key `files.choosePreview` (console warning in e2e; tests pass).
 
 ## Verification
 
 tsc clean; lint 0 errors (39 warnings, was 38); unit 1,626 passed.
 Playwright full suite: 38 passed, 1 failed (slash-menu Theme: Dark). That test
 was retargeted and the slash-menu file then passed 6/6.
+
+## Post-merge review fixes
+
+Follow-up commit on top of 2e956fc restores fork behaviour the merge dropped:
+- `chat.loadFailed` / `files.choosePreview` locale keys (en, zh-CN, zh-TW) —
+  upstream's 825c7f1 pruned them as unused upstream; the fork still renders both.
+- `.file-tab-add` styling and inactive-tab label weight in `app/native-theme.css`
+  — upstream moved TabBar's inline styles into CSS, but the CSS side was
+  resolved `--ours`.
+- Web-only "Browser notifications" switch in General (lived in the deleted
+  AppSettings modal; `lib/desktop-notify.ts` gates on its pref). Pinned in
+  `components/SettingsPanel.test.mjs`.
+
+Open (inherited from upstream, not fixed): Enter-to-search in the sidebar never
+mounts `SessionSearch` when the title filter matches nothing
+(`allProjects.length === 0` branch), so content-only matches are unreachable.

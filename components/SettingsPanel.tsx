@@ -95,6 +95,23 @@ function GeneralSettings({
   const [customCssBusy, setCustomCssBusy] = useState(false);
   const [customCssError, setCustomCssError] = useState<string | null>(null);
   const [autoTitle, setAutoTitle] = useState(() => getPrefBool(APP_PREF_KEYS.autoTitle, true));
+  // Web-only: the desktop shell sends native notifications on its own
+  // (lib/desktop-notify.ts); a browser tab only notifies once opted in here.
+  const [browserNotifications, setBrowserNotifications] = useState(() => getPrefBool(APP_PREF_KEYS.browserNotifications, false));
+  const [notificationPermission, setNotificationPermission] = useState<string | null>(null);
+
+  const toggleBrowserNotifications = async (enabled: boolean) => {
+    if (enabled) {
+      const permission = typeof Notification === "undefined" ? "unsupported" : await Notification.requestPermission();
+      if (permission !== "granted") {
+        setNotificationPermission(permission);
+        return;
+      }
+    }
+    setNotificationPermission(null);
+    setBrowserNotifications(enabled);
+    setPrefBool(APP_PREF_KEYS.browserNotifications, enabled);
+  };
 
   useEffect(() => {
     setThinkingExpanded(isThinkingExpandedByDefault());
@@ -387,6 +404,26 @@ function GeneralSettings({
         </div>
 
         <div className="settings-general-col">
+          {!desktop && (
+            <section className="settings-general-section">
+              <h3 className="settings-general-heading">{t("settings.browserNotifications")}</h3>
+              <p className="settings-general-description">{t("settings.browserNotificationsDescription")}</p>
+              <div className="settings-shell-option">
+                <span>{t("settings.browserNotifications")}</span>
+                <ConfigSwitch
+                  checked={browserNotifications}
+                  label={t("settings.browserNotifications")}
+                  onChange={(enabled) => void toggleBrowserNotifications(enabled)}
+                />
+              </div>
+              {notificationPermission && (
+                <p role="status" className="settings-general-error">
+                  {t("settings.browserNotificationsDenied", { permission: notificationPermission })}
+                </p>
+              )}
+            </section>
+          )}
+
           <section className="settings-general-section">
             <h3 className="settings-general-heading">{t("settings.pushPermission")}</h3>
             <p className="settings-general-description">{t("settings.pushPermissionDescription")}</p>
