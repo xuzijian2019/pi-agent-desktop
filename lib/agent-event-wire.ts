@@ -1,4 +1,5 @@
 import type { JsonAgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import { slimToolExecutionResult, slimToolResultMessage } from "./tool-result-details";
 
 export interface AgentEventLike {
   type: string;
@@ -96,13 +97,25 @@ export function toClientAgentEvent(
     } as ClientMessageUpdateEvent;
   }
 
+  // Tool-result details are projected to the fields the UI renders; browser
+  // extensions persist multi-megabyte DOM outlines there (lib/tool-result-details.ts).
   if (event.type === "tool_execution_update") {
     return {
       type: "tool_execution_update",
       toolCallId: event.toolCallId,
       toolName: event.toolName,
-      partialResult: event.partialResult,
+      partialResult: slimToolExecutionResult(event.partialResult),
     };
+  }
+
+  if (event.type === "tool_execution_end" && isObject(event.result)) {
+    const result = slimToolExecutionResult(event.result);
+    return result === event.result ? event : { ...event, result };
+  }
+
+  if ((event.type === "message_start" || event.type === "message_end") && isObject(event.message)) {
+    const message = slimToolResultMessage(event.message);
+    return message === event.message ? event : { ...event, message };
   }
 
   if (event.type === "agent_end") return { type: "agent_end" };

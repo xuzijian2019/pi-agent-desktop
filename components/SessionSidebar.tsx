@@ -21,6 +21,7 @@ import { revealItemInDirNative } from "@/lib/desktop-native";
 import { isTauriDesktop } from "@/lib/desktop-updater";
 import { getDesktopPlatform, type DesktopPlatform } from "@/lib/desktop-window";
 import { useWindowDrag } from "./desktop";
+import { isImeComposing } from "@/lib/ime";
 import { SessionSearch } from "./SessionSearch";
 import { prefetchSessionData, invalidateSessionData } from "@/lib/session-data-cache";
 import { resolveNewSessionCwd, type SidebarProjectActions } from "@/lib/missing-folder";
@@ -45,12 +46,7 @@ interface Props {
     projectRoot?: string | null,
     projectKey?: string | null,
   ) => void;
-  onOpenFile?: (filePath: string, fileName: string, options?: { sourceSessionId?: string | null; modeHint?: "diff" }) => void;
   onOpenTerminal?: (cwd: string) => void;
-  explorerRefreshKey?: number;
-  onExplorerRefresh?: () => void;
-  onAtMention?: (relativePath: string, isDir: boolean) => void;
-  onAtMentions?: (relativePaths: string[]) => void;
   /** Fired when a session that is not currently selected finishes running.
    *  Lets the app play a cross-workspace completion tone. */
   onBackgroundTaskDone?: () => void;
@@ -120,19 +116,6 @@ interface SessionTreeNode {
 const MAX_VISIBLE_PROJECT_SESSIONS = 5;
 
 const SESSION_LIST_ITEM_HEIGHT = 54;
-
-/** Virtualized session list: indices of the rows to mount. */
-export function getSessionListIndices(count: number, scrollTop: number, viewportHeight: number, focusedIndex = -1): number[] {
-  const overscan = 8;
-  const visibleCount = Math.ceil((viewportHeight || 600) / SESSION_LIST_ITEM_HEIGHT) + overscan * 2;
-  const start = Math.max(0, Math.min(Math.floor(scrollTop / SESSION_LIST_ITEM_HEIGHT) - overscan, count - visibleCount));
-  const end = Math.min(count, start + visibleCount);
-  const indices = Array.from({ length: end - start }, (_, offset) => start + offset);
-  // Keep a focused row mounted so scrolling cannot discard an inline rename.
-  if (focusedIndex >= 0 && focusedIndex < start) indices.unshift(focusedIndex);
-  if (focusedIndex >= end && focusedIndex < count) indices.push(focusedIndex);
-  return indices;
-}
 
 function treeContainsSession(node: SessionTreeNode, sessionId: string): boolean {
   return node.session.id === sessionId || node.children.some((child) => treeContainsSession(child, sessionId));
@@ -312,48 +295,23 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const sseAuthoritativeRef = useRef(false);
   const detailsHydrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Virtualized session list: only the visible window of rows is mounted.
+  // Overlay-style scrollbar: `is-scrolling` shows the thumb only while the
+  // project tree is actually scrolling.
   const listScrollHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listScrollRef = useRef<HTMLDivElement>(null);
-  const [listViewportH, setListViewportH] = useState(0);
-  const [listScrollTop, setListScrollTop] = useState(0);
-  const [focusedSessionId, setFocusedSessionId] = useState<string | null>(null);
-  const listScrollRafRef = useRef<number | null>(null);
-  const listScrollTopRef = useRef(0);
-  const renderedListScrollTopRef = useRef(0);
   const handleListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
     hideProjectPathHint();
     el.classList.add("is-scrolling");
     if (listScrollHideTimerRef.current) clearTimeout(listScrollHideTimerRef.current);
     listScrollHideTimerRef.current = setTimeout(() => {
-      const el = listScrollRef.current;
-      if (el) el.classList.remove("is-scrolling");
+      listScrollRef.current?.classList.remove("is-scrolling");
       listScrollHideTimerRef.current = null;
     }, 800);
-    listScrollTopRef.current = e.currentTarget.scrollTop;
-    if (listScrollRafRef.current != null) return;
-    listScrollRafRef.current = requestAnimationFrame(() => {
-      listScrollRafRef.current = null;
-      const nextTop = Math.floor(listScrollTopRef.current / SESSION_LIST_ITEM_HEIGHT) * SESSION_LIST_ITEM_HEIGHT;
-      if (renderedListScrollTopRef.current === nextTop) return;
-      renderedListScrollTopRef.current = nextTop;
-      setListScrollTop(nextTop);
-    });
   }, [hideProjectPathHint]);
-  useLayoutEffect(() => {
-    const el = listScrollRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) setListViewportH(entry.contentRect.height);
-    });
-    ro.observe(el);
-    setListViewportH(el.clientHeight);
-    listScrollTopRef.current = el.scrollTop;
-    renderedListScrollTopRef.current = Math.floor(el.scrollTop / SESSION_LIST_ITEM_HEIGHT) * SESSION_LIST_ITEM_HEIGHT;
-    setListScrollTop(renderedListScrollTopRef.current);
-    return () => ro.disconnect();
-  }, [sessionSearchActive]);
+  useEffect(() => () => {
+    if (listScrollHideTimerRef.current) clearTimeout(listScrollHideTimerRef.current);
+  }, []);
 
   const loadSessions = useCallback(async (showLoading = false, force = false, summary = false) => {
     const loadId = ++sessionLoadIdRef.current;
@@ -917,7 +875,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const previous = document.activeElement as HTMLElement | null;
     document.querySelector<HTMLElement>(".project-picker-modal-shell input, .project-picker-modal-shell button")?.focus();
     const dismiss = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+      if (event.key !== "Escape" || event.defaultPrevented || isImeComposing(event)) return;
       event.preventDefault();
       setProjectPickerOpen(false);
     };
@@ -1210,13 +1168,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     );
   };
 
-  const virtualIndices = getSessionListIndices(
-    sessionFamilies.length,
-    listScrollTop,
-    listViewportH,
-    sessionFamilies.findIndex((family) => family.root.id === focusedSessionId),
-  );
-
   return (
     <div className="session-sidebar">
       {/* Header */}
@@ -1274,7 +1225,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             placeholder={t("sidebar.searchSessions")}
             onChange={(event) => setSessionSearchQuery(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Escape") {
+              if (event.key === "Escape" && !isImeComposing(event)) {
                 event.stopPropagation();
                 setSessionSearchQuery("");
               }
@@ -1342,7 +1293,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                         value={wtFilter}
                         onChange={(e) => setWtFilter(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === "Escape") {
+                          if (e.key === "Escape" && !isImeComposing(e)) {
                             setWtFilter("");
                             setWtDropdownOpen(false);
                           }
@@ -1467,11 +1418,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                           setWtError(null);
                         }}
                         onKeyDown={(e) => {
+                          if (isImeComposing(e)) return;
                           if (e.key === "Enter") {
                             e.preventDefault();
                             void handleCreateWorktree();
                           }
-                          if (e.key === "Escape") {
+                          if (e.key === "Escape" && !isImeComposing(e)) {
                             setWtNewOpen(false);
                             setWtNewBranch("");
                             setWtError(null);
@@ -1562,12 +1514,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               // Committing an IME candidate must not fire the search.
-              if (e.nativeEvent.isComposing || !sessionQuery.trim()) return;
+              if (isImeComposing(e) || !sessionQuery.trim()) return;
               e.preventDefault();
               setContentSearch(true);
               return;
             }
-            if (e.key === "Escape") {
+            if (e.key === "Escape" && !isImeComposing(e)) {
               e.stopPropagation();
               // Content results first, then the query, then the field itself.
               if (contentSearch) setContentSearch(false);
@@ -1606,6 +1558,21 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         <div className="sidebar-project-tree-empty">
           {loading
             ? t("sidebar.loading")
+            : error
+              ? (
+                // A failed list load must not read as "no projects": that
+                // offers "Add project" as if the user's sessions were gone.
+                <div className="sidebar-empty-action" role="alert">
+                  <span className="sidebar-empty-text" title={error}>{t("sidebar.loadFailed")}</span>
+                  <button
+                    type="button"
+                    className="sidebar-empty-add"
+                    onClick={() => void loadSessions(true, true)}
+                  >
+                    <span>{t("common.retry")}</span>
+                  </button>
+                </div>
+              )
             : trimmedSessionQuery
               ? t("sidebar.noMatchingSessions")
               : (
@@ -1634,7 +1601,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           selectedSessionId={selectedSessionId}
           onSelectSession={handleSelectSessionFromList}
         >
-        <div className="sidebar-project-tree" onScroll={handleListScroll}>
+        <div ref={listScrollRef} className="sidebar-project-tree" onScroll={handleListScroll}>
           <div className="sidebar-project-tree-header">
             <span className="sidebar-project-tree-title">{t("sidebar.projects")}</span>
             <div className="sidebar-project-tree-tools">
@@ -1712,7 +1679,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         document.body,
       )}
       {projectPickerOpen && createPortal(
-        <div className="project-picker-modal-overlay" role="dialog" aria-modal="true" onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setProjectPickerOpen(false); } }} onClick={(e) => { if (e.target === e.currentTarget) setProjectPickerOpen(false); }}>
+        <div className="project-picker-modal-overlay" role="dialog" aria-modal="true" onKeyDown={(e) => { if (e.key === "Escape" && !isImeComposing(e)) { e.preventDefault(); e.stopPropagation(); setProjectPickerOpen(false); } }} onClick={(e) => { if (e.target === e.currentTarget) setProjectPickerOpen(false); }}>
           <div className="project-picker-modal-shell" onClick={(e) => e.stopPropagation()}>
             <div className="project-picker-modal-title">{t("sidebar.addProject")}</div>
             <ProjectPicker
@@ -2038,7 +2005,7 @@ function SessionItem({
       if (menuButtonRef.current?.contains(target)) return;
       setMenuOpen(false);
     };
-    const onKeyDown = (ev: KeyboardEvent) => { if (ev.key === "Escape") setMenuOpen(false); };
+    const onKeyDown = (ev: KeyboardEvent) => { if (ev.key === "Escape" && !isImeComposing(ev)) setMenuOpen(false); };
     const onScrollOrResize = () => setMenuOpen(false);
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -2130,8 +2097,9 @@ function SessionItem({
           onChange={(e) => setRenameValue(e.target.value)}
           onBlur={commitRename}
           onKeyDown={(e) => {
+            if (isImeComposing(e)) return;
             if (e.key === "Enter") commitRename();
-            if (e.key === "Escape") setRenaming(false);
+            if (e.key === "Escape" && !isImeComposing(e)) setRenaming(false);
           }}
           autoFocus
           className="sidebar-session-rename-input"

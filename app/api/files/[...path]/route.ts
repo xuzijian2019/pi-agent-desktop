@@ -419,10 +419,14 @@ function getContentDisposition(filePath: string, asDownload = false): string {
 }
 
 function getServeMime(filePath: string): string {
+  // SERVE_EXT_TO_MIME is what lets an HTML preview render and load its own
+  // stylesheets; a merge once dropped it and every HTML file came back as
+  // application/octet-stream.
   return getImageMime(filePath)
     || getAudioMime(filePath)
     || getDocumentMime(filePath)
     || getVideoMime(filePath)
+    || SERVE_EXT_TO_MIME[getFileExt(filePath)]
     || "application/octet-stream";
 }
 
@@ -643,6 +647,9 @@ export async function GET(
     if (type === "serve") {
       if (!stat?.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 400 });
+      }
+      if (/\.html?$/i.test(filePath) && stat.size > HTML_PREVIEW_MAX_BYTES) {
+        return NextResponse.json({ error: "HTML file too large to preview (>10MB)" }, { status: 413 });
       }
       return stat ? streamFile(filePath, stat, getServeMime(filePath), request.headers.get("range"), false, { "Content-Security-Policy": HTML_PREVIEW_CSP }) : NextResponse.json({ error: "Not found" }, { status: 404 });
     }

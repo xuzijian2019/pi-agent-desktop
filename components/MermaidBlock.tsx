@@ -5,6 +5,7 @@ import { SyntaxHighlighter, vs, vscDarkPlus } from "@/lib/syntax-highlighting";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
 import { copyText } from "@/lib/clipboard";
+import { isImeComposing } from "@/lib/ime";
 
 interface MermaidBlockProps {
   code: string;
@@ -172,7 +173,7 @@ function MermaidZoomDialog({ svg, onClose }: { svg: string; onClose: () => void 
         onClose();
       }}
       onKeyDown={(event) => {
-        if (event.key !== "Escape") return;
+        if (event.key !== "Escape" || isImeComposing(event)) return;
         event.preventDefault();
         onClose();
       }}

@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/hooks/useI18n";
+import { isImeComposing } from "@/lib/ime";
 
 interface DirectoryEntry {
   name: string;
@@ -133,7 +134,7 @@ export function DirectoryPicker({ onCancel, onSelect, onCreate, initialPath, roo
       }}
       onKeyDown={(event) => {
         event.stopPropagation();
-        if (event.key === "Escape" && !busy) onCancel();
+        if (event.key === "Escape" && !busy && !isImeComposing(event)) onCancel();
       }}
       style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.35)" }}
     >

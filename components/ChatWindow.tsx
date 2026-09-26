@@ -2,10 +2,10 @@
 import { registerAbortHandler } from "@/hooks/useKeyboardShortcuts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, BlockingExtensionUiRequest, ExtensionUiRequest, SessionInfo, SessionTreeNode, ToolResultMessage, UserMessage, CustomMessage } from "@/lib/types";
+import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, BlockingExtensionUiRequest, ExtensionUiRequest, SessionInfo, SessionTreeNode, ToolResultMessage, UserMessage } from "@/lib/types";
 import { normalizeCustomPanelLines } from "@/lib/ansi";
 import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
-import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantBlocks, isAssistantTruncated, splitFinalAssistantBlocks } from "@/lib/message-display";
+import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantBlocks, isAssistantTruncated, isMessageGroupAnchor, splitFinalAssistantBlocks } from "@/lib/message-display";
 import { extractTurnWrittenFiles, type WrittenFile } from "@/lib/turn-written-files";
 import { buildQuotedSelection } from "@/lib/quoted-selection";
 import { MessageView } from "./MessageView";
@@ -31,6 +31,7 @@ import type { ToolEntry } from "@/lib/tool-presets";
 import { findChatScrollAnchor, type ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { captureScrollDistance, getVisibleRenderWindow, isScrollAtTail, restoreScrollTop, VISIBLE_PAGE_SIZE } from "@/lib/chat-lazy-load";
 import { sessionVisibleCounts } from "@/lib/scroll-memory";
+import { isImeComposing } from "@/lib/ime";
 
 interface Props {
   onSideModeChange?: (open: boolean) => void;
@@ -152,19 +153,6 @@ function hasDisplayableProcessMessage(message: AgentMessage): boolean {
   return message.role === "custom";
 }
 
-// A user message normally anchors a turn (user prompt → process → final
-// answer), and the process messages in between get folded into a collapsed
-// ProcessDetailsGroup. When compaction fires mid-turn, pi drops the original
-// user prompt and inserts a compaction summary (role "custom", customType
-// "compaction") in its place; the agent then keeps producing tool calls and a
-// final answer with no user message left to anchor them. Treat a compaction
-// summary as an anchor too, otherwise every post-compaction message renders
-// standalone and never collapses.
-function isGroupAnchor(message: AgentMessage): boolean {
-  if (message.role === "user") return true;
-  return message.role === "custom" && (message as CustomMessage).customType === "compaction";
-}
-
 function withAssistantBlocks(
   message: AssistantMessage,
   content: AssistantContentBlock[],
@@ -178,7 +166,9 @@ function withAssistantBlocks(
 interface FinalSplitEntry {
   processBlocks: AssistantContentBlock[];
   answerBlocks: AssistantContentBlock[];
-  processMessage: AssistantMessage | null;
+  /** The final assistant entry's process prefix, as rendered inside ProcessDetailsGroup. */
+  processMessage: AssistantMessage;
+  /** The final answer bubble; also kept for error/truncation notices without answer text. */
   answerMessage: AssistantMessage | null;
 }
 
@@ -189,25 +179,53 @@ interface FinalSplitEntry {
 // streaming delta.
 const finalSplitCache = new WeakMap<AssistantMessage, FinalSplitEntry>();
 
-function getFinalSplit(message: AssistantMessage): FinalSplitEntry {
+export function getFinalSplit(message: AssistantMessage): FinalSplitEntry {
   let cached = finalSplitCache.get(message);
   if (!cached) {
     const { processBlocks, answerBlocks } = splitFinalAssistantBlocks(message);
+    const answerMessage = answerBlocks.length > 0 || getAssistantErrorMessage(message) || isAssistantTruncated(message)
+      ? withAssistantBlocks(message, answerBlocks)
+      : null;
+    const processEnd = message.content.indexOf(answerBlocks[0]);
     cached = {
       processBlocks,
       answerBlocks,
-      processMessage: processBlocks.length > 0
-        ? withAssistantBlocks(message, processBlocks, { omitUsage: true })
-        : null,
-      // Errors and output-limit truncation surface in the answer slot even
-      // when the model produced no answer text.
-      answerMessage: answerBlocks.length > 0 || getAssistantErrorMessage(message) || isAssistantTruncated(message)
-        ? withAssistantBlocks(message, answerBlocks)
-        : null,
+      // Keep the original prefix so deferred thinking retains its stored block indices.
+      processMessage: withAssistantBlocks(message, message.content.slice(0, processEnd < 0 ? undefined : processEnd), { omitUsage: Boolean(answerMessage) }),
+      answerMessage,
     };
     finalSplitCache.set(message, cached);
   }
   return cached;
+}
+
+interface TurnWrittenFilesEntry {
+  turnMessages: AgentMessage[];
+  toolResults: Map<string, ToolResultMessage>;
+  cwd: string | undefined;
+  files: WrittenFile[];
+}
+
+// Keyed by the turn's final assistant message; reused while the turn's
+// messages, tool results and cwd are unchanged, and while the derived list is
+// equal, so MessageView's writtenFiles identity check holds across renders.
+const turnWrittenFilesCache = new WeakMap<AssistantMessage, TurnWrittenFilesEntry>();
+
+export function getTurnWrittenFiles(finalAssistant: AssistantMessage, turnMessages: AgentMessage[], toolResults: Map<string, ToolResultMessage>, cwd: string | undefined): WrittenFile[] {
+  const cached = turnWrittenFilesCache.get(finalAssistant);
+  if (cached && cached.toolResults === toolResults && cached.cwd === cwd
+    && cached.turnMessages.length === turnMessages.length
+    && cached.turnMessages.every((message, i) => message === turnMessages[i])) {
+    return cached.files;
+  }
+  const turnContent: AssistantContentBlock[] = [];
+  for (const message of turnMessages) {
+    if (message.role === "assistant") turnContent.push(...((message as AssistantMessage).content ?? []));
+  }
+  let files = extractTurnWrittenFiles(turnContent, toolResults, cwd);
+  if (cached && JSON.stringify(cached.files) === JSON.stringify(files)) files = cached.files;
+  turnWrittenFilesCache.set(finalAssistant, { turnMessages, toolResults, cwd, files });
+  return files;
 }
 
 function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = false, reveal = false, children, t }: { messageCount: number; toolCallCount: number; defaultExpanded?: boolean; reveal?: boolean; children: ReactNode; t: (key: string, params?: Record<string, string | number>) => string }) {
@@ -501,7 +519,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       if (!quoteInputOpen && !quotePopoverRef.current?.contains(event.target as Node)) closeQuotedSelection();
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.isComposing) return;
+      if (event.key !== "Escape" || isImeComposing(event)) return;
       event.preventDefault();
       event.stopPropagation();
       if (!quoteSubmitting) closeQuotedSelection();
@@ -976,58 +994,54 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   const isEmptyNew = isNew && !loading && !error && messages.length === 0 && !streamState.isStreaming && !sessionBusy;
   useScrollbarVisibility(scrollContainerRef, Boolean(session?.id) || !isEmptyNew);
 
+  const scrollbarGutterProbeRef = useRef<HTMLDivElement | null>(null);
+  const [scrollbarGutter, setScrollbarGutter] = useState(0);
+  useLayoutEffect(() => {
+    const probe = scrollbarGutterProbeRef.current;
+    if (!probe) return;
+    const measure = () => {
+      const next = Math.max(0, probe.offsetWidth - probe.clientWidth);
+      setScrollbarGutter((previous) => (previous === next ? previous : next));
+    };
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(probe);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+
   const hasStreamingContent = Boolean(streamState.streamingMessage?.content.length);
   const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
   const bottomComposerRef = useRef<HTMLDivElement | null>(null);
-  const [bottomComposerHeight, setBottomComposerHeight] = useState(0);
-  const bottomComposerHeightRef = useRef(0);
-  const bottomComposerScrollFrameRef = useRef<number | null>(null);
-
+  const chatContentRegionRef = useRef<HTMLDivElement | null>(null);
+  const composerOverlaySpacerRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
     const composer = bottomComposerRef.current;
-    if (!composer) {
-      bottomComposerHeightRef.current = 0;
-      setBottomComposerHeight(0);
-      return;
-    }
-
-    const updateBottomComposerHeight = () => {
-      const nextHeight = Math.ceil(composer.getBoundingClientRect().height);
-      if (bottomComposerHeightRef.current === nextHeight) return;
-
-      const previousHeight = bottomComposerHeightRef.current;
-      bottomComposerHeightRef.current = nextHeight;
-      setBottomComposerHeight(nextHeight);
-
-      if (bottomComposerScrollFrameRef.current !== null) {
-        cancelAnimationFrame(bottomComposerScrollFrameRef.current);
-      }
-      bottomComposerScrollFrameRef.current = requestAnimationFrame(() => {
-        bottomComposerScrollFrameRef.current = null;
-        const currentContainer = scrollContainerRef.current;
-        const distanceFromBottom = currentContainer
-          ? currentContainer.scrollHeight - currentContainer.clientHeight - currentContainer.scrollTop
-          : Number.POSITIVE_INFINITY;
-        // Preserve a tail-pinned view while avoiding a jump for history readers.
-        if (distanceFromBottom <= Math.abs(nextHeight - previousHeight) + 1) {
-          scrollToBottom("auto");
-        }
-      });
+    const spacer = composerOverlaySpacerRef.current;
+    const region = chatContentRegionRef.current;
+    const container = scrollContainerRef.current;
+    if (!composer || !spacer || !container) return;
+    let applied = -1;
+    const apply = () => {
+      const next = Math.ceil(composer.getBoundingClientRect().height);
+      if (next === applied) return;
+      const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= 2;
+      applied = next;
+      spacer.style.height = `${next}px`;
+      region?.style.setProperty("--chat-composer-inset", `${next}px`);
+      if (atBottom) container.scrollTop = container.scrollHeight;
     };
-    updateBottomComposerHeight();
-
-    const observer = typeof ResizeObserver === "undefined"
-      ? null
-      : new ResizeObserver(updateBottomComposerHeight);
+    apply();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(apply);
     observer?.observe(composer);
     return () => {
       observer?.disconnect();
-      if (bottomComposerScrollFrameRef.current !== null) {
-        cancelAnimationFrame(bottomComposerScrollFrameRef.current);
-        bottomComposerScrollFrameRef.current = null;
-      }
+      region?.style.removeProperty("--chat-composer-inset");
     };
-  }, [error, isEmptyNew, loading, scrollContainerRef, scrollToBottom]);
+  }, [error, isEmptyNew, loading, scrollContainerRef]);
 
   // Follow actual layout changes, including markdown and tool output that grows
   // after the streaming event. The scroll handler only clears this on user input.
@@ -1066,7 +1080,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     // compaction summary when compaction has replaced it mid-turn.
     let lastAnchorIdx = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (isGroupAnchor(messages[i])) { lastAnchorIdx = i; break; }
+      if (isMessageGroupAnchor(messages[i])) { lastAnchorIdx = i; break; }
     }
 
     const turnIndexByMessageIndex = new Map<number, number>();
@@ -1128,7 +1142,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     const rendered: ReactNode[] = [];
     for (let idx = 0; idx < messages.length;) {
       const msg = messages[idx];
-      if (!isGroupAnchor(msg)) {
+      if (!isMessageGroupAnchor(msg)) {
         rendered.push(renderMessage(idx));
         idx += 1;
         continue;
@@ -1136,7 +1150,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
       const userIdx = idx;
       let endIdx = userIdx + 1;
-      while (endIdx < messages.length && !isGroupAnchor(messages[endIdx])) endIdx += 1;
+      while (endIdx < messages.length && !isMessageGroupAnchor(messages[endIdx])) endIdx += 1;
 
       const finalAssistantIdx = findFinalAssistantIndex(messages, userIdx, endIdx);
 
@@ -1166,7 +1180,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       const visibleProcessIndices = processIndices.filter((processIdx) => hasDisplayableProcessMessage(messages[processIdx]));
       const finalAssistant = messages[finalAssistantIdx] as AssistantMessage;
       const finalSplit = getFinalSplit(finalAssistant);
-      const finalProcessMessage = finalSplit.processMessage;
+      const finalProcessMessage = getDisplayableAssistantBlocks(finalSplit.processMessage).length > 0 ? finalSplit.processMessage : null;
       const finalAnswerMessage = finalSplit.answerMessage;
 
       const processCount = visibleProcessIndices.length + (finalProcessMessage ? 1 : 0);
@@ -1187,8 +1201,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       }
 
       if (finalAnswerMessage) {
-        const turnContent = messages.slice(userIdx + 1, finalAssistantIdx + 1).flatMap(message => message.role === "assistant" ? message.content as AssistantContentBlock[] : []);
-        rendered.push(renderMessage(finalAssistantIdx, { messageOverride: finalAnswerMessage, writtenFiles: extractTurnWrittenFiles(turnContent, toolResultsMap, messageCwd) }));
+        rendered.push(renderMessage(finalAssistantIdx, { messageOverride: finalAnswerMessage, writtenFiles: getTurnWrittenFiles(finalAssistant, messages.slice(userIdx + 1, finalAssistantIdx + 1), toolResultsMap, messageCwd) }));
       }
       for (let renderIdx = finalAssistantIdx + 1; renderIdx < endIdx; renderIdx++) {
         rendered.push(renderMessage(renderIdx));
@@ -1318,7 +1331,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       onDragLeave={side ? event => { event.preventDefault(); event.stopPropagation(); } : handleDragLeave}
       onDrop={side ? event => { event.preventDefault(); event.stopPropagation(); } : handleDrop}
     >
-      <div className="relative flex min-h-0 flex-1 flex-col" inert={!!side} aria-hidden={side ? true : undefined}>
+      <div ref={chatContentRegionRef} className="relative flex min-h-0 flex-1 flex-col" inert={!!side} aria-hidden={side ? true : undefined}>
       {(recapBusy || recapError || recap) && <section className="mx-4 my-2 max-h-[40%] shrink-0 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--bg-panel)] p-4" aria-label={t("recap.title")}>
         <div className="mb-2 flex flex-wrap items-center gap-2 text-sm"><strong>{t("recap.title")}</strong>
           {recapBusy && <><span role="status">{t("recap.loading")}</span><button className="ml-auto text-[var(--accent)]" onClick={cancelRecap}>{t("recap.cancel")}</button></>}
@@ -1383,6 +1396,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         />
       )}
 
+      <div ref={scrollbarGutterProbeRef} aria-hidden="true" className="pointer-events-none absolute left-0 top-0 h-px w-24 overflow-y-scroll opacity-0" />
       {isEmptyNew ? (
         <div
           className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8"
@@ -1416,8 +1430,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         </div>
         <div
           ref={scrollContainerRef} onPointerUp={captureQuotedSelection}
-          className="scrollbar-subtle min-w-0 flex-1 overflow-x-hidden overflow-y-auto pt-4"
-          style={{ scrollbarGutter: "stable both-edges", visibility: pendingScrollRestore && !loading ? "hidden" : undefined }}
+          className="scrollbar-subtle min-w-0 flex-1 overflow-x-hidden overflow-y-scroll pt-4"
+          style={{ paddingLeft: scrollbarGutter > 0 ? scrollbarGutter : undefined, visibility: pendingScrollRestore && !loading ? "hidden" : undefined }}
         >
           <div style={{ minWidth: 0, padding: `0 ${CHAT_COLUMN_PADDING}px` }}>
             <div ref={messageContentRef} style={{ width: "100%", minWidth: 0, maxWidth: "var(--chat-content-max-width, 820px)", margin: "0 auto" }}>
@@ -1482,7 +1496,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             )}
 
             {/* Clears the overlay composer so the last lines can scroll fully into view. */}
-            <div aria-hidden="true" style={{ height: bottomComposerHeight }} />
+            <div ref={composerOverlaySpacerRef} aria-hidden="true" />
 
             <div ref={messagesEndRef} />
                 </>
@@ -1500,6 +1514,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       <div
         ref={bottomComposerRef}
         className="absolute inset-x-0 bottom-0 z-20"
+        style={scrollbarGutter > 0 ? { paddingInline: scrollbarGutter } : undefined}
       >
         <div
           style={{
@@ -1765,7 +1780,7 @@ function ExtensionDialog({
   return (
     <div
       onKeyDown={(event) => {
-        if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
+        if (event.key !== "Escape" || isImeComposing(event)) return;
         event.preventDefault();
         event.stopPropagation();
         onRespond(request, { cancelled: true });
@@ -1773,6 +1788,7 @@ function ExtensionDialog({
       style={{
         position: "absolute",
         inset: 0,
+        bottom: "var(--chat-composer-inset, 0px)",
         zIndex: 90,
         display: "flex",
         alignItems: collapsed ? "flex-start" : "center",
@@ -1941,7 +1957,7 @@ function ExtensionDialog({
               placeholder={request.placeholder}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) submitValue();
+                if (e.key === "Enter" && !isImeComposing(e)) submitValue();
               }}
               style={{
                 width: "100%",
@@ -1961,7 +1977,7 @@ function ExtensionDialog({
               value={value}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !e.nativeEvent.isComposing) submitValue();
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !isImeComposing(e)) submitValue();
               }}
               style={{
                 width: "100%",
@@ -2057,6 +2073,7 @@ function ExtensionCustomPanel({
       style={{
         position: "absolute",
         inset: 0,
+        bottom: "var(--chat-composer-inset, 0px)",
         zIndex: 95,
         display: "flex",
         alignItems: collapsed ? "flex-start" : "center",
@@ -2131,7 +2148,7 @@ function ExtensionCustomPanel({
           autoCorrect="off"
           spellCheck={false}
           onKeyDown={(event) => {
-            if (composingRef.current || event.nativeEvent.isComposing) return;
+            if (composingRef.current || isImeComposing(event)) return;
             const data = toTerminalKeyData(event);
             if (!data) return;
             event.preventDefault();
@@ -2139,7 +2156,7 @@ function ExtensionCustomPanel({
             onInput(request, data);
           }}
           onInput={(event) => {
-            if (composingRef.current || event.nativeEvent.isComposing) return;
+            if (composingRef.current || isImeComposing(event)) return;
             const text = event.currentTarget.value;
             event.currentTarget.value = "";
             if (text) onInput(request, text);

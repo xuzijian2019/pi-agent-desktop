@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
-import { checkFilePanel, filePanelFixture } from "./file-panel.mjs";
+import { checkFilePanel, filePanelFixture, filePanelStylesheet } from "./file-panel.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 
@@ -25,6 +25,7 @@ const sessionDir = join(agentDir, "sessions", "e2e");
 mkdirSync(project);
 const previewFile = join(project, "preview.html");
 writeFileSync(previewFile, filePanelFixture);
+writeFileSync(join(project, "preview.css"), filePanelStylesheet);
 mkdirSync(sessionDir, { recursive: true });
 const timestamp = "2026-08-23T00:00:00.000Z";
 const LONG = "e2e-long-session";
@@ -227,7 +228,16 @@ try {
     const errors = [];
     const olderResponses = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (event) => { if (event.type() === "error") errors.push(event.text()); });
+    page.on("console", (event) => {
+      if (event.type() !== "error") return;
+      const message = event.text();
+      // Both by design: the static HTML preview's sandbox blocks the fixture's
+      // inline script, and the opt-in scripted (srcDoc) preview cannot resolve
+      // the fixture's relative stylesheet.
+      if (/^Blocked script execution in '[^']*\/preview\.html\?type=serve[&']/.test(message)) return;
+      if (message.startsWith("Failed to load resource") && event.location().url === `${base}/preview.css`) return;
+      errors.push(message);
+    });
     page.on("response", (response) => {
       if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`);
       const url = new URL(response.url());
@@ -356,10 +366,17 @@ try {
         return readingOffset(target);
       };
       await selectSession(text(0), "e4999");
-      const olderPage = page.waitForResponse((response) => response.url().includes(`/api/sessions/${LONG}/context?`));
-      await page.getByText("Scroll up to load earlier messages", { exact: true }).evaluate((element) => element.scrollIntoView({ block: "start", behavior: "instant" }));
-      await olderPage;
-      await page.locator("[data-entry-id='e4850']").waitFor({ state: "attached" });
+      // A prepended page keeps the reader anchored, which scrolls the sentinel
+      // back out of view; reaching e4850 takes one scroll per page. Whether a
+      // second page also chains in on its own is timing-dependent, so loop.
+      const pagedMessage = page.locator("[data-entry-id='e4850']");
+      for (let turn = 0; turn < 4 && await pagedMessage.count() === 0; turn++) {
+        const olderPage = page.waitForResponse((response) => response.url().includes(`/api/sessions/${LONG}/context?`));
+        await page.getByText("Scroll up to load earlier messages", { exact: true }).evaluate((element) => element.scrollIntoView({ block: "start", behavior: "instant" }));
+        await olderPage;
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      }
+      await pagedMessage.waitFor({ state: "attached" });
       const olderMessage = page.locator("[data-entry-id='e4920']");
       await olderMessage.waitFor({ state: "visible" });
       await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));

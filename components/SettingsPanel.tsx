@@ -36,6 +36,7 @@ import { PluginsConfig } from "./PluginsConfig";
 import { AppUpdatesSection } from "./AppUpdatesSection";
 import { DesktopAppSection } from "./desktop";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
+import { isImeComposing } from "@/lib/ime";
 
 interface Props {
   cwd: string | null;
@@ -516,7 +517,7 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented || busy) return;
+      if (event.key !== "Escape" || event.defaultPrevented || busy || isImeComposing(event)) return;
       event.preventDefault();
       onClose();
     };

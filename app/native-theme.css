@@ -7,9 +7,765 @@
    app/layout.tsx, so equal-specificity rules here intentionally supersede
    the upstream defaults in globals.css.
 
-   Keep globals.css byte-identical to upstream (agegr/pi-web) so upstream
-   merges never conflict; make all fork styling changes HERE.
+   Keep globals.css and settings.css byte-identical to upstream (agegr/pi-web)
+   so upstream merges never conflict; make all fork styling changes HERE.
+   Layout and design intent: docs/native-theme.md.
    -------------------------------------------------------------------------- */
+
+/* ==========================================================================
+   Fork base layer (formerly edited into globals.css / settings.css).
+
+   These rules used to live inside the two upstream stylesheets, which made
+   every pi-web merge touch fork-owned lines. They now sit here, at the top of
+   the native theme: after globals.css and settings.css (so the overrides of
+   upstream rules below win) but before the rest of this file (so the native
+   theme keeps superseding them exactly as it did when they were upstream).
+   scripts/upstream-css-baseline.test.mjs keeps both upstream files
+   byte-identical to the last merged pi-web commit.
+   ========================================================================== */
+
+/* ---- from globals.css ---------------------------------------------------- */
+
+/* Session-switch loading hint. Delayed fade keeps fast switches free of any
+   visible placeholder while slow (cold-start) loads still get feedback. */
+.chat-loading-hint {
+  min-height: 55vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  animation: chat-loading-hint-in 0.12s ease 0.24s both;
+}
+@keyframes chat-loading-hint-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+/* Codex-style conversation minimap: scrub between user questions and preview
+   the corresponding question/answer without taking space from the chat. */
+.conversation-navigator {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  z-index: 30;
+  width: 58px;
+  height: min(46vh, 280px);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.conversation-navigator-track {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 48px;
+  cursor: ns-resize;
+  touch-action: none;
+  pointer-events: auto;
+  outline: none;
+}
+.conversation-navigator-tick {
+  position: absolute;
+  left: 4px;
+  width: 21px;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 20%, transparent);
+  transform: translateY(-50%);
+  transition: width 120ms ease, height 120ms ease, background 120ms ease;
+}
+.conversation-navigator-tick.is-active {
+  width: 42px;
+  height: 4px;
+  background: var(--text);
+}
+.conversation-navigator-track:focus-visible {
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.conversation-navigator-preview {
+  position: absolute;
+  left: 74px;
+  top: 50%;
+  width: min(640px, calc(100vw - 220px));
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.12);
+  transform: translateY(-50%);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  pointer-events: none;
+}
+.conversation-navigator-question,
+.conversation-navigator-answer {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+}
+.conversation-navigator-question {
+  margin-bottom: 10px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.35;
+  -webkit-line-clamp: 2;
+}
+.conversation-navigator-answer {
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-line-clamp: 3;
+}
+
+@media (max-width: 640px) {
+  .conversation-navigator { display: none; }
+}
+
+/* Sidebar session list: scrollbar thumb only visible while scrolling
+   (`is-scrolling` is toggled by the scroll handler in SessionSidebar). */
+.sidebar-session-list {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.sidebar-session-list.is-scrolling {
+  scrollbar-color: var(--border) transparent;
+}
+.sidebar-session-list::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+.sidebar-session-list.is-scrolling::-webkit-scrollbar-thumb {
+  background: var(--border);
+  background-clip: padding-box;
+}
+.sidebar-session-list.is-scrolling::-webkit-scrollbar-thumb:hover {
+  background: var(--text-dim);
+  background-clip: padding-box;
+}
+
+/* Project tree in the sidebar. The project row keeps its navigation target
+   separate from the project actions so the + and … buttons have independent
+   hit areas. */
+.sidebar-project-tree {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 12px;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.sidebar-project-tree.is-scrolling {
+  scrollbar-color: var(--border) transparent;
+}
+.sidebar-project-tree::-webkit-scrollbar { width: 7px; }
+.sidebar-project-tree::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 8px;
+}
+.sidebar-project-tree.is-scrolling::-webkit-scrollbar-thumb { background: var(--border); }
+ .sidebar-project-tree-header {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 4px 12px 4px 16px;
+}
+.sidebar-project-tree-title {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.sidebar-project-tree-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.sidebar-project-tree-menu,
+.sidebar-project-tree-add,
+.sidebar-project-tree-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+.sidebar-project-tree-menu:hover,
+.sidebar-project-tree-add:hover,
+.sidebar-project-tree-action:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.sidebar-project-tree-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 34px;
+  padding: 2px 10px 2px 16px;
+  border-radius: 7px;
+}
+.sidebar-project-tree-row:hover,
+.sidebar-project-tree-group.is-active > .sidebar-project-tree-row {
+  background: var(--bg-hover);
+}
+.sidebar-project-tree-row-main {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+  gap: 7px;
+  padding: 4px 0;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+ .sidebar-project-tree-row-main:focus-visible,
+.sidebar-project-tree-action:focus-visible,
+.sidebar-project-tree-menu:focus-visible,
+.sidebar-project-tree-add:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 1px;
+}
+.sidebar-project-tree-chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+.sidebar-project-tree-group.is-collapsed .sidebar-project-tree-chevron {
+  transform: rotate(-90deg);
+}
+.sidebar-project-tree-folder {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.sidebar-project-tree-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-project-tree-branch {
+  min-width: 0;
+  overflow: hidden;
+  margin-left: auto;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-project-tree-meta {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 3px;
+}
+.sidebar-project-tree-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 650;
+}
+.sidebar-project-tree-chip.is-running { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.sidebar-project-tree-chip.is-unread { color: #0891b2; background: color-mix(in srgb, #0891b2 12%, transparent); }
+.sidebar-project-tree-row-actions {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 1px;
+  margin-left: 4px;
+}
+.sidebar-project-tree-action {
+  width: 24px;
+  height: 24px;
+}
+ .sidebar-project-tree-children {
+  min-width: 0;
+}
+.sidebar-project-context-menu {
+  position: fixed;
+  z-index: 1000;
+  width: 168px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+.sidebar-project-context-menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text);
+  background: transparent;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.sidebar-project-context-menu button:hover {
+  background: var(--bg-hover);
+}
+.settings-entry-menu {
+  width: 184px;
+}
+.settings-entry-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.settings-entry-menu button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.sidebar-project-context-menu-back {
+  color: var(--text-muted) !important;
+}
+.sidebar-project-context-menu-heading,
+.sidebar-project-context-menu-hint {
+  padding: 5px 10px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.sidebar-project-context-menu-heading {
+  padding-top: 3px;
+  font-weight: 600;
+}
+.sidebar-project-context-menu button[role="menuitem"]:has(.sidebar-project-context-menu-branch-mark) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  font-family: var(--font-mono);
+}
+.sidebar-project-context-menu-branch-mark {
+  width: 12px;
+  flex: 0 0 12px;
+  color: var(--accent);
+  font-family: var(--font-sans);
+}
+.sidebar-project-context-menu-branch-tag {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-family: var(--font-sans);
+  font-size: 9.5px;
+}
+.sidebar-project-context-menu-branch-spinner {
+  margin-left: auto;
+  color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+.sidebar-project-tree-empty {
+  padding: 24px 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.sidebar-empty-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.sidebar-empty-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.sidebar-empty-add:hover {
+  background: var(--bg-selected);
+  border-color: var(--accent);
+}
+
+.sidebar-empty-add:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* Upstream .panel-resize-handle — thinner hit line, softer tints. */
+.panel-resize-handle::after {
+  /* Align with the panel's existing 1px border so hover never adds a second
+     visible pixel beside the separator. */
+  width: 1px;
+}
+.panel-resize-handle:hover::after,
+.panel-resize-handle:focus-visible::after {
+  background: color-mix(in srgb, var(--border) 92%, var(--text-muted));
+}
+.panel-resize-handle.is-resizing::after {
+  background: color-mix(in srgb, var(--border) 80%, var(--text-muted));
+}
+.file-tree-resize-handle {
+  z-index: 3;
+}
+.file-tree-panel {
+  width: var(--file-tree-width, 300px);
+  min-width: var(--file-tree-width, 300px);
+  flex: 0 0 var(--file-tree-width, 300px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--border);
+}
+
+/* Column resize handles between the three panes (desktop only).
+   A 7px invisible hit area straddling the pane boundary; a thin 1px
+   line tints on hover and darkens slightly while dragging. */
+@media (min-width: 641px) {
+  .column-resize-handle {
+    flex: 0 0 7px;
+    width: 7px;
+    margin: 0 -3px 0 -4px;
+    position: relative;
+    z-index: 300;
+    cursor: col-resize;
+    background: transparent;
+    touch-action: none;
+  }
+  .column-resize-handle::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 3px;
+    width: 1px;
+    border-radius: 1px;
+    background: transparent;
+    transition: background 0.15s ease 0.05s;
+  }
+  .column-resize-handle:hover::after {
+    background: color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  .column-resize-handle.is-active::after {
+    background: color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+  /* While dragging: kill the open/close width transitions so the pane
+     tracks the pointer 1:1, and lock cursor/selection globally. */
+  .app-shell.is-col-resizing .sidebar-container,
+  .app-shell.is-col-resizing .right-panel-container {
+    transition: none !important;
+  }
+  .app-shell.is-col-resizing {
+    cursor: col-resize;
+    user-select: none;
+  }
+}
+@media (max-width: 640px) {
+  .column-resize-handle {
+    display: none;
+  }
+}
+
+/* Upstream .file-panel-expand-button — borderless 28px icon button. */
+.file-panel-expand-button {
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border-left: none;
+  border-radius: 7px;
+  color: var(--text-muted);
+  transition: color 120ms ease, background 120ms ease;
+}
+.file-panel-expand-button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.file-panel-expand-button:active {
+  transform: scale(0.94);
+}
+.file-panel-expand-button[aria-pressed="true"] {
+  background: var(--bg-selected);
+  color: var(--text);
+}
+
+/* Upstream mobile .right-panel-container — pin the overlay against the
+   desktop panel rules this theme layers on top. */
+@media (max-width: 640px) {
+  .right-panel-container {
+    position: fixed !important;
+    inset: 0 env(safe-area-inset-right) 0 env(safe-area-inset-left) !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    height: var(--app-viewport-height, 100dvh) !important;
+  }
+}
+
+/* While the agent or a bash command is running, fork/navigate actions on user
+   messages are inert (the handlers early-return) — hide them here instead of
+   toggling their props, so MessageView memoization survives busy transitions. */
+.chat-window[data-session-busy="true"] .user-msg-actions {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* ---- from settings.css --------------------------------------------------- */
+
+.skill-version-value {
+  color: var(--text);
+}
+
+/* Settings is a preferences *window*, not a page: a desktop client parks a
+   fixed-size window in the middle of the app, so the session stays visible and
+   clicking the scrim behind it is an obvious way out. 1040x700 is sized for the
+   widest section — Models / Agents / Plugins are a 240px list plus a detail pane
+   — and deliberately does not grow with the window: a viewport-filling sheet
+   reads as a second page and hides the chrome the user was just looking at.
+   `min()` only clamps it, so a small window shrinks the surface instead of
+   overflowing, and the 64/96px gutters keep the window's own chrome usable —
+   macOS keeps its traffic lights over the sidebar header (titleBarStyle:
+   overlay) and Windows/Linux render WindowControls in the topbar. The scrim can
+   be lighter than a full sheet's would need to be, but it still has to make the
+   app behind it read as inactive. */
+.settings-dialog-backdrop {
+  background: rgba(0, 0, 0, 0.32);
+}
+
+.settings-dialog-surface {
+  width: min(1040px, calc(100vw - 64px));
+  max-width: none;
+  height: min(700px, calc(100dvh - 96px));
+  max-height: none;
+  border-radius: 10px;
+}
+
+/* Wide dialogs: split the sections into two explicit columns so the General
+   tab does not leave a large blank band beside the 680px single column.
+   Grid items establish their own formatting context, so both columns keep
+   their leading section margin and start at the same height; stacked below
+   the breakpoint the first child's margin collapses through as before. */
+@media (min-width: 880px) {
+  .settings-general {
+    max-width: none;
+  }
+
+  .settings-general-columns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    column-gap: clamp(36px, 5vw, 64px);
+  }
+}
+
+/* Product intro at the top of General: what this app is, then the update
+   controls that used to live in the standalone "Desktop" settings tab. */
+.settings-general-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+}
+
+.settings-general-tagline {
+  margin: 0;
+  max-width: 640px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.settings-general-tagline:first-child {
+  color: var(--text);
+}
+
+.settings-updates-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-updates-heading {
+  min-width: 0;
+}
+
+.settings-updates-head .config-button {
+  flex-shrink: 0;
+}
+
+.settings-updates .settings-general-description {
+  margin-bottom: 0;
+}
+
+.settings-meta-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.settings-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-decoration: none;
+}
+
+.settings-meta-chip:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.settings-meta-chip.is-highlight {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.settings-meta-chip-label {
+  opacity: 0.72;
+  font-weight: 500;
+}
+
+.settings-meta-chip-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-meta-chip-value.is-latest {
+  font-weight: 800;
+}
+
+.settings-meta-chip-divider {
+  width: 1px;
+  height: 13px;
+  background: currentColor;
+  opacity: 0.2;
+}
+
+.settings-meta-chip-badge {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg-panel);
+  font-size: 9px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.settings-updates-note {
+  margin: 8px 0 0;
+  color: var(--text-dim);
+}
+
+.settings-updates-release-link {
+  margin-left: 6px;
+  color: inherit;
+  font-weight: 650;
+}
+
+/* Title + hint rows with a trailing control (custom stylesheet, desktop
+   behaviour), matching the .settings-shell-option row used above them. */
+.settings-option-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  max-width: 420px;
+  margin-top: 12px;
+}
+
+.settings-option {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 5px;
+  background: var(--bg-panel);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.settings-option-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-option-title {
+  font-weight: 600;
+}
+
+.settings-option-hint {
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.settings-option .config-switch {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.settings-option-action {
+  flex-shrink: 0;
+}
+
+.settings-option-list + .settings-option-action {
+  margin-top: 10px;
+}
+
+.settings-choice-group {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.settings-chat-choice-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 28px;
+}
+
+/* ---- end of fork base layer ---------------------------------------------- */
 
 :root {
   color-scheme: light;
@@ -438,6 +1194,7 @@ html.dark {
   width: 244px;
   padding: 6px;
 }
+
 
 .file-action-menu-icon > svg {
   display: block;
@@ -6008,6 +6765,8 @@ span.linenumber {
 .message-user-bubble {
   flex: 1;
   min-width: 0;
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 /* A long user message clamps to a fade-out rather than a hard cut. The pixel
@@ -6799,4 +7558,31 @@ span.linenumber {
   font-size: 11px;
   line-height: 1.45;
   white-space: pre;
+}
+
+.chat-scroll-to-bottom-anchor {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  padding-bottom: 10px;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.agent-session-panel {
+  background: var(--surface-elevated) !important;
+  box-shadow: var(--shadow-popover) !important;
+  border-color: var(--separator) !important;
+}
+
+.file-viewer-script-button {
+  background: transparent;
+  color: var(--text-muted);
+}
+.file-viewer-script-button[aria-pressed="true"] {
+  background: var(--bg-selected);
+  color: var(--text);
 }

@@ -126,9 +126,11 @@ In order of preference:
    replace the inline `style={{ … }}` with a `className` — nothing else. Deleting the
    inline style is unavoidable (a stylesheet cannot override it) and is not a boundary
    violation; leaving the JSX shape untouched is the part that matters.
-   `app/globals.css` stays byte-identical to upstream — never edit it.
-   `native-theme.css` is imported after it in `app/layout.tsx` so equal-specificity
-   rules win.
+   `app/globals.css` and `app/settings.css` stay byte-identical to upstream — never edit
+   them; `scripts/upstream-css-baseline.test.mjs` enforces it. `native-theme.css` is
+   imported after both in `app/layout.tsx` so equal-specificity rules win. Where a rule
+   goes inside the theme, and the design intent to restore after a merge, is in
+   [native-theme.md](native-theme.md).
 2. **Generally useful?** Send it upstream to `agegr/pi-web` as a PR. Once merged, the
    structural divergence disappears entirely. This is the only real fix, and it is the
    right home for things like the `ProjectPicker` extraction, the `FileViewer` toolbar,

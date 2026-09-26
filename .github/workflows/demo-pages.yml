@@ -1,15 +1,10 @@
 name: Demo
 
 # Builds the static Pi Web demo in demo/ and publishes it to GitHub Pages.
-# Pull requests that touch the demo only build it.
+# Manual only: this fork has no Pages site, so the push trigger failed every
+# run at configure-pages. Enable Pages (Source: GitHub Actions) before running.
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    paths:
-      - "demo/**"
-      - ".github/workflows/demo-pages.yml"
   workflow_dispatch:
 
 permissions:

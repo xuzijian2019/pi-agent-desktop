@@ -35,6 +35,7 @@ import {
   ConfigStatusDot,
   ConfigSwitch,
 } from "./SettingsUi";
+import { isImeComposing } from "@/lib/ime";
 
 function shortenPath(p: string): string {
   // Match common home dir patterns: /Users/xxx, /home/xxx
@@ -338,7 +339,7 @@ function AddSkillPanel({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") search(query);
+              if (e.key === "Enter" && !isImeComposing(e)) search(query);
             }}
              placeholder={t("i18n.skillSearchPlaceholder")}
             style={{

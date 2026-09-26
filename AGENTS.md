@@ -191,7 +191,7 @@ hooks/
 Pi delays the first flush of a new session until an assistant message exists, so a run that just started is invisible to the disk scan behind `/api/sessions`. The sidebar list is derived purely from `.jsonl` files, so without help the session the user is actively watching cannot be found in the list until the turn ends.
 - `/api/sessions` merges live runtime rows via `getRpcSessionInfos()` (`lib/rpc-manager.ts`) with `mergeSessionLists()` (`lib/session-reader.ts`); the disk row wins for a persisted id, and a runtime row is suppressed until a user message exists (otherwise an untouched "new chat" runtime renders a row that later vanishes). `ensure_session`-created idle runtimes are also suppressed.
 - Sessions created by subagents carry a `relation: { kind: "subagent", ... }`; sidebar rows for subagents are hidden and their state aggregates into the parent row (`listSessionFamilies` in `lib/session-family.ts`).
-- The disk scan behind the list is the fork's incremental scanner (`lib/session-scan.ts`), cached per file keyed on mtime+size, so post-turn refreshes only re-parse the session that changed. `invalidateScannedSession(path)` drops one file's cache entry; `invalidateSessionListCache()` drops the list itself. Include symlinked project directories when touching the directory walk.
+- The disk scan behind the list is upstream's incremental scanner (`lib/session-list-scanner.ts`, `listSessionsIncremental`), fingerprinted per file on size+mtime in a persisted index (`globalThis.__piWebScanIndex`), so post-turn refreshes only re-parse the session that changed. `invalidateSessionListCache()` drops the merged list. Include symlinked project directories when touching the directory walk.
 - `GET /api/sessions` returns a `sessionListVersion` counter; the sidebar's SSE handler refetches the list (reusing the invalidated server cache, no forced scan) whenever the version moves — that is how edits from another window/process appear.
 - The sidebar refetches the list once per running id it has no row for, because a session can start running between list fetches.
 
@@ -201,7 +201,7 @@ Pi delays the first flush of a new session until an assistant message exists, so
 - `subscribeRunningSessions()`/`notifyRunningChange()` in `rpc-manager.ts` broadcast the running-id set; `SessionSidebar` treats the stream as authoritative for running state (`sseAuthoritativeRef`) once connected, and a `sessionListVersion` bump on any SSE frame triggers a cache-reusing list refetch.
 
 ### Session listing: incremental scanner vs upstream catalogue
-- `lib/session-scan.ts` replaces `SessionManager.listAll()`: same per-file info minus `allMessagesText`, cached per file keyed on mtime+size (`globalThis.__piSessionScanCache`). Only files whose mtime/size changed are re-parsed. `invalidateScannedSession(path)` forces one file's reparse; `invalidateSessionListCache()` drops the merged list cache. Symlinked project dirs are included.
+- `lib/session-list-scanner.ts` is the live scanner behind `SessionManager.listAll()`'s replacement: per-file info minus `allMessagesText`, re-parsed only when a file's size/mtime fingerprint changes; `invalidateSessionListCache()` drops the merged list cache. `lib/session-scan.ts` (with its `__piSessionScanCache` and `invalidateScannedSession`) is the fork's older scanner, kept only as a tested utility — nothing in the app reads its cache, so invalidating it does not refresh the sidebar.
 - `resolveSessionPath()` tries a targeted header read (bounded to 4 KiB) before falling back to a full scan; `readSessionHeader()` never parses the whole file.
 - Never reintroduce a literal `homedir()` into an fs call in these paths — route it through `userHome()` or the scanner walks the whole user profile at build time and Windows releases fail.
 
@@ -218,6 +218,7 @@ Four states, not one: `newSessionThinkingLevel` (composer pre-send), `newSession
 - `PI_WEB_PASSWORD` (off by default) enables browser password login with `pi_web_session` cookie (SameSite=Lax) and global backoff throttling (`lib/auth-throttle.ts`). When disabled, loopback/desktop-token paths behave exactly as before — desktop token auth is independent.
 - Manual-code OAuth handshake tokens are `crypto.randomUUID()`; never revert to Math.random.
 - Inline SVG previews opened as documents get a CSP that blocks script execution (`HTML_PREVIEW_CSP` in the files route).
+- Local HTML previews have two modes (`FileViewer` TextFileViewer). Default: the file is loaded from `/api/files/...?type=serve` in an iframe with `sandbox="allow-same-origin"` and no `allow-scripts`, so relative CSS/images/fonts resolve through the untyped-request fallback while `HTML_PREVIEW_CSP` and the sandbox block script. Opt-in "Run scripts" (shown only when the page has `<script>`): `srcDoc` with `sandbox="allow-scripts"` — an opaque origin, so its scripts cannot call the API, and local relative files do not load. Never give one iframe both `allow-scripts` and `allow-same-origin`; `app/api/files/stream-route.test.mjs` pins this, and that `getServeMime` keeps `SERVE_EXT_TO_MIME` (a merge once dropped it and HTML was served as `application/octet-stream`).
 
 ### ToolCall field normalization
 Pi stores toolCall blocks as `{type:"toolCall", id, name, arguments}` but `ToolCallContent` uses `{toolCallId, toolName, input}`. `normalizeToolCalls()` in `lib/normalize.ts` handles this — called in both `session-reader.ts` (file load) and `ChatWindow.handleAgentEvent()` (streaming).
@@ -396,7 +397,7 @@ Merged 1eb5e66..96966e5 (v0.9.2 + v0.9.3, pi SDK 0.86.1 → 0.87.1). This was th
 - **`loadSession`/`loadTools` guards merged, not replaced**: upstream's single-flight closure, view-cache freshness (`lib/session-view-cache.ts`), the `return "error"` failure value, and the #700 pinned-preset logic kept the fork's monotonic `sessionGenerationRef`/`isCurrent()` guards and `seedStreamingSnapshot` in deps. `session-isolation` / Strict Mode structure tests were re-pinned to the merged shapes.
 - **Chat scrollbar: upstream's** `scrollbar-subtle` + `useScrollbarVisibility` (grabbable, appears while scrolling) replaced the fork's `[scrollbar-width:none]`; the fork's `pendingScrollRestore && !loading` visibility gate stayed.
 - **AppShell: fork's top-bar design stayed; upstream's per-tab session memory came in** — `initialNavigation` is now settable and `lib/tab-session.ts` rides on top of the fork's desktop workspace restore (`resolveInitialNavigation`).
-- **Declined again, same rule as segment E**: `useResizablePanel` session/explorer pane split, `DirectoryPicker`, `SessionSearch`, sidebar `FileExplorer` and the `ChatMinimap` (fork-deleted, upstream enhanced — stayed deleted, as did README.ja/ru). Upstream's windowing helper `getSessionListIndices` remains only because the fork already virtualizes its list.
+- **Declined again, same rule as segment E**: `useResizablePanel` session/explorer pane split, `DirectoryPicker`, `SessionSearch`, sidebar `FileExplorer` and the `ChatMinimap` (fork-deleted, upstream enhanced — stayed deleted, as did README.ja/ru). Upstream's windowing helper `getSessionListIndices` was dropped from the fork: the project tree mounts every row (collapsed projects cap the count), so the virtualization state it fed had become dead scroll-driven re-renders. `lib/project-groups.ts` stays only as an upstream-owned, tested module.
 - **Kept fork-only**: models-config literal-key redaction (`mergeStoredLiteralApiKeys`) layered under upstream's `ModelsConfigReadError` handling; the PATCH live-runtime guard for unflushed sessions in `sessions/[id]` (now opening via `openSessionManager({ mutable: true })`); the lazy-wrapper saved-model restore in `startRpcSession`; the workspace/full-height sidebar, desktop i18n. (The sidebar's own sun/moon theme toggle and its `themeLabelKey` copy were removed later: the theme picker in Settings → General is the only switch, and `AppShell` now calls `useTheme()` purely to keep the shared store's system-scheme listener and the desktop `set_ui_theme` mirror alive for the app's lifetime.)
 - **Deps**: pi 0.87.1 (Claude Opus 5.5 / GPT-6 Sol / GPT-6 Luna / Grok 4.7 catalogs), next 16.3.6, semver 7.8.5, undici 8.11.0, upstream's production-install trim (ansi_up, remark-frontmatter → devDependencies); fork keeps `--experimental-strip-types` on its test script plus the `scripts/**` glob upstream doesn't have.
 
@@ -418,7 +419,11 @@ Location: `~/.pi/agent/sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl`
 
 ---
 
-## CSS Variables (`app/globals.css`)
+## Styling: fork CSS lives only in `app/native-theme.css`
+
+`app/globals.css` and `app/settings.css` are pi-web's and stay byte-identical to upstream — `scripts/upstream-css-baseline.test.mjs` fails on any edit. Put every fork rule in `app/native-theme.css` (imported last in `app/layout.tsx`); overrides of upstream rules that other theme rules must beat go in its "fork base layer" at the top. After an upstream merge run `node scripts/upstream-css-baseline.mjs update <upstream-ref>` (the sync workflow does). Layout of the theme file and the design intent to restore after a merge: `docs/native-theme.md`.
+
+## CSS Variables (`app/globals.css`, re-tokened in `app/native-theme.css`)
 
 ```
 --bg --bg-panel --bg-hover --bg-selected --border

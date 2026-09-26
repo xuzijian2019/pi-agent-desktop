@@ -30,7 +30,7 @@ import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useDesktopConnection } from "@/lib/desktop-connection";
 import { isTauriDesktop, setCloseQuitsNative } from "@/lib/desktop-native";
-import { encodeFilePathForApi, getFileName } from "@/lib/file-paths";
+import { getFileName } from "@/lib/file-paths";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
 import { PRODUCT_NAME } from "@/lib/branding";
 import { hasForks } from "@/lib/session-forks";
@@ -57,6 +57,7 @@ import type { FileExplorerHandle } from "./FileExplorer";
 import type { FileViewerState } from "@/lib/file-viewer-state";
 import { getSessionFamily } from "@/lib/session-family";
 import { type SettingsSection } from "@/lib/settings-navigation";
+import { isImeComposing } from "@/lib/ime";
 
 // Hover peek for the collapsed sidebar: it stays long enough to aim at a
 // session, and closes on its own when the pointer never arrives or leaves.
@@ -114,14 +115,13 @@ export function AppShell() {
   const notifiedAttentionRequestIdsRef = useRef(new Set<string>());
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
   const [fileActionsMenuOpen, setFileActionsMenuOpen] = useState(false);
-  const [explorerKey, setExplorerKey] = useState(0);
+  const fileActionsMenuRef = useRef<HTMLDivElement>(null);
   const [explorerUploadBusy, setExplorerUploadBusy] = useState(false);
   const fileExplorerRef = useRef<FileExplorerHandle>(null);
   const [fileTreeOpen, setFileTreeOpen] = useState(true);
   const [fileExplorerQuery, setFileExplorerQuery] = useState("");
   const [changesCount, setChangesCount] = useState(0);
   const [changesCollapsed, setChangesCollapsed] = useState(true);
-  const fileActionsMenuRef = useRef<HTMLDivElement>(null);
   const [sessionCatalog, setSessionCatalog] = useState<SessionInfo[]>([]);
   const [availableProjectRoots, setAvailableProjectRoots] = useState<string[]>([]);
   const handleSessionsChange = useCallback((sessions: SessionInfo[]) => {
@@ -173,9 +173,6 @@ export function AppShell() {
     setSearchTarget((current) => current === target ? null : current);
   }, []);
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
-  const handleExplorerRefresh = useCallback(() => {
-    setExplorerRefreshKey((key) => key + 1);
-  }, []);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [settingsMenuPos, setSettingsMenuPos] = useState<{ top: number; left: number } | null>(null);
@@ -211,7 +208,7 @@ export function AppShell() {
       closeSettingsMenu();
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.defaultPrevented) closeSettingsMenu();
+      if (event.key === "Escape" && !event.defaultPrevented && !isImeComposing(event)) closeSettingsMenu();
     };
     document.addEventListener("mousedown", handleMouseDown);
     document.addEventListener("keydown", handleKeyDown);
@@ -484,7 +481,7 @@ export function AppShell() {
       if (!topBarRef.current?.contains(event.target as Node)) setActiveTopPanel(null);
     };
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { event.preventDefault(); setActiveTopPanel(null); }
+      if (event.key === "Escape" && !isImeComposing(event)) { event.preventDefault(); setActiveTopPanel(null); }
     };
 
     document.addEventListener("mousedown", handlePointerDown);
@@ -587,7 +584,7 @@ export function AppShell() {
       if (!fileActionsMenuRef.current?.contains(target)) setFileActionsMenuOpen(false);
     };
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || isImeComposing(event)) return;
       event.preventDefault();
       setFileActionsMenuOpen(false);
     };
@@ -1396,24 +1393,6 @@ export function AppShell() {
 
   const activeFileTab = fileTabs.find((t) => t.id === activeFileTabId) ?? null;
 
-  const copyActiveFilePath = useCallback(async () => {
-    if (!activeFileTab?.filePath) return;
-    await navigator.clipboard?.writeText(activeFileTab.filePath);
-    setFileActionsMenuOpen(false);
-  }, [activeFileTab?.filePath]);
-
-  const copyActiveFileContent = useCallback(async () => {
-    if (!activeFileTab?.filePath) return;
-    try {
-      const response = await fetch(`/api/files/${encodeFilePathForApi(activeFileTab.filePath)}?type=read`);
-      const data = await response.json() as { content?: string; error?: string };
-      if (!response.ok || typeof data.content !== "string") throw new Error(data.error ?? `HTTP ${response.status}`);
-      await navigator.clipboard?.writeText(data.content);
-      setFileActionsMenuOpen(false);
-    } catch (error) {
-      console.error("Failed to copy file content:", error);
-    }
-  }, [activeFileTab?.filePath]);
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
   const windowTitle = [selectedSession ? (selectedSession.name || selectedSession.firstMessage || "Untitled task").slice(0, 70) : "New task", activeCwdName, PRODUCT_NAME].filter(Boolean).join(" - ");
   const topBarTitle = selectedSession
@@ -1485,13 +1464,7 @@ export function AppShell() {
         onProjectsChange={handleProjectsChange}
         actionsRef={sidebarActionsRef}
         headerControls={sidebarHeaderControls}
-        onOpenFile={handleOpenFile}
         onOpenTerminal={handleOpenTerminal}
-        explorerRefreshKey={explorerRefreshKey}
-        onExplorerRefresh={handleExplorerRefresh}
-        onAtMention={handleAtMention}
-        onAtMentions={handleAtMentions}
-
         onRunningSessionIdsChange={handleRunningSessionIdsChange}
         onSessionsChange={handleSessionsChange}
       />
@@ -1932,7 +1905,7 @@ export function AppShell() {
       <div
         ref={rightPanelResizer.panelRef}
         id="file-panel"
-        onKeyDown={event => { if (event.key === "Escape" && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); setRightPanelOpen(false); } }}
+        onKeyDown={event => { if (event.key === "Escape" && !event.defaultPrevented && !isImeComposing(event)) { event.preventDefault(); event.stopPropagation(); setRightPanelOpen(false); } }}
         inert={!rightPanelOpen}
         className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelFullWidth ? " right-panel-full-width" : ""}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
         style={{
@@ -2020,24 +1993,6 @@ export function AppShell() {
               </button>
               {fileActionsMenuOpen && (
                 <div className="native-popover file-actions-menu" role="menu" aria-label={translate("contextPanel.fileActions")}>
-                  <button type="button" role="menuitem" disabled={!activeFileTab} onClick={() => void copyActiveFilePath()}>
-                    <span className="file-action-menu-icon" aria-hidden="true">
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="8" y="8" width="11" height="11" rx="2" />
-                        <path d="M16 8V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h1" />
-                      </svg>
-                    </span>
-                    <span>{translate("contextPanel.copyPath")}</span>
-                  </button>
-                  <button type="button" role="menuitem" disabled={!activeFileTab} onClick={() => void copyActiveFileContent()}>
-                    <span className="file-action-menu-icon" aria-hidden="true">
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="8" y="8" width="11" height="11" rx="2" />
-                        <path d="M16 8V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h1" />
-                      </svg>
-                    </span>
-                    <span>{translate("contextPanel.copyContents")}</span>
-                  </button>
                   <button
                     type="button"
                     role="menuitem"
@@ -2229,15 +2184,10 @@ export function AppShell() {
                   cwd={activeCwd}
                   onOpenFile={handleOpenFile}
                   selectedFilePath={activeFileTab?.filePath ?? null}
-                  refreshKey={explorerKey}
+                  refreshKey={explorerRefreshKey}
                   searchQuery={fileExplorerQuery}
-                  onAtMention={(rel, isDir) => {
-                    chatInputRef.current?.insertText(buildAtMentionText(rel, isDir));
-                  }}
-                  onAtMentions={(rels) => {
-                    const mentions = buildFileAtMentionsText(rels);
-                    if (mentions) chatInputRef.current?.insertText(mentions);
-                  }}
+                  onAtMention={handleAtMention}
+                  onAtMentions={handleAtMentions}
                   onUploadBusyChange={setExplorerUploadBusy}
                   changesCollapsed={changesCollapsed}
                   onChangesCountChange={setChangesCount}

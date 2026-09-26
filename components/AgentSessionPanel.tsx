@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import type { SessionInfo, SubagentSessionStatus } from "@/lib/types";
+import { isImeComposing } from "@/lib/ime";
 
 interface Props {
   rootSession: SessionInfo;
@@ -266,6 +267,7 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
 
   return (
     <div
+      className="agent-session-panel"
       role="listbox"
       aria-label={t("agentSwitcher.title")}
       style={{
@@ -348,6 +350,7 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
                     value={steerDraft}
                     onChange={(event) => setSteerDraft(event.target.value)}
                     onKeyDown={(event) => {
+                      if (isImeComposing(event)) return;
                       if (event.key === "Enter") {
                         event.preventDefault();
                         void submitSteer(session.id);

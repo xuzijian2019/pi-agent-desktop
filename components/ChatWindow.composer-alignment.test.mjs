@@ -9,20 +9,17 @@ test("the overlay composer and message list share one column axis", () => {
   assert.match(
     source,
     /Composer overlays the scrollport/,
-    "the fork keeps an overlay composer rather than a sibling column that needs a scrollbar-gutter probe",
+    "the fork keeps its overlay composer",
   );
   assert.match(
     source,
-    /className="scrollbar-subtle min-w-0 flex-1 overflow-x-hidden overflow-y-auto pt-4"/,
+    /className="scrollbar-subtle min-w-0 flex-1 overflow-x-hidden overflow-y-scroll pt-4"/,
   );
-  assert.match(source, /scrollbarGutter: "stable both-edges"/);
+  assert.match(source, /paddingLeft: scrollbarGutter > 0 \? scrollbarGutter : undefined/);
+  assert.match(source, /paddingInline: scrollbarGutter/);
   assert.match(source, /ref=\{bottomComposerRef\}/);
   assert.match(source, /className="absolute inset-x-0 bottom-0 z-20"/);
-  assert.doesNotMatch(
-    source,
-    /scrollbarGutterProbeRef/,
-    "do not re-adopt upstream's sibling-composer gutter probe into the overlay layout",
-  );
+  assert.match(source, /scrollbarGutterProbeRef/);
   assert.doesNotMatch(
     source,
     /CHAT_MINIMAP_WIDTH/,

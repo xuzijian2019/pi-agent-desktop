@@ -92,6 +92,10 @@ jobs:
           if [ "$PI_WEB_UPDATE" = "true" ]; then
             # The tag was already fetched by the boundary classification step.
             git merge --no-edit --no-ff refs/tags/pi-web-release
+            # globals.css / settings.css must still equal upstream after the
+            # merge; this fails if fork rules crept back in, and otherwise moves
+            # the hashes checked by scripts/upstream-css-baseline.test.mjs.
+            node scripts/upstream-css-baseline.mjs update refs/tags/pi-web-release
             npm install
             if [ "$PI_UPDATE" = "true" ]; then
               npm install --save-exact $(node scripts/pi-packages.mjs --install-spec "$PI_VERSION")

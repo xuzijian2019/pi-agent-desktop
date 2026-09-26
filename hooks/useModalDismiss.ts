@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { isImeComposing } from "@/lib/ime";
 
 const FOCUSABLE_SELECTOR = [
   "a[href]",
@@ -54,6 +55,7 @@ export function useModalDismiss<T extends HTMLElement = HTMLDivElement>(
       if (!isTopmost() || event.defaultPrevented) return;
 
       if (event.key === "Escape") {
+        if (isImeComposing(event)) return;
         event.preventDefault();
         event.stopPropagation();
         onDismissRef.current();

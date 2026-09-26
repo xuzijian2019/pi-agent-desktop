@@ -209,7 +209,7 @@ test('historical compacted branch and parent scroll container survive side and r
  await writeFile(p.file,entries.concat(historical).map(entry=>JSON.stringify(entry)).join('\n')+'\n');await request.patch(`/api/sessions/${p.id}`,{data:{name:'Historical acceptance'}});await page.goto(`/?session=${p.id}`);
  await expect(page.getByText('ACTIVE_ALTERNATIVE_LEAF',{exact:true})).toBeVisible();await page.getByRole('button',{name:'Forks',exact:true}).click();await page.locator('span').filter({hasText:/^HISTORICAL_QUESTION/}).click();
  await expect(page.getByText('History line 30.',{exact:false})).toBeVisible();await page.keyboard.press('Escape');
- const scroller=page.locator('.chat-window .overflow-y-auto.pt-4');await scroller.evaluate(el=>{el.scrollTop=250;el.setAttribute('data-acceptance-scroll','kept');});const top=await scroller.evaluate(el=>el.scrollTop);
+ const scroller=page.locator('.chat-window .scrollbar-subtle.pt-4');await scroller.evaluate(el=>{el.scrollTop=250;el.setAttribute('data-acceptance-scroll','kept');});const top=await scroller.evaluate(el=>el.scrollTop);
  const start=calls.length;await command(page,'/side branch question');const panel=page.getByRole('region',{name:'Side chat',exact:true});await expect(panel).toContainText('LOCAL_SIDE_OK');
  expect(JSON.stringify(calls.slice(start)[0].messages)).toContain('COMPACTED_BRANCH_SENTINEL');expect(JSON.stringify(calls.slice(start)[0].messages)).not.toContain('ACTIVE_ALTERNATIVE_LEAF');
  await panel.getByRole('button',{name:'Return to main'}).click();expect(new URL(page.url()).searchParams.get('session')).toBe(p.id);await expect(scroller).toHaveAttribute('data-acceptance-scroll','kept');expect(await scroller.evaluate(el=>el.scrollTop)).toBe(top);

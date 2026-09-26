@@ -134,3 +134,16 @@ test("downloadMermaidSvg downloads XML-serialized SVG and releases its URL", asy
     URL.revokeObjectURL = originalRevokeObjectURL;
   }
 });
+
+// Both dangerouslySetInnerHTML sinks render Mermaid's SVG output, and Mermaid's
+// own strict mode is the only sanitizer on that path (it escapes HTML in labels
+// and disables click callbacks). Pin it so a merge cannot loosen it silently.
+test("mermaid renders in strict security mode", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(new URL("./MermaidBlock.tsx", import.meta.url), "utf8");
+  const inits = source.match(/mermaid\.initialize\(\{[\s\S]*?\}\);/g) ?? [];
+  assert.ok(inits.length > 0, "mermaid.initialize call not found");
+  for (const init of inits) assert.match(init, /securityLevel:\s*"strict"/);
+  assert.doesNotMatch(source, /securityLevel:\s*"(loose|antiscript|sandbox)"/);
+  assert.equal((source.match(/dangerouslySetInnerHTML/g) ?? []).length, 2, "a new HTML sink needs its own review");
+});

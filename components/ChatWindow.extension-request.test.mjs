@@ -14,6 +14,10 @@ test("extension dialogs leave the overlay composer interactive", async () => {
   assert.match(dialogSource, /pointerEvents: "auto"/);
   assert.match(customSource, /maxHeight: "min\(760px, 100%\)"/);
   assert.match(source, /ref=\{bottomComposerRef\}/);
+  assert.match(source, /ref=\{chatContentRegionRef\}/);
+  assert.match(source, /setProperty\("--chat-composer-inset",/);
+  assert.match(dialogSource, /bottom: "var\(--chat-composer-inset, 0px\)"/);
+  assert.match(customSource, /bottom: "var\(--chat-composer-inset, 0px\)"/);
 });
 
 test("adds collapse without replacing cancel", () => {

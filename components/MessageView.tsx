@@ -141,10 +141,6 @@ function SafeMarkdownBody({ children, className, ...props }: React.ComponentProp
   );
 }
 
-// Cap the user "sent" bubble's height so an abnormally long message does not
-// push the conversation off screen; overflow scrolls inside the bubble.
-const USER_BUBBLE_MAX_HEIGHT = 300;
-
 function loadThinkingContent(sessionId: string, entryId: string, blockIndex: number): Promise<string> {
   const key = `${sessionId}:${entryId}:${blockIndex}`;
   const cached = thinkingContentCache.get(key);
@@ -1121,7 +1117,6 @@ function ApplyPatchDiffView({ files }: { files: SplitDiffFile[] }) {
 }
 
 function SplitPatchView({ text }: { text: string }) {
-  const { t } = useI18n();
   const { mode } = useDiffViewMode();
   const files = useMemo(() => parseUnifiedPatch(text), [text]);
   if (!files) return <PatchTextView text={text} />;

@@ -103,33 +103,33 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
-            ## Pi Agent Desktop 0.4.7
+            ## Pi Agent Desktop 0.4.8
 
-            This release rebases the desktop app on pi-web 0.10.0 (pi SDK 0.87.1) and reworks the settings dialog, the sidebar search and the topbar / file-panel chrome.
+            A polish and performance release on top of 0.4.7: faster large sessions, a steadier chat layout, IME-safe shortcuts, and several features an upstream merge had left unreachable are wired back up.
 
             ### Highlights
 
-            - Bundled components: pi 0.84.4 → 0.87.1 and pi-web 0.8.7 → 0.10.0. The app inherits the 0.86/0.87 agent surface (compaction and summarization-retry status, live `!command` output, automation switches) plus per-model `enabledModels` switches, the model-catalog refresh button, individual built-in sub-agent switches, per-tab session memory and scroll-to-latest.
-            - Settings: one tab per concern (General, Models, Skills, Agents, Plugins). The duplicated Desktop tab is gone — Version & Updates sits at the top of General, the window/tray switches live in General, and the dialog is now a window-filling sheet instead of a 1080px card. Backdrop clicks and Escape can no longer dismiss it while a signed update is installing.
-            - Sidebar search: full-text search across every conversation is wired up again. Enter runs the query (IME-safe, empty queries ignored), Escape unwinds results → query → field, and picking a hit opens that session at the matched message, paginating history when the entry is outside the loaded window.
-            - Topbar and file panel: the More menu is portalled so an open file panel can no longer cover it, the sidebar reopen button stays reachable beside a split panel, an in-panel close control appears when the topbar toggle is unreachable (full-width panel or mobile), and the top-panel dropdowns line up with the chat column again.
-            - Chat: per-session scroll anchors keep the reading position across session switches, and the file-panel row now uses one chip language in place of three overlapping merge passes.
+            - Performance: finished turns no longer re-render on every streaming token, large tool-result payloads (e.g. browser DOM outlines) are trimmed to the fields the UI shows so big sessions load far smaller, and file-access checks reuse the cached session list instead of rebuilding it.
+            - Chat layout: the composer floats over the transcript, pages open on whole turns instead of mid-turn, the message column stays centred with the composer, and the scrollbar thumb only appears for user scrolls.
+            - Input methods: Escape and Enter no longer close dialogs, menus or submit inline inputs while a Chinese/Japanese/Korean IME candidate is open (including the macOS WebView).
+            - File panel: local HTML previews load their relative CSS/images again with scripts blocked, with an opt-in "Run scripts" mode in an isolated sandbox; the file tree refreshes after a run again.
+            - Fixes: failed forks and branch switches now show an error instead of failing silently; model-scope warnings can be dismissed and link to provider settings; the unified diff setting applies to patch diffs in chat; the topbar More panels are opaque; the sidebar shows a retry state when the session list cannot load.
 
             Bundled components: pi 0.87.1, pi-web 0.10.0.
 
             ---
 
-            ## Pi Agent Desktop 0.4.7
+            ## Pi Agent Desktop 0.4.8
 
-            本次发布将桌面端升级到 pi-web 0.10.0（pi SDK 0.87.1），并重做了设置面板、会话搜索以及顶栏与文件面板的界面。
+            本次是基于 0.4.7 的打磨与性能版本：大会话更快、聊天布局更稳定、快捷键兼容输入法，并重新接通了上游合并后无法触达的几项功能。
 
             ### 主要更新
 
-            - 内置组件升级：pi 0.84.4 → 0.87.1，pi-web 0.8.7 → 0.10.0。随之带来 0.86/0.87 的智能体状态（压缩与摘要重试进度、`!command` 实时输出、自动化开关），以及逐模型启用开关、模型目录刷新按钮、内置子智能体单独开关、每个标签页记住会话和“滚动到最新”按钮。
-            - 设置面板：按用途拆分为 常规、模型、技能、智能体、插件 五个页面。重复的“桌面”页已移除——版本与更新位于常规页顶部，窗口/托盘开关也归入常规页，面板改为铺满窗口的视图而非 1080px 卡片；安装签名更新期间，点击遮罩或按 Esc 不再能关闭面板。
-            - 侧栏搜索：重新接入跨全部会话的全文搜索。回车执行搜索（兼容输入法，空查询忽略），Esc 依次从结果退回到查询、再退出输入框；点击结果会打开对应会话并定位到命中的消息，消息不在已加载窗口内时会自动翻页。
-            - 顶栏与文件面板：More 菜单改为浮层，展开的文件面板不再遮挡它；面板分栏展开时侧栏恢复按钮仍可点击；全宽面板或移动端等顶栏开关不可用的情况下，面板内会显示关闭按钮；顶部下拉菜单重新与聊天列对齐。
-            - 聊天：按会话记录滚动锚点，切换会话后仍回到上次阅读位置；文件面板标题行统一为一种按钮样式，替代此前三次合并遗留的重叠定义。
+            - 性能：流式输出时已完成的轮次不再逐字重渲染；工具结果中的大体积数据（如浏览器 DOM 大纲）只保留界面所需字段，大会话加载体积显著减小；文件访问检查复用缓存的会话列表，不再重复全量扫描。
+            - 聊天布局：输入框悬浮于对话之上，分页按完整轮次加载而不会从轮次中间开始；消息列与输入框保持居中对齐，滚动条仅在手动滚动时显示。
+            - 输入法：中文/日文/韩文输入法候选框打开时，Esc 和回车不再误关闭对话框、菜单或提前提交行内输入（包括 macOS WebView）。
+            - 文件面板：本地 HTML 预览重新加载相对路径的 CSS/图片且禁止脚本执行，并提供在隔离沙箱中“运行脚本”的可选模式；运行结束后文件树重新自动刷新。
+            - 修复：分叉和切换分支失败时会显示错误提示，不再静默失败；模型范围警告可关闭并可跳转到服务商设置；聊天中的补丁差异遵循“统一视图”设置；顶栏 More 面板改为不透明；会话列表加载失败时侧栏显示重试入口。
 
             内置组件版本：pi 0.87.1、pi-web 0.10.0。
           releaseDraft: true

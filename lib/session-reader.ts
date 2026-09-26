@@ -11,12 +11,12 @@ import { getThinkingPreview } from "./message-display";
 import { projectIdentityKey } from "./project-identity";
 import { sessionPathKey } from "./session-path";
 import { MAX_TOOL_RESULT_IMAGE_BYTES, TOOL_RESULT_IMAGE_MIMES } from "./tool-result-images";
+import { projectToolResultDetails, slimToolResultMessage } from "./tool-result-details";
 import { resolveProject, type ProjectInfo } from "./worktree";
 import { readSubagentRun, SUBAGENT_META_TYPE } from "./subagents";
 import { listSessionsIncremental, type ScannedSessionInfo } from "./session-list-scanner";
 
 export { getAgentDir };
-export { invalidateScannedSession } from "./session-scan";
 
 const SESSION_HEADER_MAX_BYTES = 64 * 1024;
 const SESSION_RELATION_MAX_BYTES = 256 * 1024;
@@ -502,6 +502,37 @@ function evictSmCache(cache: Map<string, SmCacheEntry>): void {
   }
 }
 
+/**
+ * Project every tool result's details in place (see lib/tool-result-details.ts).
+ * Mutating is safe only because the manager is a cached read-only view whose
+ * entries are never written back. Returns whether anything was dropped.
+ */
+function slimCachedEntries(sm: SessionManager): boolean {
+  let slimmed = false;
+  for (const entry of sm.getEntries()) {
+    if (entry.type !== "message") continue;
+    const message = entry.message as unknown as { role?: unknown; details?: unknown };
+    if (message.role !== "toolResult" || message.details === undefined) continue;
+    const projected = projectToolResultDetails(message.details);
+    if (projected === message.details) continue;
+    if (projected === undefined) delete message.details;
+    else message.details = projected;
+    slimmed = true;
+  }
+  return slimmed;
+}
+
+/** Retained size after slimming: the file size is no longer a fair proxy. */
+function estimateRetainedBytes(sm: SessionManager, fileBytes: number): number {
+  try {
+    let bytes = 0;
+    for (const entry of sm.getEntries()) bytes += JSON.stringify(entry).length;
+    return Math.min(bytes, fileBytes);
+  } catch {
+    return fileBytes;
+  }
+}
+
 export function invalidateSessionManagerCache(filePath?: string): void {
   const cache = getSmCache();
   if (filePath === undefined) {
@@ -539,12 +570,18 @@ export function openSessionManager(
   }
 
   const sm = SessionManager.open(filePath, undefined);
-  if (stats.bytes > SM_CACHE_LIMITS.maxFileBytes) {
+  // Cached managers are read-only views, and nothing reads a cached entry's
+  // tool-result details beyond what the UI renders, so drop the rest before
+  // the entry is retained. Extension payloads (browser DOM outlines) can be
+  // 97% of a file; without this a 140MB session was never cacheable and paid
+  // a full re-parse on every open.
+  const bytes = slimCachedEntries(sm) ? estimateRetainedBytes(sm, stats.bytes) : stats.bytes;
+  if (bytes > SM_CACHE_LIMITS.maxFileBytes) {
     // Too large to hold: drop any stale entry for this path and serve fresh.
     cache.delete(pathKey);
     return sm;
   }
-  cache.set(pathKey, { sm, fingerprint: stats.fingerprint, bytes: stats.bytes });
+  cache.set(pathKey, { sm, fingerprint: stats.fingerprint, bytes });
   evictSmCache(cache);
   return sm;
 }
@@ -768,8 +805,37 @@ export function sliceActiveBranch(
     if (visible >= tail || chain.length >= rawCap) break;
     current = current.parentId ? byId.get(current.parentId) : undefined;
   }
+  // A window that stops mid-turn renders that turn's leading messages flat —
+  // ChatWindow can only fold a turn into "Process details" from its anchor —
+  // until the older page arrives and they collapse. Walk back to the anchor
+  // so the page opens on whole turns; a turn too long to reach is left cut.
+  if (current && !startsTurn(current)) {
+    const extension: SessionEntry[] = [];
+    let cursor = current.parentId ? byId.get(current.parentId) : undefined;
+    while (cursor && extension.length < MAX_TURN_EXTENSION_ENTRIES) {
+      extension.push(cursor);
+      if (startsTurn(cursor)) {
+        chain.push(...extension);
+        break;
+      }
+      cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined;
+    }
+  }
   chain.reverse();
   return chain;
+}
+
+/** Extra raw entries a page may take to reach the start of the turn it cut into. */
+const MAX_TURN_EXTENSION_ENTRIES = 1500;
+
+/** Entries that `isMessageGroupAnchor()` treats as the start of a displayed turn. */
+function startsTurn(entry: SessionEntry): boolean {
+  if (entry.type === "compaction") return true;
+  if (entry.type === "custom_message") {
+    return (entry as { customType?: string }).customType === "pi-web:subagent-notification";
+  }
+  if (entry.type === "branch_summary") return Boolean((entry as { summary?: string }).summary);
+  return entry.type === "message" && (entry as { message?: { role?: string } }).message?.role === "user";
 }
 function parseEntryTimestamp(timestamp: string): number | undefined {
   const parsed = Date.parse(timestamp);
@@ -861,9 +927,12 @@ function entryToUiMessage(
       // Transcript system messages carry the prompt and tool loadout (Pi >= 0.86).
       // They are provider input, not conversation, so they never render.
       if (entry.message.role === "system") return null;
+      // Tool-result details are projected to the fields the UI renders:
+      // extensions can persist megabytes there (see lib/tool-result-details.ts).
+      const normalized = slimToolResultMessage(normalizeToolCalls(entry.message));
       let message = options.deferToolResultImages
-        ? deferToolResultBase64Images(normalizeToolCalls(entry.message), options.sessionId, entry.id)
-        : normalizeToolCalls(entry.message);
+        ? deferToolResultBase64Images(normalized, options.sessionId, entry.id)
+        : normalized;
       const legacyContent = message.role === "assistant" ? (message as { content: unknown }).content : undefined;
       if (typeof legacyContent === "string") {
         message = { ...message, content: [{ type: "text", text: legacyContent }] } as AgentMessage;

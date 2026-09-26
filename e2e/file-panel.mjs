@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
 
-export const filePanelFixture = `<!doctype html><html><body style="margin:20px;min-height:2400px">
+// overflow-anchor:none keeps the scrollY assertion about state preservation:
+// with anchoring on, the text reflowing from a narrow split (~200px on Linux
+// fonts) to full width legitimately shifts scrollY (120 → 83 in CI).
+export const filePanelFixture = `<!doctype html><html><head><link rel="stylesheet" href="preview.css"></head><body style="margin:20px;min-height:2400px;overflow-anchor:none">
 <label>Notes <input id="notes"></label>
 <label>Filter <select id="filter"><option>All</option><option>Pending</option></select></label>
 <p>HTML preview state must survive layout changes.</p>
 <script>window.previewInstance = Math.random();</script></body></html>`;
+// Loaded by relative path: proves the static preview is served from the file's
+// directory rather than rendered from a detached srcDoc.
+export const filePanelStylesheet = "#notes { outline: 3px solid rgb(1, 2, 3); }";
 
 export async function checkFilePanel(page, filePath) {
   const hideSidebar = page.getByRole("button", { name: "Hide sidebar", exact: true });
@@ -21,6 +27,10 @@ export async function checkFilePanel(page, filePath) {
   const iframe = panel.locator("iframe");
   await iframe.waitFor();
   const frame = await (await iframe.elementHandle()).contentFrame();
+  await frame.locator("#notes").waitFor();
+  // Static preview: local CSS resolves, scripts stay off (sandbox + route CSP).
+  assert.equal(await frame.locator("#notes").evaluate((el) => getComputedStyle(el).outlineColor), "rgb(1, 2, 3)");
+  assert.equal(await frame.evaluate(() => window.previewInstance), undefined, "The static HTML preview must not run scripts");
   await frame.locator("#notes").fill("Keep this note");
   await frame.locator("#filter").selectOption({ label: "Pending" });
   await frame.evaluate(() => scrollTo(0, 120));
@@ -63,6 +73,14 @@ export async function checkFilePanel(page, filePath) {
     assert.equal(await width(), originalWidth);
     assert.equal(await frame.evaluate(() => window.previewInstance), instance);
   }
+  // Opting into scripts swaps to an isolated srcDoc sandbox where they run.
+  const runScripts = panel.getByRole("button", { name: "Run scripts", exact: true });
+  await runScripts.click();
+  assert.equal(await runScripts.getAttribute("aria-pressed"), "true");
+  const scriptedFrame = await (await panel.locator("iframe[srcdoc]").elementHandle()).contentFrame();
+  await scriptedFrame.waitForFunction(() => typeof window.previewInstance === "number");
+  await runScripts.click();
+  await panel.locator("iframe:not([srcdoc])").waitFor();
   await hidePanel.click();
   console.log(`PASS: file panel width and preview state at ${page.viewportSize().width}px`);
 }

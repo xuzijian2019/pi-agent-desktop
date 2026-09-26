@@ -185,3 +185,26 @@ test("uses a generic preview label when a markdown image has no alt text", () =>
   assert.match(html, /<button[^>]+aria-label="Preview image"[^>]*>/);
   assert.doesNotMatch(html, /Preview image:/);
 });
+
+test("a streaming body renders its text on the first paint", () => {
+  const html = renderMarkdown("**Live** answer", { isStreaming: true });
+  assert.match(html, /<strong>Live<\/strong> answer/);
+});
+
+// rehype-sanitize is the only thing between model/tool output and the DOM.
+// Pinned end to end so a merge that drops the plugin or widens the schema fails.
+test("strips executable HTML and javascript: links from rendered markdown", () => {
+  const html = renderMarkdown([
+    "<script>window.__pwned = 1</script>",
+    "<img src=\"x\" onerror=\"window.__pwned = 1\">",
+    "<iframe src=\"https://evil.example\"></iframe>",
+    "<a href=\"javascript:alert(1)\">raw link</a>",
+    "[md link](javascript:alert(1))",
+    "<div onclick=\"alert(1)\" style=\"position:fixed\">styled</div>",
+    "<form action=\"https://evil.example\"><input name=\"q\"></form>",
+  ].join("\n\n"));
+  assert.doesNotMatch(html, /<script|<iframe|<form|onerror|onclick|javascript:/i);
+  assert.doesNotMatch(html, /position:fixed/);
+  assert.match(html, /raw link/);
+  assert.match(html, /md link/);
+});

@@ -31,6 +31,7 @@ import {
   ConfigStatusDot,
   ConfigSwitch,
 } from "./SettingsUi";
+import { isImeComposing } from "@/lib/ime";
 
 type PluginScope = PluginPackageInfo["scope"];
 type PluginAction = "install" | "remove" | "update" | "disable" | "enable";
@@ -343,7 +344,7 @@ function AddPluginPanel({
             outline: "none",
           }}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && source.trim() && !busy) onInstall();
+            if (e.key === "Enter" && !isImeComposing(e) && source.trim() && !busy) onInstall();
           }}
         />
       </ConfigField>

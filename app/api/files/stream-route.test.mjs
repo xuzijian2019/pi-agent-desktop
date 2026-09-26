@@ -29,3 +29,34 @@ test("the restrictive headers are applied to every streamFile response shape", (
   const firstReturn = streamBlock.indexOf("createFileBodyStream", headerObject);
   assert.ok(headerObject !== -1 && firstReturn > headerObject, "headers must be built before any response");
 });
+
+test("local HTML previews are served as documents with a script-blocking CSP", () => {
+  // The static HTML preview loads the file from this route so its relative
+  // CSS/images resolve. A merge once dropped SERVE_EXT_TO_MIME from
+  // getServeMime and every .html came back as application/octet-stream.
+  const serveMime = source.slice(source.indexOf("function getServeMime"), source.indexOf("function streamFile"));
+  assert.match(serveMime, /\|\| SERVE_EXT_TO_MIME\[getFileExt\(filePath\)\]/);
+  assert.match(source, /html: "text\/html; charset=utf-8"/);
+  assert.match(source, /css: "text\/css; charset=utf-8"/);
+  const csp = source.slice(source.indexOf("const HTML_PREVIEW_CSP"), source.indexOf('].join("; ");'));
+  for (const directive of ["script-src 'none'", "connect-src 'none'", "form-action 'none'", "frame-ancestors 'self'"]) {
+    assert.ok(csp.includes(`"${directive}"`), `HTML preview CSP must keep ${directive}`);
+  }
+  const serveBranch = source.slice(source.indexOf('if (type === "serve")'), source.indexOf('if (type === "meta")'));
+  assert.match(serveBranch, /"Content-Security-Policy": HTML_PREVIEW_CSP/);
+});
+
+test("no file preview iframe combines scripts with the app origin", async () => {
+  // allow-scripts + allow-same-origin would let a previewed file's JS call the
+  // Pi Web API (and run commands through the agent). Served-from-disk previews
+  // stay script-less; the opt-in scripted preview is an opaque-origin srcDoc.
+  const viewer = await readFile(new URL("../../../components/FileViewer.tsx", import.meta.url), "utf8");
+  const sandboxes = [...viewer.matchAll(/sandbox=(\{[^}]*\}|"[^"]*")/g)].map((match) => match[1]);
+  assert.ok(sandboxes.length >= 2);
+  for (const sandbox of sandboxes) {
+    assert.ok(!(sandbox.includes("allow-scripts") && sandbox.includes("allow-same-origin")), `unsafe sandbox: ${sandbox}`);
+  }
+  const htmlPreview = viewer.slice(viewer.indexOf('isHtml && effectiveDisplayMode === "preview" ? ('), viewer.indexOf('isMarkdown && effectiveDisplayMode === "preview" ? ('));
+  assert.match(htmlPreview, /srcDoc=\{viewerContent\}\s+sandbox="allow-scripts"/);
+  assert.match(htmlPreview, /src=\{htmlPreviewUrl\}\s+sandbox="allow-same-origin"/);
+});

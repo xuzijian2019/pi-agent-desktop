@@ -42,6 +42,7 @@ import {
   shouldShowScrollToLatest,
 } from "@/lib/chat-lazy-load";
 import { findChatScrollAnchor, type ChatScrollPosition } from "@/lib/chat-scroll-position";
+import { useI18n } from "@/hooks/useI18n";
 import {
   INITIAL_STREAMING_STATE,
   streamReducer,
@@ -334,6 +335,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     session, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, onSessionRenamed,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen,
   } = opts;
+  const { t } = useI18n();
 
   const isNew = session === null && newSessionCwd !== null;
 
@@ -399,7 +401,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [pendingModel, setPendingModel] = useState<{ provider: string; modelId: string } | null>(null);
   const [modelSwitching, setModelSwitching] = useState(false);
   const [isCompacting, setIsCompacting] = useState(false);
-  const [autoCompactionEnabled, setAutoCompactionEnabled] = useState(true);
   const [compactError, setCompactError] = useState<string | null>(null);
   const [compactResult, setCompactResult] = useState<CompactResultInfo | null>(null);
   const [agentPhase, setAgentPhase] = useState<AgentPhase>(null);
@@ -858,7 +859,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (liveState.extensionStatuses !== undefined) setExtensionStatuses(liveState.extensionStatuses ?? []);
           if (liveState.extensionWidgets !== undefined) setExtensionWidgets(liveState.extensionWidgets ?? []);
           if (liveState.queuedMessages !== undefined) setQueuedMessages(normalizeQueuedMessages(liveState.queuedMessages));
-          if (liveState.autoCompactionEnabled !== undefined) setAutoCompactionEnabled(liveState.autoCompactionEnabled ?? true);
         } else if (!agentState.running) {
           setQueuedMessages({ steering: [], followUp: [] });
         }
@@ -1469,7 +1469,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // would otherwise leave the "Stop compaction" UI stuck. No state
       // (wrapper destroyed) means nothing is compacting.
       setIsCompacting(state?.isCompacting ?? false);
-      setAutoCompactionEnabled(state?.autoCompactionEnabled ?? true);
       setQueuedMessages(normalizeQueuedMessages(state?.queuedMessages));
       const busy = data.running && state
         && (state.isStreaming || state.isPromptRunning || state.isCompacting);
@@ -2069,10 +2068,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
     } catch (e) {
       console.error("Fork failed:", e);
+      addNotice({ type: "error", message: t("chat.forkFailed", { error: e instanceof Error ? e.message : String(e) }) });
     } finally {
       setForkingEntryId(null);
     }
-  }, [onSessionForked]);
+  }, [addNotice, onSessionForked, t]);
 
   const handleNavigate = useCallback(async (entryId: string): Promise<boolean> => {
     if (bashRunningRef.current) return false;
@@ -2090,9 +2090,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       return sessionIdRef.current === sid;
     } catch (e) {
       console.error("Failed to navigate:", e);
+      addNotice({ type: "error", message: t("chat.navigateFailed", { error: e instanceof Error ? e.message : String(e) }) });
       return false;
     }
-  }, [loadSession]);
+  }, [addNotice, loadSession, t]);
 
   const handleLeafChange = useCallback(async (leafId: string | null) => {
     if (bashRunningRef.current) return;
@@ -2103,9 +2104,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setActiveLeafId(leafId);
     const loaded = await loadContext(sid, leafId);
     if (loaded && leafId && sessionIdRef.current === sid) {
-      sendAgentCommand(sid, { type: "navigate_tree", targetId: leafId }).catch(() => {});
+      // The view already shows the chosen branch; if the agent's pointer cannot
+      // follow, the next prompt would continue the old one — say so.
+      sendAgentCommand(sid, { type: "navigate_tree", targetId: leafId }).catch((e) => {
+        if (sessionIdRef.current !== sid) return;
+        addNotice({ type: "error", message: t("chat.navigateFailed", { error: e instanceof Error ? e.message : String(e) }) });
+      });
     }
-  }, [loadContext]);
+  }, [addNotice, loadContext, t]);
 
   const handleModelChange = useCallback(async (provider: string, modelId: string) => {
     if (isNew) {
@@ -2276,7 +2282,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             type: "set_auto_compaction",
             enabled: nextEnabled,
           });
-          setAutoCompactionEnabled(nextEnabled);
+          setAutomation((prev) => ({ ...prev, autoCompactionEnabled: nextEnabled }));
           return complete({
             handled: true,
             message: nextEnabled

@@ -51,6 +51,7 @@ import {
 import { providerBadgeLabel } from "./enabled-models-helpers";
 import { ProviderIcon } from "./ProviderIcon";
 import { ProviderUsageSummary } from "./ProviderUsageSummary";
+import { isImeComposing } from "@/lib/ime";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1517,7 +1518,7 @@ function OAuthDetail({ provider, onRefresh, enabledModels }: {
                 ref={inputRef}
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") submitCode(loginState.token, inputValue); }}
+                onKeyDown={(e) => { if (e.key === "Enter" && !isImeComposing(e)) submitCode(loginState.token, inputValue); }}
                 placeholder={loginState.phase === "auth" ? "http://localhost:1455/auth/callback?code=…" : (loginState.placeholder ?? "Enter value…")}
                 style={{ flex: 1, padding: "6px 9px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text)", fontSize: 12, outline: "none", fontFamily: "var(--font-mono)", boxSizing: "border-box" }}
               />
@@ -1662,7 +1663,7 @@ function ApiKeyDetail({ provider, onRefresh, enabledModels }: {
         <SecretTextInput
           value={apiKey}
           onChange={setApiKey}
-          onKeyDown={(e) => { if (e.key === "Enter" && apiKey.trim()) handleSave(); }}
+          onKeyDown={(e) => { if (e.key === "Enter" && !isImeComposing(e) && apiKey.trim()) handleSave(); }}
           placeholder={provider.configured ? "Enter new key to replace…" : "sk-…"}
           style={{ flex: 1 }}
           autoComplete="off"
@@ -1750,7 +1751,7 @@ function AddProviderPicker({
       style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       onKeyDown={(e) => {
-        if (e.key !== "Escape") return;
+        if (e.key !== "Escape" || isImeComposing(e)) return;
         e.preventDefault();
         e.stopPropagation();
         onClose();

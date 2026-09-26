@@ -4,7 +4,7 @@ import test from "node:test";
 
 const source = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
 const hookSource = await readFile(new URL("../hooks/useAgentSession.ts", import.meta.url), "utf8");
-const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8") + await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8");
 
 function elementBlock() {
   const start = source.indexOf("className={`chat-scroll-to-bottom");

@@ -1,4 +1,4 @@
-import { readdirSync } from "fs";
+import { readdir } from "fs/promises";
 import { userHome } from "./user-home.ts";
 import path from "path";
 import { getAdditionalAllowedRoots, normalizeSlashes } from "./allowed-roots";
@@ -22,7 +22,12 @@ export async function getAllowedFileRoots(): Promise<Set<string>> {
   const cached = globalThis.__piAllowedRootsCache;
   if (cached && cached.expiresAt > now) return cached.roots;
 
-  const sessions = await listAllSessions();
+  // Stale is fine here: the set only ever lags by one background rebuild, the
+  // same staleness the 5 s TTL already accepts, and routes that create a new
+  // location call allowFileRoot() directly. Forcing a fresh scan made the 10 s
+  // worktree poll pay a full catalogue rebuild whenever agent activity had
+  // invalidated the list — which during use is almost always.
+  const sessions = await listAllSessions({ allowStale: true });
   const roots = new Set<string>();
   for (const s of sessions) {
     if (s.cwd) roots.add(normalizeSlashes(s.cwd));
@@ -34,7 +39,7 @@ export async function getAllowedFileRoots(): Promise<Set<string>> {
   // Also allow ~/pi-cwd-* directories created by the default-cwd endpoint.
   try {
     const base = userHome();
-    for (const name of readdirSync(base)) {
+    for (const name of await readdir(base)) {
       if (/^pi-cwd-\d{8}$/.test(name)) {
         roots.add(normalizeSlashes(path.join(base, name)));
       }
