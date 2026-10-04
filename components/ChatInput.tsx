@@ -882,6 +882,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modelDropdownPanelRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
   const toolDropdownRef = useRef<HTMLDivElement>(null);
   const thinkingDropdownRef = useRef<HTMLDivElement>(null);
@@ -2115,6 +2116,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   // Close dropdowns on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
+      if (
+        dropdownRef.current && !dropdownRef.current.contains(e.target as Node) &&
+        !modelDropdownPanelRef.current?.contains(e.target as Node)
+      ) {
+        setModelDropdownOpen(false);
+        setModelFilter("");
+      }
       if (toolDropdownRef.current && !toolDropdownRef.current.contains(e.target as Node)) {
         setToolDropdownOpen(false);
       }
@@ -2152,6 +2160,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       className="chat-input-shell"
       aria-busy={builtinCommandPending || undefined}
     >
+      {!compact && <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          processImageFiles(files);
+          e.target.value = "";
+        }}
+      />}
       <div className="chat-composer-wrap" style={{ maxWidth: showHints ? undefined : "var(--chat-content-max-width, 820px)" }}>
         <ModelErrorBanner error={modelError} />
         <ModelScopeWarningBanner warnings={modelScopeWarnings} onDismiss={onDismissModelScopeWarnings} dismissLabel={t("chat.modelScopeDismiss")} onOpenModelsConfig={onOpenModelsConfig} />
@@ -2646,6 +2666,21 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
           {/* LEFT: project context + model selector (idle) or steer/followup toggle (streaming) */}
           <div className="composer-controls-left">
+            {!compact && (
+              <button
+                type="button"
+                className={`native-toolbar-button composer-toolbar-chip is-icon-only composer-attach-button${attachedImages.length ? " has-attachments" : ""}`}
+                onClick={() => fileInputRef.current?.click()}
+                title={t("chat.attachImage")}
+                aria-label={t("chat.attachImage")}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <polyline points="21 15 16 10 5 21" />
+                </svg>
+              </button>
+            )}
             {showHints && projectLabel && (
               <div ref={projectDropdownRef} className="composer-anchor is-static">
                 <button

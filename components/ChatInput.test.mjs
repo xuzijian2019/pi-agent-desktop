@@ -1074,3 +1074,19 @@ test("selector rows keep the default star and the floating save button in one gu
   assert.match(active, /aria-selected="true"/);
   assert.doesNotMatch(active, /border-left/);
 });
+
+test("the fork's model menu closes on an outside click", () => {
+  // pi-web moved its model menu into ModelSelector and took this branch of the shared
+  // outside-click handler with it; the fork keeps its own menu, so it must keep the branch.
+  const source = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
+  const handler = source.slice(source.indexOf("// Close dropdowns on outside click"), source.indexOf('document.addEventListener("mousedown", handler)'));
+  assert.match(handler, /dropdownRef\.current && !dropdownRef\.current\.contains\(e\.target as Node\)[\s\S]*?setModelDropdownOpen\(false\);\s*setModelFilter\(""\);/);
+});
+
+test("the composer offers an image picker left of the folder chip", () => {
+  const source = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
+  assert.match(source, /<input\s+ref=\{fileInputRef\}\s+type="file"\s+accept="image\/\*"\s+multiple[\s\S]*?processImageFiles\(files\);/);
+  const left = source.slice(source.indexOf('<div className="composer-controls-left">'), source.indexOf("{showHints && projectLabel && ("));
+  assert.match(left, /onClick=\{\(\) => fileInputRef\.current\?\.click\(\)\}/);
+  assert.match(left, /aria-label=\{t\("chat\.attachImage"\)\}/);
+});

@@ -6160,6 +6160,15 @@ span.linenumber {
   padding: 0 6px;
 }
 
+/* Image picker left of the folder chip; tinted while images are attached. */
+.composer-attach-button {
+  flex-shrink: 0;
+}
+
+.composer-attach-button.has-attachments {
+  color: var(--accent);
+}
+
 /* The model chip is the one control allowed to absorb (and give up) the
    leftover width of the composer row. */
 .composer-model-anchor {
