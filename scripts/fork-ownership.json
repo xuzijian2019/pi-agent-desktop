@@ -108,10 +108,10 @@
       "disposition": "accepted"
     },
     "components/BranchNavigator.tsx": {
-      "risk": "low",
-      "drift": 26,
-      "reason": "className hook only, no structural change \u2014 the intended shape for every restyled file.",
-      "structuralDrift": 14,
+      "risk": "medium",
+      "drift": 47,
+      "reason": "className hook only, no structural change \u2014 the intended shape for every restyled file. Upstream/main c5a70eb (2026-10-04 merge, round 2) brought pi-web 6fcd7d4 changes to this file through abcwyc's merge; measured against the 96966e5 baseline they count as drift (32 structural). Round 3 moves the baseline to 6fcd7d4.",
+      "structuralDrift": 32,
       "disposition": "accepted"
     },
     "lib/file-access.ts": {
@@ -129,11 +129,11 @@
       "reason": "Routes homedir() through userHome() so Next's file tracer stops folding it into a build-time glob of the whole user profile \u2014 the walk that made every Windows build fail. One import plus call swaps; conflicts here would be textual."
     },
     "lib/directory-browser.ts": {
-      "risk": "low",
-      "drift": 25,
-      "structuralDrift": 25,
+      "risk": "medium",
+      "drift": 42,
+      "structuralDrift": 42,
       "disposition": "accepted",
-      "reason": "Routes homedir() through userHome() so Next's file tracer stops folding it into a build-time glob of the whole user profile \u2014 the walk that made every Windows build fail. One import plus call swaps; conflicts here would be textual."
+      "reason": "Routes homedir() through userHome() so Next's file tracer stops folding it into a build-time glob of the whole user profile \u2014 the walk that made every Windows build fail. One import plus call swaps; conflicts here would be textual. Upstream/main c5a70eb (2026-10-04 merge, round 2) brought pi-web 6fcd7d4 changes to this file through abcwyc's merge; measured against the 96966e5 baseline they count as drift (42 structural). Round 3 moves the baseline to 6fcd7d4."
     },
     "lib/skill-lock.ts": {
       "risk": "low",

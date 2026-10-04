@@ -520,12 +520,16 @@
   }
 }
 
-/* While the agent or a bash command is running, fork/navigate actions on user
-   messages are inert (the handlers early-return) — hide them here instead of
-   toggling their props, so MessageView memoization survives busy transitions. */
-.chat-window[data-session-busy="true"] .user-msg-actions {
+/* Inert user-message actions (the handlers early-return) are hidden here
+   instead of toggling their props, so MessageView memoization survives busy
+   transitions: a bash command blocks fork and edit, an agent run only edit. */
+.chat-window[data-bash-running="true"] .user-msg-actions {
   opacity: 0 !important;
   pointer-events: none !important;
+}
+
+.chat-window[data-session-busy="true"] .user-msg-actions .msg-edit-action {
+  display: none !important;
 }
 
 /* ---- from settings.css --------------------------------------------------- */
@@ -3192,6 +3196,13 @@ pre, code {
   font-size: 15px;
   line-height: 1.55;
   word-break: break-word;
+}
+
+/* A message under in-place edit (upstream's MessageView isEditing state). */
+.message-user-bubble.is-editing {
+  background: color-mix(in srgb, var(--accent) 14%, var(--user-bg));
+  border: 1px solid color-mix(in srgb, var(--accent) 62%, var(--user-bg));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 .message-assistant {
@@ -7593,4 +7604,68 @@ span.linenumber {
 .file-viewer-script-button[aria-pressed="true"] {
   background: var(--bg-selected);
   color: var(--text);
+}
+
+/* Mobile keyboard collapse: upstream's rule in globals.css targets
+   .chat-input-controls, but the fork's composer chrome carries its own class
+   (see .chat-composer-controls above); hide it under the same conditions so
+   the on-screen keyboard does not cover it. */
+@media (max-width: 640px), (pointer: coarse) and (max-height: 500px) {
+  html[data-keyboard-open] .chat-composer-controls {
+    display: none !important;
+  }
+}
+
+/* Default star on composer model/effort rows (ChatInput ComposerOptionRow):
+   upstream's SelectorRow star in the fork's native menu rows. */
+.composer-option-star-row {
+  position: relative;
+}
+
+.composer-option-row.has-star {
+  padding-right: 36px;
+}
+
+.composer-option-star {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: flex;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: opacity 120ms var(--ease-native), color 120ms var(--ease-native), background 120ms var(--ease-native);
+}
+
+.composer-option-star-row:hover .composer-option-star,
+.composer-option-star-row:focus-within .composer-option-star,
+.composer-option-star.is-default {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.composer-option-star:not(.is-default):hover {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+
+.composer-option-star.is-default {
+  cursor: default;
+}
+
+@media (hover: none) {
+  .composer-option-star {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }

@@ -44,7 +44,7 @@ test("the file viewer forwards whole-file @mentions to the text viewer", async (
 
 test("long user messages scroll inside a height-capped bubble (#419)", async () => {
   const messageView = await read("./MessageView.tsx");
-  const bubble = messageView.slice(messageView.indexOf('className="message-user-bubble"'));
+  const bubble = messageView.slice(messageView.indexOf("message-user-bubble"));
   assert.match(bubble.slice(0, 300), /message-user-bubble/);
   const css = await read("../app/native-theme.css");
   assert.match(css, /\.message-user-bubble \{[^}]*max-height: 300px;[^}]*overflow-y: auto;/);

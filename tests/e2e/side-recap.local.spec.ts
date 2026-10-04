@@ -111,7 +111,8 @@ test('recap: pending cancellation control and navigation must not retain stale c
 });
 
 test('side: narrow layout, focus isolation, nested command rejection and refresh cleanup',async({page,request})=>{
- const p=await open(page); await page.setViewportSize({width:390,height:844}); await command(page,'/side test');
+ const p=await open(page); await page.setViewportSize({width:390,height:844}); // Phone keyboards insert a line break on Enter; Ctrl+Enter sends.
+ await command(page,'/side test','Control+Enter');
  const panel=page.getByRole('region',{name:'Side chat',exact:true}); await expect(panel).toContainText('LOCAL_SIDE_OK');
  await expect(panel.locator('textarea')).toBeFocused();
  const main=page.locator("textarea[aria-label=Message]");

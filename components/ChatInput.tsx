@@ -19,9 +19,13 @@ import { BranchControl } from "./workbench/BranchControl";
 import { selectableThinkingLevels } from "@/lib/thinking-level-options";
 import { ImageLightbox } from "./ImageLightbox";
 import type { SessionInfo } from "@/lib/types";
+import { getMarkdownListContinuation } from "@/lib/markdown-list-continuation";
+import { isBareMcpCommand, isBuiltinMcpCommand } from "@/lib/mcp-command";
 import { FolderIcon, getFileIcon } from "./FileIcons";
+import type { SelectorRowStar } from "./SelectorRow";
 
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useEnterSendMode } from "@/hooks/useEnterSendMode";
 import { useI18n } from "@/hooks/useI18n";
 import type { ExtensionStatusItem } from "@/lib/types";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
@@ -64,6 +68,10 @@ interface Props {
   onOpenModelsConfig?: () => void;
   onModelChange?: (provider: string, modelId: string) => void;
   modelSwitching?: boolean;
+  /** The model new sessions start with, starred in the model selector. */
+  defaultModel?: { provider: string; modelId: string } | null;
+  /** Saves a model as the default for new sessions and selects it here. */
+  onSetDefaultModel?: (provider: string, modelId: string) => void;
   onCompact?: () => void;
   onAbortCompaction?: () => void;
   isCompacting?: boolean;
@@ -79,6 +87,10 @@ interface Props {
   onThinkingLevelChange?: (level: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max") => void;
   availableThinkingLevels?: string[] | null;
   thinkingLevelMap?: Record<string, string | null> | null;
+  /** `defaultThinkingLevel` saved in settings, starred in the reasoning menu. */
+  savedDefaultThinkingLevel?: string | null;
+  /** Saves a reasoning level as the default for new sessions and selects it here. */
+  onSetDefaultThinkingLevel?: (level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max") => void;
   retryInfo?: { attempt: number; maxAttempts: number; errorMessage?: string } | null;
   /** Cancel the auto-retry backoff (pi ≥ 0.86) shown in the retry banner. */
   onAbortRetry?: () => void;
@@ -322,13 +334,87 @@ function getBuiltinSlashCommand(message: string): SlashCommandPaletteItem | unde
   return BUILTIN_SLASH_COMMANDS.find((command) => command.name === match[1]);
 }
 
+/**
+ * A composer menu row in the fork's native style. With `star`, the right
+ * gutter holds upstream's default marker (SelectorRow): a static star on the
+ * default row, and a "save as default" button on the others that appears on
+ * hover or focus (always on touch screens, via native-theme.css).
+ */
+function ComposerOptionRow({ active, onSelect, star, children }: {
+  active: boolean;
+  onSelect: () => void;
+  star?: SelectorRowStar;
+  children: React.ReactNode;
+}) {
+  const row = (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`composer-option-row${active ? " is-active" : ""}${star ? " has-star" : ""}`}
+    >
+      {active
+        ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon"><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
+        : <span className="composer-check-spacer" />}
+      {children}
+    </button>
+  );
+  if (!star) return row;
+  const icon = (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill={star.isDefault ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
+      <polygon points="12 2.5 14.9 8.6 21.5 9.4 16.6 13.9 17.9 20.5 12 17.2 6.1 20.5 7.4 13.9 2.5 9.4 9.1 8.6" />
+    </svg>
+  );
+  return (
+    <div className="composer-option-star-row">
+      {row}
+      {star.isDefault ? (
+        <span role="img" aria-label={star.defaultLabel} title={star.defaultLabel} className="composer-option-star is-default">{icon}</span>
+      ) : (
+        <button
+          type="button"
+          title={star.saveLabel}
+          aria-label={star.saveLabel}
+          onClick={(event) => { event.stopPropagation(); star.onSave(); }}
+          className="composer-option-star"
+        >
+          {icon}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function canRunBuiltinSlashCommandWhileStreaming(message: string): boolean {
   const command = getBuiltinSlashCommand(message);
   return command?.source === "builtin" && command.availableWhileStreaming === true;
 }
 
+/**
+ * Whether a message sent while a run streams goes to the built-in handler
+ * first: a built-in that may run then, or a bare `/mcp`, which opens
+ * Settings › MCP when pi's built-in MCP extension owns it (useAgentSession)
+ * and is otherwise sent as before.
+ */
+export function offersBuiltinSlashCommandWhileStreaming(message: string): boolean {
+  return canRunBuiltinSlashCommandWhileStreaming(message) || isBareMcpCommand(message);
+}
+
 export function isExactSlashCommand(message: string, command: SlashCommandPaletteItem): boolean {
   return command.source === "builtin" && message.trim() === `/${command.name}`;
+}
+
+/**
+ * Whether Enter on the highlighted palette entry submits the message rather
+ * than completing it to "/name ": a built-in typed in full (while a run
+ * streams, only one that may run then), or a bare `/mcp` on pi's built-in
+ * `/mcp`, which opens Settings › MCP at once, as it does before the command
+ * list has loaded. Every other extension command still takes a second Enter.
+ */
+export function submitsSlashCommandOnEnter(message: string, command: SlashCommandPaletteItem, isStreaming: boolean): boolean {
+  if (command.source === "builtin") {
+    return isExactSlashCommand(message, command) && (!isStreaming || command.availableWhileStreaming === true);
+  }
+  return isBuiltinMcpCommand(command) && isBareMcpCommand(message);
 }
 
 export function canClearBuiltinCommandInput(message: string, imageCount: number, submittedMessage: string): boolean {
@@ -676,8 +762,10 @@ function DraftSavingIndicator({ loading }: { loading: boolean }) {
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange, modelSwitching,
+  defaultModel, onSetDefaultModel,
   compactError, compactResult, toolPreset, onToolPresetChange,
   thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
+  savedDefaultThinkingLevel, onSetDefaultThinkingLevel,
   retryInfo, onAbortRetry, queuedMessages, inputHistory = [], onRecallQueue,
   slashCommands, slashCommandsLoading, onLoadSlashCommands,
   onBuiltinCommand, onViewCommand,
@@ -735,6 +823,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const isCompact = composerTier === "compact" || isNarrow;
   const hasTranscript = (sessionStats?.totalMessages ?? 0) > 0;
   const showHints = showInputHints ?? !hasTranscript;
+  const enterSendMode = useEnterSendMode();
   const [value, setValue] = useState(() => (draftKey ? getDraft(draftKey)?.value ?? "" : ""));
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [modelDropdownRect, setModelDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -1202,6 +1291,25 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, [value]);
 
   useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    // Shift+Enter on desktop, Enter on mobile keyboards: every newline the
+    // textarea inserts arrives here, while IME confirmations and sends do not.
+    const continueList = (event: InputEvent) => {
+      if (event.inputType !== "insertLineBreak" || event.isComposing) return;
+      const edit = getMarkdownListContinuation(ta.value, ta.selectionStart, ta.selectionEnd);
+      if (!edit) return;
+      event.preventDefault();
+      ta.setSelectionRange(edit.start, edit.end);
+      // insertText keeps the edit on the native undo stack and fires the input
+      // event that updates the controlled value.
+      document.execCommand(edit.text ? "insertText" : "delete", false, edit.text);
+    };
+    ta.addEventListener("beforeinput", continueList);
+    return () => ta.removeEventListener("beforeinput", continueList);
+  }, []);
+
+  useEffect(() => {
     return () => {
       attachedImagesRef.current.forEach(revokeImagePreview);
     };
@@ -1264,7 +1372,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const msg = splicePastedTexts(value, pastedTexts).trim();
     if (!msg && !attachedImages.length) return;
     if (await dispatchBuiltin(msg)) return;
-    if (isStreaming) return;
+    // A bare /mcp still reaches the handler mid-run: it opens Settings › MCP when
+    // pi's built-in MCP extension owns it (useAgentSession).
+    if (isStreaming && !isBareMcpCommand(msg)) return;
     if (!attachedImages.length && msg.startsWith("/") && onBuiltinCommand) {
       const result = await onBuiltinCommand(msg);
       if (draftKeyRef.current !== draftKey) return;
@@ -1273,6 +1383,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         return;
       }
     }
+    if (isStreaming) return;
     if (preparingRef.current) return;
     preparingRef.current = true; setPreparationError("");
     try {
@@ -1618,6 +1729,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const msg = splicePastedTexts(value, pastedTexts).trim();
     if (!msg && !attachedImages.length) return;
     if (await dispatchBuiltin(msg)) return;
+    if (!attachedImages.length && onBuiltinCommand && isBareMcpCommand(msg)) {
+      // Settings › MCP opens when pi's built-in MCP extension owns /mcp
+      // (useAgentSession); another extension's /mcp is queued as before.
+      const result = await onBuiltinCommand(msg);
+      if (draftKeyRef.current !== draftKey) return;
+      if (result.handled) {
+        if (!result.error) clearInput();
+        return;
+      }
+    }
     if (preparingRef.current) return;
     preparingRef.current = true; setPreparationError("");
     try {
@@ -1631,19 +1752,26 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       else if (onFollowUp) onFollowUp(prepared.text, images);
       if (JSON.stringify(snapshotRef.current()) === original) clearInput();
     } catch (e) { setPreparationError(String(e)); } finally { preparingRef.current = false; }
-  }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput, prepare, dispatchBuiltin]);
+  }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, onPromptWithStreamingBehavior, onSteer, onFollowUp, onBuiltinCommand, clearInput, prepare, dispatchBuiltin]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
       const nativeEvent = e.nativeEvent;
-      const sendShortcut = e.key === "Enter" && !e.shiftKey;
+      const enterKey = e.key === "Enter" && !e.shiftKey;
+      const sendShortcut = isMobile || enterSendMode === "ctrlEnter"
+        ? enterKey && (e.ctrlKey || e.metaKey)
+        : enterKey;
+      // Popup menus and the IME guard take plain Enter in either send mode on a
+      // desktop keyboard. Mobile keyboards insert a line break on Enter, so they
+      // keep using the send shortcut there.
+      const acceptShortcut = isMobile ? sendShortcut : enterKey;
       const recentlyComposed = Date.now() - lastCompositionEndAtRef.current < COMPOSITION_END_ENTER_GRACE_MS;
       const isComposing =
         isComposingRef.current ||
         nativeEvent.isComposing ||
         nativeEvent.keyCode === 229;
 
-      if (sendShortcut && (isComposing || recentlyComposed)) {
+      if (acceptShortcut && (isComposing || recentlyComposed)) {
         if (recentlyComposed) e.preventDefault();
         return;
       }
@@ -1664,7 +1792,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           setHistoryMenuOpen(false);
           return;
         }
-        if ((e.key === "Tab" || sendShortcut) && inputHistory[historyActiveIndex]) {
+        if ((e.key === "Tab" || acceptShortcut) && inputHistory[historyActiveIndex]) {
           e.preventDefault();
           applyHistoryInput(inputHistory[historyActiveIndex]);
           return;
@@ -1695,12 +1823,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         }
       }
 
-      if (slashMenuOpen && slashQuery !== null && !isComposing && sendShortcut && displayedSlashCommands[slashActiveIndex]) {
+      if (slashMenuOpen && slashQuery !== null && !isComposing && acceptShortcut && displayedSlashCommands[slashActiveIndex]) {
         e.preventDefault();
-        const command = displayedSlashCommands[slashActiveIndex];
-        if (isExactSlashCommand(value, command) && (!isStreaming || (command.source === "builtin" && command.availableWhileStreaming))) {
+        const selectedCommand = displayedSlashCommands[slashActiveIndex];
+        // In the Ctrl+Enter send mode, plain Enter completes the command instead of sending it.
+        if (sendShortcut && submitsSlashCommandOnEnter(value, selectedCommand, isStreaming)) {
           setSlashMenuOpen(false); void handleSend();
-        } else applySlashCommand(command, true);
+        } else applySlashCommand(selectedCommand, true);
         return;
       }
 
@@ -1745,7 +1874,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           setAtMenuOpen(false);
           return;
         }
-        if ((e.key === "Tab" || sendShortcut) && atMatches[atActiveIndex]) {
+        if ((e.key === "Tab" || acceptShortcut) && atMatches[atActiveIndex]) {
           e.preventDefault();
           applyAtCompletion(atMatches[atActiveIndex]);
           return;
@@ -1781,7 +1910,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         }
       }
     },
-    [isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, displayedSlashCommands, slashActiveIndex, applySlashCommand, sendQueued, handleSend, hashMenuOpen, hashQuery, hashMatches, hashActiveIndex, applyHashCompletion, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value]
+    [isMobile, enterSendMode, isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, displayedSlashCommands, slashActiveIndex, applySlashCommand, sendQueued, handleSend, hashMenuOpen, hashQuery, hashMatches, hashActiveIndex, applyHashCompletion, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value]
   );
 
   const handleInput = useCallback(() => {
@@ -1997,7 +2126,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   useEffect(() => {
     if (!isStreaming) return;
-    setThinkingDropdownOpen(false);
     setToolDropdownOpen(false);
   }, [isStreaming]);
 
@@ -2452,12 +2580,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               className="native-primary-button composer-send-button"
               onClick={handleSend}
               disabled={builtinCommandPending || (!value.trim() && !attachedImages.length)}
+              aria-label={t("chat.send")}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="2" y1="7" x2="11" y2="7" />
                 <polyline points="7.5 3 12 7 7.5 11" />
               </svg>
-              {t("chat.send")}
+              {!isMobile && t("chat.send")}
             </button>
           )}
           </div>
@@ -2636,20 +2765,28 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             {group.options.map((opt) => {
                               const isActive = opt.modelId === model?.modelId && opt.provider === model?.provider;
                               return (
-                                <button
+                                <ComposerOptionRow
                                   key={`${opt.provider}:${opt.modelId}`}
-                                  onClick={() => {
+                                  active={isActive}
+                                  onSelect={() => {
                                     setModelDropdownOpen(false);
                                     setModelFilter("");
                                     if (!isActive || isAutoModelSelection) { setDraftSetup(previous => previous ? { ...previous, model: { provider: opt.provider, modelId: opt.modelId } } : previous); onModelChange(opt.provider, opt.modelId); }
                                   }}
-                                  className={`composer-option-row${isActive ? " is-active" : ""}`}
+                                  star={onSetDefaultModel ? {
+                                    isDefault: defaultModel?.provider === opt.provider && defaultModel?.modelId === opt.modelId,
+                                    saveLabel: t("chat.saveDefaultModel"),
+                                    defaultLabel: t("chat.defaultModel"),
+                                    onSave: () => {
+                                      setModelDropdownOpen(false);
+                                      setModelFilter("");
+                                      setDraftSetup(previous => previous ? { ...previous, model: { provider: opt.provider, modelId: opt.modelId } } : previous);
+                                      onSetDefaultModel(opt.provider, opt.modelId);
+                                    },
+                                  } : undefined}
                                 >
-                                  {isActive
-                                    ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon"><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
-                                    : <span className="composer-check-spacer" />}
                                   {opt.name}
-                                </button>
+                                </ComposerOptionRow>
                               );
                             })}
                           </div>
@@ -2664,8 +2801,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               <div ref={thinkingDropdownRef} className="composer-anchor">
                 <button
                   className={`native-toolbar-button composer-toolbar-chip composer-effort-trigger${thinkingDropdownOpen ? " is-open" : ""}`}
-                  onClick={() => !isStreaming && setThinkingDropdownOpen((v) => !v)}
-                  disabled={isStreaming}
+                  onClick={() => setThinkingDropdownOpen((v) => !v)}
                    title={isStreaming ? t("chat.currentReasoning", { level: thinkingDisplayLabel }) : t("chat.changeReasoning", { level: thinkingDisplayLabel })}
                    aria-label={t("chat.changeReasoningLabel")}
                 >
@@ -2686,20 +2822,27 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       const displayLabel = (mappedVal != null && mappedVal !== lvl) ? mappedVal : lvl;
                       const showOriginal = mappedVal != null && mappedVal !== lvl;
                       return (
-                        <button
+                        <ComposerOptionRow
                           key={lvl}
-                          onClick={() => { setThinkingDropdownOpen(false); if (!isActive) { setDraftSetup(previous => previous ? { ...previous, effort: lvl } : previous); onThinkingLevelChange(lvl); } }}
-                          className={`composer-option-row${isActive ? " is-active" : ""}`}
+                          active={isActive}
+                          onSelect={() => { setThinkingDropdownOpen(false); if (!isActive) { setDraftSetup(previous => previous ? { ...previous, effort: lvl } : previous); onThinkingLevelChange(lvl); } }}
+                          star={onSetDefaultThinkingLevel && lvl !== "auto" ? {
+                            isDefault: savedDefaultThinkingLevel === lvl,
+                            saveLabel: t("chat.saveDefaultThinking"),
+                            defaultLabel: t("chat.defaultThinking"),
+                            onSave: () => {
+                              setThinkingDropdownOpen(false);
+                              setDraftSetup(previous => previous ? { ...previous, effort: lvl } : previous);
+                              onSetDefaultThinkingLevel(lvl);
+                            },
+                          } : undefined}
                         >
-                          {isActive
-                            ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon"><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
-                            : <span className="composer-check-spacer" />}
                           <span className="composer-option-label">
                             {displayLabel}
                             {showOriginal && <span className="composer-option-alias">({lvl})</span>}
                           </span>
                           <span className="composer-option-desc">{desc}</span>
-                        </button>
+                        </ComposerOptionRow>
                       );
                     })}
                     </div>
