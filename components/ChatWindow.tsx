@@ -55,7 +55,9 @@ interface Props {
   onBranchDataChange?: (tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void) => void;
   onSystemPromptChange?: (prompt: string | null) => void;
   onSystemToolsChange?: (tools: ToolEntry[] | null) => void;
-  onSystemInfoLoaderChange?: (loader: (() => Promise<void>) | null) => void;
+  onSystemInfoLoaderChange?: (
+    loader: ((kind: "system" | "tools" | "mcp") => Promise<void>) | null,
+  ) => void;
   onSessionStatsChange?: (stats: SessionStatsInfo | null) => void;
   onSessionStatsPanelOpen?: () => void;
   onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
@@ -1430,7 +1432,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         </div>
         <div
           ref={scrollContainerRef} onPointerUp={captureQuotedSelection}
-          className="scrollbar-subtle min-w-0 flex-1 overflow-x-hidden overflow-y-scroll pt-4"
+          className="chat-scroll-container scrollbar-subtle min-w-0 flex-1 overflow-x-hidden overflow-y-scroll pt-4"
           style={{ paddingLeft: scrollbarGutter > 0 ? scrollbarGutter : undefined, visibility: pendingScrollRestore && !loading ? "hidden" : undefined }}
         >
           <div style={{ minWidth: 0, padding: `0 ${CHAT_COLUMN_PADDING}px` }}>
@@ -1739,6 +1741,13 @@ function getExtensionDialogSummary(request: ExtensionDialogRequest): string | un
   return undefined;
 }
 
+function extractMcpAuthorizationUrl(request: ExtensionDialogRequest): string | null {
+  if (request.method !== "input") return null;
+  const text = `${request.title}\n${request.placeholder ?? ""}`;
+  const match = text.match(/https:\/\/[^\s<>"']+/i);
+  return match?.[0] ?? null;
+}
+
 function ExtensionDialog({
   request,
   onRespond,
@@ -1752,6 +1761,7 @@ function ExtensionDialog({
   const [now, setNow] = useState(() => Date.now());
   const focusFirstOption = useCallback((element: HTMLDivElement | null) => element?.focus(), []);
   const summary = getExtensionDialogSummary(request);
+  const authorizationUrl = extractMcpAuthorizationUrl(request);
   const remainingSeconds = request.expiresAt === undefined
     ? null
     : Math.max(0, Math.ceil((request.expiresAt - now) / 1000));
@@ -1949,6 +1959,40 @@ function ExtensionDialog({
                 </div>
               ))}
             </div>
+          )}
+          {request.method === "input" && (
+            authorizationUrl && (
+              <div style={{ marginBottom: 10 }}>
+                <a
+                  href={authorizationUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  style={{
+                    display: "inline-flex",
+                    maxWidth: "100%",
+                    alignItems: "center",
+                    gap: 7,
+                    padding: "7px 10px",
+                    border: "1px solid color-mix(in srgb, var(--accent) 42%, transparent)",
+                    borderRadius: 7,
+                    background: "color-mix(in srgb, var(--accent) 10%, transparent)",
+                    color: "var(--accent)",
+                    fontSize: 12,
+                    fontWeight: 650,
+                    textDecoration: "none",
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M15 3h6v6" />
+                    <path d="M10 14 21 3" />
+                    <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
+                  </svg>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {t("mcp.openAuthorization")}
+                  </span>
+                </a>
+              </div>
+            )
           )}
           {request.method === "input" && (
             <input

@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useNativeAppMenu } from "@/hooks/useNativeAppMenu";
 import { SessionSidebar } from "./SessionSidebar";
 import type { AppSlashCommand } from "@/lib/web-slash-commands";
 import { ChatWindow } from "./ChatWindow";
@@ -954,6 +955,23 @@ export function AppShell() {
       console.error("Failed to switch project:", error);
     }
   }, [desktopMode, selectedSession?.cwd, newSessionCwd, activeCwd, handleNewSession]);
+
+  const handleNativeMenuAction = useCallback((payload: string) => {
+    if (payload === "new-session") {
+      // Via the sidebar, like the keyboard shortcut, so a missing folder is redirected.
+      if (activeCwd) sidebarActionsRef.current?.newSession(activeCwd);
+      return;
+    }
+    if (payload === "settings-general" || payload === "settings-models") {
+      closeSettingsMenu();
+      setActiveTopPanel(null);
+      setSettingsSection(payload === "settings-general" ? "general" : "models");
+    }
+  }, [activeCwd, closeSettingsMenu]);
+
+  // The native macOS menu is the only reliable route when the webview has no
+  // focused element. Route its custom items back through the same app state.
+  useNativeAppMenu(handleNativeMenuAction);
 
   // Global keyboard shortcuts (handles Esc, Ctrl+Alt+N etc.)
   useGlobalKeyboardShortcuts({

@@ -1,6 +1,6 @@
 import { withCheckoutGuard, checkoutRoot } from "./checkout-guard";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, createMcpExtension, SessionManager, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
 import { existsSync, realpathSync, writeFileSync } from "fs";
@@ -213,8 +213,8 @@ function withExtensionTools(session: AgentSessionLike, toolNames: string[]): str
   const selectedToolNames = resolveShellTools(toolNames, session.settingsManager.getDefaultTools());
   const extensionToolNames = session
     .getAllTools()
-    .map((t) => t.name)
-    .filter((name) => !codingToolNames.has(name));
+    .filter((tool) => !codingToolNames.has(tool.name) && (tool.exposure ?? "direct") === "direct")
+    .map((tool) => tool.name);
 
   return [...new Set([...selectedToolNames, ...extensionToolNames])];
 }
@@ -387,9 +387,24 @@ export class AgentSessionWrapper {
       }
       if (IDLE_RESET_EVENT_TYPES.has(event.type)) this.resetIdleTimer();
       this.emit(event);
+      // `agent_end` fires before the post-run pipeline (compaction, branch
+      // summaries, queued continuations) completes, so the running set can
+      // only shrink at `agent_settled` — or when the RPC prompt itself
+      // settles (see finishPrompt). Compaction also flips `isCompacting`
+      // outside any run (manual compact).
+      if (
+        event.type === "agent_settled"
+        || event.type === "compaction_start"
+        || event.type === "compaction_end"
+      ) {
+        notifyRunningChange();
+      }
       if (event.type === "agent_settled") this.notifyAgentRunCompleteIfIdle();
     });
     this.resetIdleTimer();
+    // A reopened wrapper may already be running (restored mid-run); make
+    // connected sidebars reconcile instead of waiting for the next event.
+    notifyRunningChange();
   }
 
   private notifyAgentRunCompleteIfIdle(): void {
@@ -486,6 +501,10 @@ export class AgentSessionWrapper {
       return await operation();
     } finally {
       this.resetIdleTimer();
+      // Abort/compact settle outside the run broadcasts above when the
+      // session was idle beforehand (nothing to abort, compact finished
+      // without touching a run).
+      notifyRunningChange();
     }
   }
 
@@ -689,12 +708,19 @@ export class AgentSessionWrapper {
             if (promptSettled) return;
             promptSettled = true;
             this.pendingPromptCount = Math.max(0, this.pendingPromptCount - 1);
-            notifyRunningChange();
             this.resetIdleTimer();
+            // The prompt promise settles AFTER agent_end/agent_settled were
+            // broadcast (the SDK resolves it only once the run is fully idle),
+            // and pendingPromptCount kept isRunning() true until now. Without
+            // this broadcast the last frame on the running-events stream still
+            // contains the session id and the sidebar spinner never stops.
+            notifyRunningChange();
             this.notifyAgentRunCompleteIfIdle();
           };
 
           this.pendingPromptCount += 1;
+          // Admission already makes isRunning() true; the SDK's agent_start
+          // (and its broadcast) may lag behind preflight by a beat.
           notifyRunningChange();
           let prompt: Promise<void>;
           try {
@@ -702,10 +728,10 @@ export class AgentSessionWrapper {
               ...(promptImages?.length ? { images: promptImages } : {}),
               ...(streamingBehavior ? { streamingBehavior } : {}),
               source: "rpc",
-              // Match pi's RPC contract: acknowledge only after synchronous prompt
-              // validation and extension preflight have accepted the submission.
-              preflightResult: (success) => {
-                if (success) acceptPreflight();
+              // Match pi's RPC contract: acknowledge after the prompt is accepted as
+              // a run, queued input, or an extension command; rejection still throws.
+              preflightResult: () => {
+                acceptPreflight();
               },
             });
           } catch (error) {
@@ -893,8 +919,8 @@ export class AgentSessionWrapper {
           (entry) => entry.type === "message" && entry.message.role === "assistant",
         );
 
-        if (!sessionManager.isPersisted() || !leafId || !branchHasAssistant) return { cancelled: true };
         if (!currentSessionFile || !existsSync(currentSessionFile)) return { cancelled: true };
+        if (!leafId || !branchHasAssistant) return { cancelled: true };
 
         return this.withSessionReplacement("clone", async () => {
           const sessionDir = sessionManager.getSessionDir();
@@ -1097,6 +1123,9 @@ export class AgentSessionWrapper {
         } finally {
           this.resetIdleTimer();
           invalidateSessionListCache();
+          // executeBash emits no start/end SDK events (only output deltas);
+          // keep the running-events stream in sync from the RPC boundary.
+          notifyRunningChange();
         }
       }
 
@@ -1783,7 +1812,13 @@ function registerRpcWrapper(wrapper: AgentSessionWrapper): void {
   const registry = getRegistry();
   const sessionId = wrapper.sessionId;
   if (wrapper.sessionFile) cacheSessionPath(sessionId, wrapper.sessionFile);
-  wrapper.onDestroy(() => registry.delete(sessionId));
+  wrapper.onDestroy(() => {
+    registry.delete(sessionId);
+    // A destroyed wrapper leaves the running set (idle shutdown, branch
+    // switch, fork/clone replacement); push the new set so sidebars clear
+    // its spinner instead of waiting for the next broadcast.
+    notifyRunningChange();
+  });
   registry.set(sessionId, wrapper);
   wrapper.start();
   if (!wrapper.isChatOnly()) wrapper.beginExtensionBinding();
@@ -2212,6 +2247,7 @@ export async function startRpcSession(
                 () => listSubagentProfiles(sessionCwd),
                 isBuiltInSubagentsEnabled,
               ),
+              createMcpExtension(),
             ],
             extensionsOverride: (base) => preferUserBashExtension(preferPiWebSubagentExtension(base)),
           },

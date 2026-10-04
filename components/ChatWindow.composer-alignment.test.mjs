@@ -13,7 +13,8 @@ test("the overlay composer and message list share one column axis", () => {
   );
   assert.match(
     source,
-    /className="scrollbar-subtle min-w-0 flex-1 overflow-x-hidden overflow-y-scroll pt-4"/,
+    /className="chat-scroll-container scrollbar-subtle min-w-0 flex-1 overflow-x-hidden overflow-y-scroll pt-4"/,
+    "the message scrollport must always show its track, whether or not the session overflows yet",
   );
   assert.match(source, /paddingLeft: scrollbarGutter > 0 \? scrollbarGutter : undefined/);
   assert.match(source, /paddingInline: scrollbarGutter/);

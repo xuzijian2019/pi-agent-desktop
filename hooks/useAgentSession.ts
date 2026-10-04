@@ -200,7 +200,9 @@ export interface UseAgentSessionOptions {
   onSystemPromptChange?: (prompt: string | null) => void;
   onSystemToolsChange?: (tools: ToolEntry[] | null) => void;
   /** Registers an action that lazily starts the session and loads its prompt and tools. */
-  onSystemInfoLoaderChange?: (loader: (() => Promise<void>) | null) => void;
+  onSystemInfoLoaderChange?: (
+    loader: ((kind: "system" | "tools" | "mcp") => Promise<void>) | null,
+  ) => void;
   onSessionStatsPanelOpen?: () => void;
   setToolPreset?: (preset: ToolPreset) => void;
   deferInitialScroll?: boolean;
@@ -734,7 +736,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     let messagesLoaded = false;
     try {
       if (showLoading) setLoading(true);
-      const params = new URLSearchParams({ deferThinking: "1", deferMedia: "1", tree: "summary" });
+      const params = new URLSearchParams({ deferThinking: "1", deferMedia: "1", tree: "summary", wholeTurns: "1" });
       if (options?.force) params.set("force", "1");
       // A hung first attempt must not leave "loading session" on screen
       // forever: abandon it, retry once with a longer deadline. The server
@@ -893,7 +895,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       && !options?.signal?.aborted
     );
     try {
-      const params = new URLSearchParams({ deferThinking: "1", deferMedia: "1" });
+      const params = new URLSearchParams({ deferThinking: "1", deferMedia: "1", wholeTurns: "1" });
       if (leafId) params.set("leafId", leafId);
       // Page upward: ask the server for the `tail` ancestors preceding `before`,
       // then prepend them. Omitting `before` fetches the most-recent `tail`.
@@ -1070,6 +1072,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     syncLiveModel(state);
     setSystemPrompt(state.systemPrompt ?? "");
   }, [ensureNewSession, loadTools, syncLiveModel]);
+
+  const loadSystemInfoFor = useCallback(async (kind: "system" | "tools" | "mcp") => {
+    await loadSystemInfo();
+    void kind;
+    return undefined;
+  }, [loadSystemInfo]);
 
   const loadSlashCommands = useCallback(async () => {
     const sid = sessionIdRef.current ?? await ensureNewSession();
@@ -2174,7 +2182,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     try {
       const result = await sendAgentCommand<CompactCommandResult>(sid, { type: "compact" });
       setCompactResult(readCompactResult(result, "manual"));
-      await loadSession(sid, true);
+      // includeState: manual compact ends no model run, so no agent_end ever
+      // refreshes contextUsage — the ring would keep the pre-compact percentage
+      // until the next turn (PR #38).
+      await loadSession(sid, true, true);
     } catch (e) {
       setCompactError(e instanceof Error ? e.message : String(e));
       setCompactResult(null);
@@ -2268,7 +2279,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             ...(args ? { customInstructions: args } : {}),
           });
           setCompactResult(readCompactResult(result, "manual"));
-          if (await loadSession(sid, true)) promoteNewSession();
+          // includeState refreshes contextUsage — see handleCompact (PR #38).
+          if (await loadSession(sid, true, true)) promoteNewSession();
           return complete({ handled: true, message: "Compacted context" });
         }
 
@@ -2667,9 +2679,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [systemPrompt, onSystemPromptChange]);
 
   useEffect(() => {
-    onSystemInfoLoaderChange?.(loadSystemInfo);
+    onSystemInfoLoaderChange?.(loadSystemInfoFor);
     return () => onSystemInfoLoaderChange?.(null);
-  }, [loadSystemInfo, onSystemInfoLoaderChange]);
+  }, [loadSystemInfoFor, onSystemInfoLoaderChange]);
 
   useEffect(() => {
     if (!onBranchDataChange) return;

@@ -1,7 +1,7 @@
 {
   "pi": {
-    "version": "0.87.1",
-    "reason": "Merged upstream/main 73bc9f1; bundled SDK remains pi 0.87.1 from segment F."
+    "version": "1.0.0",
+    "reason": "Merged upstream/main 26eb188 (round 1 of 3), which upgraded the bundled SDK to pi 1.0.0; see .agents/notes/upstream-merge-20261004-handoff.md."
   },
   "pi-web": {
     "version": "0.10.0",

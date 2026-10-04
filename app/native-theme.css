@@ -1375,6 +1375,14 @@ select {
   font: inherit;
 }
 
+/* WebKitGTK does not always project the textarea's line-height onto the
+   ::placeholder pseudo-element, so the composer placeholder renders with a
+   smaller line box and its glyphs get clipped (upstream #64). Make it
+   explicit; matches the line-height on `.chat-composer textarea` below. */
+.chat-composer textarea::placeholder {
+  line-height: 1.55;
+}
+
 /* The one focus affordance. Everything focusable in the fork gets the same
    3px translucent-accent ring; rules below only re-state it when they have to
    compose with a shadow the element already carries, or invert it to `inset`

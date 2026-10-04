@@ -190,7 +190,30 @@ function getVisibleTopBoundary(element: HTMLElement): number {
     }
   }
 
+  // The app topbar is not an ancestor of the composer, so the clip walk above
+  // cannot see it: on short viewports an upward menu clamped only to the
+  // viewport top opens underneath the topbar and its leading items are
+  // covered (#63). Treat a horizontally-overlapping topbar as the visible top.
+  visibleTop = Math.max(visibleTop, getTopbarBoundary(element));
+
   return visibleTop;
+}
+
+export function getTopbarBoundary(element: HTMLElement): number {
+  if (typeof document === "undefined") return 0;
+  const rect = element.getBoundingClientRect();
+  let boundary = 0;
+  for (const topbar of document.querySelectorAll<HTMLElement>(".app-topbar")) {
+    const topbarRect = topbar.getBoundingClientRect();
+    const overlapsHorizontally = rect.left < topbarRect.right && rect.right > topbarRect.left;
+    // Only a topbar drawn above the menu can clip it; one beside (mobile
+    // split layouts) or below must not shrink the menu.
+    const sitsAbove = topbarRect.bottom <= rect.bottom;
+    if (overlapsHorizontally && sitsAbove) {
+      boundary = Math.max(boundary, topbarRect.bottom + topbar.clientTop);
+    }
+  }
+  return boundary;
 }
 
 type ComposerTier = "normal" | "compact" | "narrow";

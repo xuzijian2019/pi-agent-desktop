@@ -17,6 +17,9 @@ export async function GET(
   const rawTail = Number(url.searchParams.get("tail"));
   const tail = Number.isFinite(rawTail) && rawTail > 0 ? Math.min(rawTail, 1000) : 50;
   const before = url.searchParams.get("before") ?? undefined;
+  // Chat-view loads ask for whole turns so a window never cuts a turn in half;
+  // without the flag `tail` is an exact cap on the returned ancestor chain.
+  const wholeTurns = url.searchParams.has("wholeTurns");
 
   try {
     const rpc = getRpcSession(id);
@@ -34,6 +37,7 @@ export async function GET(
       deferToolResultImages,
       tail,
       excludeLeaf: Boolean(before),
+      wholeTurns,
       sessionId: id,
     });
 

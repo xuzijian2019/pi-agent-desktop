@@ -69,10 +69,13 @@ export async function GET(
     const deferToolResultImages = searchParams.has("deferMedia");
     const rawTail = Number(searchParams.get("tail"));
     const tail = Number.isFinite(rawTail) && rawTail > 0 ? Math.min(rawTail, 1000) : 50;
+    // Chat-view loads ask for whole turns; the default keeps `tail` an exact cap.
+    const wholeTurns = searchParams.has("wholeTurns");
     const context = buildSessionContext(entries as never, leafId, {
       deferThinking,
       deferToolResultImages,
       tail,
+      wholeTurns,
       sessionId: id, // local: lazy URLs for historical tool-result images
     });
     perf?.span("context");

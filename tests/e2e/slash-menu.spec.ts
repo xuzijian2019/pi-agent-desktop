@@ -26,7 +26,8 @@ async function seed(page:Page,request:APIRequestContext){
 }
 
 test('compact command rows, predictable keyboard navigation, search, completion and narrow layout',async({page})=>{
- await project(page);await input(page).fill('/');await expect(menu(page).getByRole('option')).toHaveCount(40);
+ // 21 built-ins + 19 fixture commands + pi's built-in MCP extension's /mcp.
+ await project(page);await input(page).fill('/');await expect(menu(page).getByRole('option')).toHaveCount(41);
  const options=menu(page).getByRole('option');const boxes=await options.evaluateAll(nodes=>nodes.slice(0,8).map(node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,height:r.height}}));
  expect(new Set(boxes.map(b=>b.x)).size).toBe(1);expect(Math.max(...boxes.map(b=>b.height))).toBeLessThanOrEqual(40);
  expect((await menu(page).boundingBox())!.height).toBeLessThan(341);

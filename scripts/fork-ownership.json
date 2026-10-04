@@ -101,10 +101,10 @@
       "disposition": "accepted"
     },
     "lib/rpc-manager.ts": {
-      "risk": "medium",
-      "drift": 215,
-      "reason": "Small fork edit in a file upstream changes often. Workbench activity tracking was removed on 2026-09-25, which dropped structural drift back under the high threshold. Still accepted.",
-      "structuralDrift": 215,
+      "risk": "high",
+      "drift": 269,
+      "reason": "Small fork edit in a file upstream changes often. Workbench activity tracking was removed on 2026-09-25, which dropped structural drift back under the high threshold. Upstream/main 26eb188 (2026-10-04 merge, round 1) added running-state broadcasts and the built-in MCP extension on the desktop side, which pi-web 96966e5 does not have; measured against that baseline this lifts structural drift to 269. Still accepted.",
+      "structuralDrift": 269,
       "disposition": "accepted"
     },
     "components/BranchNavigator.tsx": {

@@ -713,6 +713,14 @@ export interface BuildSessionContextOptions {
   deferToolResultImages?: boolean;
   tail?: number;
   excludeLeaf?: boolean;
+  /**
+   * Let a page run past `tail` to open on a whole turn (its leading user
+   * message) instead of cutting a turn in half. Chat-view loads set this so a
+   * window that stops mid-turn does not render that turn's leading messages
+   * flat. API callers leave it unset: for them `tail` is an exact cap on the
+   * ancestor chain (the documented route contract, pinned by e2e).
+   */
+  wholeTurns?: boolean;
   /** Session id used to build lazy URLs for historical tool-result images. */
   sessionId?: string;
 }
@@ -722,11 +730,11 @@ export function buildSessionContext(
   leafId?: string | null,
   options: BuildSessionContextOptions = {},
 ): SessionContext {
-  const { tail, excludeLeaf } = options;
+  const { tail, excludeLeaf, wholeTurns } = options;
   // History pages retain the original branch order, including compacted messages.
   // SDK context filtering can drop a page's messages when firstKeptEntryId is outside it.
   const sliced = leafId === null ? [] : sliceActiveBranch(
-    entries, leafId ?? null, tail && tail > 0 ? tail : entries.length, excludeLeaf,
+    entries, leafId ?? null, tail && tail > 0 ? tail : entries.length, excludeLeaf, wholeTurns,
   );
   const hasMore = Boolean(tail && tail > 0 && sliced[0]?.parentId);
 
@@ -785,6 +793,7 @@ export function sliceActiveBranch(
   leafId: string | null,
   tail: number,
   excludeLeaf = false,
+  wholeTurns = false,
 ): SessionEntry[] {
   if (tail <= 0) return entries;
   const byId = new Map<string, SessionEntry>();
@@ -809,7 +818,8 @@ export function sliceActiveBranch(
   // ChatWindow can only fold a turn into "Process details" from its anchor —
   // until the older page arrives and they collapse. Walk back to the anchor
   // so the page opens on whole turns; a turn too long to reach is left cut.
-  if (current && !startsTurn(current)) {
+  // `wholeTurns` is opt-in: without it `tail` is an exact cap (API contract).
+  if (wholeTurns && current && !startsTurn(current)) {
     const extension: SessionEntry[] = [];
     let cursor = current.parentId ? byId.get(current.parentId) : undefined;
     while (cursor && extension.length < MAX_TURN_EXTENSION_ENTRIES) {

@@ -96,6 +96,27 @@ async function assembleServer() {
     }
   }
 
+  // Next's file tracer drops jiti's top-level entries (lib/jiti.cjs / lib/
+  // jiti.mjs): the pi-coding-agent bundle reaches jiti only through a lazy
+  // require("jiti") that tracing cannot follow, so only lib/jiti-static.mjs
+  // survives and extension loading fails with "Cannot find module
+  // .../jiti/lib/jiti.cjs". Ship the complete source package over it.
+  // (As of pi 0.87.1 npm nests a jiti copy under pi-coding-agent and the
+  // traced output happens to resolve — this copy keeps packaging deterministic
+  // instead of relying on that resolution, same policy as node-pty above.)
+  await cp(
+    join(rootDir, "node_modules", "jiti"),
+    join(
+      serverResourcesDir,
+      "node_modules",
+      "@earendil-works",
+      "pi-coding-agent",
+      "node_modules",
+      "jiti",
+    ),
+    { recursive: true, force: true },
+  );
+
   await copyFile(
     join(rootDir, "desktop", "server-launcher.cjs"),
     join(serverResourcesDir, "desktop-server.cjs"),

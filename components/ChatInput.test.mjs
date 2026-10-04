@@ -12,7 +12,7 @@ const jiti = createJiti(import.meta.url, {
 });
 const React = await jiti.import("react");
 const { renderToStaticMarkup } = await jiti.import("react-dom/server");
-const { draftTextsToPastedTexts, pastedTextsToDraftTexts, ChatInput, ModelErrorBanner, ModelScopeWarningBanner, canClearBuiltinCommandInput, canRestoreUserMessage, canRunBuiltinSlashCommandWhileStreaming, compressImageFile, cycleListIndex, filterModelOptions, getUpwardMenuMaxHeight, getUserMessageText, getUserMessageDraftImages, isExactSlashCommand, modelSupportsImageInput, replaceLinksWithMarkdown, shouldCompressImageFile } = await jiti.import("./ChatInput.tsx");
+const { draftTextsToPastedTexts, pastedTextsToDraftTexts, ChatInput, ModelErrorBanner, ModelScopeWarningBanner, canClearBuiltinCommandInput, canRestoreUserMessage, canRunBuiltinSlashCommandWhileStreaming, compressImageFile, cycleListIndex, filterModelOptions, getTopbarBoundary, getUpwardMenuMaxHeight, getUserMessageText, getUserMessageDraftImages, isExactSlashCommand, modelSupportsImageInput, replaceLinksWithMarkdown, shouldCompressImageFile } = await jiti.import("./ChatInput.tsx");
 
 const { ModelSelector } = await jiti.import("./ModelSelector.tsx");
 const { clearDraft, getDraft, mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft, setDraft } = await jiti.import("@/lib/draft-store.ts");
@@ -432,6 +432,40 @@ test("caps an upward menu to the visible space above its anchor", () => {
   // file list would paint through the bar and hide the leading matches.
   assert.equal(getUpwardMenuMaxHeight(200, 36), 156);
   assert.ok(getUpwardMenuMaxHeight(200, 36) < 400);
+});
+
+test("an upward menu never opens underneath the app topbar (#63)", () => {
+  const originals = { document: globalThis.document };
+  const rect = (left, right, top, bottom) => ({ left, right, top, bottom });
+  const element = {
+    getBoundingClientRect: () => rect(100, 900, 500, 600),
+  };
+  const topbar = (left, right, top, bottom) => ({
+    clientTop: 0,
+    getBoundingClientRect: () => rect(left, right, top, bottom),
+  });
+  globalThis.document = {
+    querySelectorAll: () => [topbar(0, 1280, 0, 52)],
+  };
+  try {
+    // Horizontal overlap + topbar above the anchor: the boundary is its bottom.
+    assert.equal(getTopbarBoundary(element), 52);
+    // Topbar beside the anchor (no horizontal overlap): no boundary.
+    globalThis.document = {
+      querySelectorAll: () => [topbar(0, 80, 0, 52)],
+    };
+    assert.equal(getTopbarBoundary(element), 0);
+    // Topbar drawn below the anchor must not shrink the menu.
+    globalThis.document = {
+      querySelectorAll: () => [topbar(0, 1280, 700, 752)],
+    };
+    assert.equal(getTopbarBoundary(element), 0);
+    // No topbar in the tree (tests / detached use): no boundary.
+    globalThis.document = { querySelectorAll: () => [] };
+    assert.equal(getTopbarBoundary(element), 0);
+  } finally {
+    globalThis.document = originals.document;
+  }
 });
 
 test("file mention menu applies the measured upward height cap", () => {
