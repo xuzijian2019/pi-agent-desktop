@@ -2,7 +2,7 @@
 import { registerAbortHandler } from "@/hooks/useKeyboardShortcuts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, BlockingExtensionUiRequest, ExtensionUiRequest, SessionInfo, SessionTreeNode, ToolResultMessage, UserMessage } from "@/lib/types";
+import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, BlockingExtensionUiRequest, ExtensionUiRequest, LeafChangeOptions, SessionInfo, SessionTreeNode, ToolResultMessage, UserMessage } from "@/lib/types";
 import { normalizeCustomPanelLines } from "@/lib/ansi";
 import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantBlocks, hasAssistantAnswer, isAssistantTruncated, isMessageGroupAnchor, splitFinalAssistantBlocks } from "@/lib/message-display";
@@ -54,7 +54,7 @@ interface Props {
   onSessionRenamed?: (sessionId: string, name: string) => void;
   modelsRefreshKey?: number;
   chatInputRef?: React.RefObject<ChatInputHandle | null>;
-  onBranchDataChange?: (tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void, locked: boolean) => void;
+  onBranchDataChange?: (tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null, options?: LeafChangeOptions) => void, locked: boolean) => void;
   onSystemPromptChange?: (prompt: string | null) => void;
   onSystemToolsChange?: (tools: ToolEntry[] | null) => void;
   onSystemInfoLoaderChange?: (
@@ -342,8 +342,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   // externally-installed wrapper after the first re-render.
   const [snapshotLeaf, setSnapshotLeaf] = useState<string | undefined>();
   useEffect(() => setSnapshotLeaf(undefined), [session?.id, newSessionCwd]);
-  const publishBranchData = useCallback((tree: SessionTreeNode[], leaf: string | null, change: (id: string | null) => void, locked: boolean) => {
-    onBranchDataChange?.(tree, leaf, id => { setSnapshotLeaf(id ?? undefined); change(id); }, locked);
+  const publishBranchData = useCallback((tree: SessionTreeNode[], leaf: string | null, change: (id: string | null, options?: LeafChangeOptions) => void, locked: boolean) => {
+    onBranchDataChange?.(tree, leaf, (id, options) => { setSnapshotLeaf(options?.summarize ? undefined : id ?? undefined); change(id, options); }, locked);
   }, [onBranchDataChange]);
   const wrappedOnAgentEnd = useCallback(() => {
     onAgentEnd?.();
@@ -360,7 +360,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     loading, error, messages, activeToolResults, entryIds, historyCursor, hasEarlierMessages, streamState,
     agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
     retryInfo, contextUsage, forkingEntryId,
-    isCompacting, compactError, compactResult, displayModel: displayModelValue, modelSwitching, sessionStats,
+    isCompacting, compactError, compactNotice, compactResult, displayModel: displayModelValue, modelSwitching, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages,
     notices, extensionDialog, waitingExtensionDialogCount, extensionCustomUi, waitingExtensionCustomUiCount, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput, setNoticePaused,
     isAutoModelSelection,
@@ -373,6 +373,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     editEntryId,
     sessionIdRef, messagesEndRef, scrollContainerRef, loadContext, activeLeafId, scrollToMessage,
     isNearBottomRef, showScrollToBottom,
+    branchSummaryPending, handleAbortBranchSummary, routedModel,
     applyTaskSetup, handleSend, handleAbort, handleAbortRetry, handleFork, handleEditContent, cancelEdit, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior,
     dismissModelScopeWarnings,
@@ -1284,6 +1285,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       defaultModel={defaultModel}
       onSetDefaultModel={handleSetDefaultModel}
       compactError={compactError}
+      compactNotice={compactNotice}
       compactResult={compactResult}
       extensionStatuses={extensionStatuses}
       toolPreset={toolPreset}
@@ -1297,6 +1299,9 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       onSetDefaultThinkingLevel={session || isNew ? handleSetDefaultThinkingLevel : undefined}
       retryInfo={retryInfo}
       onAbortRetry={handleAbortRetry}
+      branchSummaryPending={branchSummaryPending}
+      routedModel={routedModel}
+      onAbortBranchSummary={handleAbortBranchSummary}
       queuedMessages={queuedMessages}
       inputHistory={inputHistory}
       onRecallQueue={handleRecallQueue}
@@ -1635,7 +1640,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       )}
 
       {side && <SideChatPanel messages={side.messages} busy={side.busy} error={side.error} ready={side.ready} parentRunning={agentRunning || bashRunning} cwd={session?.cwd ?? undefined} onSend={ephemeral.sendSide} onStop={returnToMain} onClose={returnToMain} />}
-      {!side && commandDialog && <ChatCommandDialog kind={commandDialog} stats={sessionStats} choices={forkChoices} onClose={() => setCommandDialog(null)} onFork={id => { setCommandDialog(null); void handleFork(id); }} />}
+      {!side && commandDialog && <ChatCommandDialog kind={commandDialog} stats={sessionStats} sessionId={session?.id ?? sessionIdRef.current ?? null} choices={forkChoices} onClose={() => setCommandDialog(null)} onFork={id => { setCommandDialog(null); void handleFork(id); }} />}
     </div>
   );
 }

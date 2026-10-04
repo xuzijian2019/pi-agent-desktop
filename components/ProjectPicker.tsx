@@ -165,7 +165,7 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
       setCustomPathOpen(true);
       setDropdownOpen(true);
     }
-  }, [commitCustomPath, closeDropdown]);
+  }, [commitCustomPath]);
 
   // Create a fresh project folder via /api/cwd/create (home-confined) and
   // hand it to the host with source "create" so a session opens right in it.

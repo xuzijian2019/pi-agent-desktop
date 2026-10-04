@@ -3,7 +3,7 @@ import { createServer } from "node:net";
 import { once } from "node:events";
 import { mkdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { test, expect } from "@playwright/test";
+import { test, expect, type Request } from "@playwright/test";
 import { sandboxServerEnv, WORK_ROOT } from "./sandbox";
 
 test("stopping and restarting an owned server preserves the browser draft", async ({ page, request }, testInfo) => {
@@ -53,9 +53,24 @@ test("stopping and restarting an owned server preserves the browser draft", asyn
     logs += `\n[test] server stopped in ${Date.now() - startedAt}ms\n`;
   };
   try {
-    await start(); await page.goto(`${url}/?cwd=${encodeURIComponent(cwd)}`);
+    await start();
+    // An editable composer can precede startup API responses. Stopping next dev
+    // then triggers its error overlay (and an unavailable lazy chunk), replacing
+    // the app instead of exercising recovery from an established connection.
+    const pending = new Set<Request>();
+    page.on("request", (req) => {
+      const target = new URL(req.url());
+      if (target.origin === url && req.resourceType() !== "eventsource") pending.add(req);
+    });
+    page.on("requestfinished", (req) => pending.delete(req));
+    page.on("requestfailed", (req) => pending.delete(req));
+    const modelsReady = page.waitForResponse((res) => new URL(res.url()).pathname === "/api/models" && res.ok());
+    const trustReady = page.waitForResponse((res) => new URL(res.url()).pathname === "/api/project-trust" && res.ok());
+    await page.goto(`${url}/?cwd=${encodeURIComponent(cwd)}`);
+    await Promise.all([modelsReady, trustReady]);
     const composer = page.getByRole("textbox", { name: "Message", exact: true });
     await expect(composer).toBeEditable(); await composer.fill("survive a real server restart");
+    await expect.poll(() => [...pending].map((req) => req.url())).toEqual([]);
     await stop();
     await expect(page.getByRole("alert").filter({ hasText: /connection|server|offline/i })).toBeVisible({ timeout: 35_000 });
     await start();

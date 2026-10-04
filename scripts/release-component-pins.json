@@ -1,10 +1,10 @@
 {
   "pi": {
-    "version": "1.0.0",
-    "reason": "Merged upstream/main 26eb188 (round 1 of 3), which upgraded the bundled SDK to pi 1.0.0; see .agents/notes/upstream-merge-20261004-handoff.md."
+    "version": "1.0.2",
+    "reason": "Merged upstream/main f66ba13 (round 3), upgrading pi to 1.0.2 and adopting packaged Code mode asset staging; see .agents/notes/upstream-merge-20261004-round3-handoff.md."
   },
   "pi-web": {
     "version": "0.10.0",
-    "reason": "Merged upstream/main 73bc9f1 (package version 0.10.0); fork adaptations documented in the merge handoff."
+    "reason": "Merged upstream pi-web through main@6fcd7d4 (segments A-G); fork adaptations documented in .agents/notes/upstream-merge-20261004-round3-handoff.md."
   }
 }

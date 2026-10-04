@@ -39,6 +39,7 @@ import { CODEMODE_TOOL_NAME, getCodemodeProgress } from "@/lib/codemode-view";
 import { updateExtensionWidgets } from "@/lib/extension-widgets";
 import { bareMcpOpensSettings } from "@/lib/mcp-command";
 import type { SettingsSection } from "@/lib/settings-navigation";
+import type { CacheWarmingInfo, LeafChangeOptions, RoutedModelInfo } from "@/lib/types";
 import {
   enqueueExtensionUiRequest,
   removeExtensionUiRequest,
@@ -119,6 +120,8 @@ type AgentStateResponse = {
   streamingMessage?: AgentMessage;
   extensionStatuses?: ExtensionStatusItem[];
   extensionWidgets?: ExtensionWidgetItem[];
+  routedModel?: RoutedModelInfo;
+  cacheWarming?: CacheWarmingInfo;
   queuedMessages?: { steering?: string[]; followUp?: string[] } | null;
   autoCompactionEnabled?: boolean;
   autoRetryEnabled?: boolean;
@@ -145,6 +148,15 @@ function normalizeQueuedMessages(q?: { steering?: string[]; followUp?: string[] 
 type ExtensionUiDialogRequest = Extract<ExtensionUiRequest, { method: "select" | "confirm" | "input" | "editor" }>;
 type ExtensionUiCustomRequest = Extract<ExtensionUiRequest, { method: "custom" }>;
 export type NoticeType = "info" | "success" | "warning" | "error";
+
+// pi refuses a manual compact by throwing when there is nothing to fold
+// (`AgentSession.compact()`); that is an answer about the session, not a failure.
+// The RPC reply carries the bare message, `compaction_end` prefixes it with
+// "Compaction failed: " — returns the bare message for a no-op, else null.
+export function compactNoopMessage(message: string): string | null {
+  const bare = message.replace(/^Compaction failed:\s*/, "");
+  return /^(Nothing to compact|Already compacted)\b/.test(bare) ? bare : null;
+}
 
 export type NoticeItem = {
   id: string;
@@ -205,7 +217,7 @@ export interface UseAgentSessionOptions {
   onSessionRenamed?: (sessionId: string, name: string) => void;
   modelsRefreshKey?: number;
   chatInputRef?: React.RefObject<ChatInputHandle | null>;
-  onBranchDataChange?: (tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void, locked: boolean) => void;
+  onBranchDataChange?: (tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null, options?: LeafChangeOptions) => void, locked: boolean) => void;
   onSystemPromptChange?: (prompt: string | null) => void;
   onSystemToolsChange?: (tools: ToolEntry[] | null) => void;
   /** Registers an action that lazily starts the session and loads its prompt and tools. */
@@ -418,11 +430,25 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [forkingEntryId, setForkingEntryId] = useState<string | null>(null);
   const [currentModelOverride, setCurrentModelOverride] = useState<{ provider: string; modelId: string } | null>(null);
   const [liveModel, setLiveModel] = useState<{ provider: string; modelId: string } | null>(null);
+  // Under a virtual model: where the latest response was routed (pi's footer "auto → …").
+  const [routedModel, setRoutedModel] = useState<RoutedModelInfo | null>(null);
+  const [cacheWarming, setCacheWarming] = useState<CacheWarmingInfo | null>(null);
   const [pendingModel, setPendingModel] = useState<{ provider: string; modelId: string } | null>(null);
   const [modelSwitching, setModelSwitching] = useState(false);
   const [isCompacting, setIsCompacting] = useState(false);
+  // The session whose branch summary is being generated: a summarized switch is one
+  // blocking navigate_tree request that can take as long as an LLM call.
+  const [branchSummarySessionId, setBranchSummarySessionId] = useState<string | null>(null);
+  const branchSummarySessionIdRef = useRef<string | null>(null);
   const [compactError, setCompactError] = useState<string | null>(null);
+  const [compactNotice, setCompactNotice] = useState<string | null>(null);
   const [compactResult, setCompactResult] = useState<CompactResultInfo | null>(null);
+  const reportCompactFailure = useCallback((message: string) => {
+    const notice = compactNoopMessage(message);
+    if (notice) setCompactNotice(notice);
+    else setCompactError(message);
+    setCompactResult(null);
+  }, []);
   const [agentPhase, setAgentPhase] = useState<AgentPhase>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [slashCommands, setSlashCommands] = useState<SlashCommandInfo[]>([]);
@@ -609,9 +635,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setSystemPrompt(null);
       setForkingEntryId(null);
       setCurrentModelOverride(null);
+      setLiveModel(null);
+      setRoutedModel(null);
+      setCacheWarming(null);
       setPendingModel(null);
       setIsCompacting(false);
       setCompactError(null);
+      setCompactNotice(null);
       setCompactResult(null);
       setAgentPhase(null);
       setExtensionDialogs([]);
@@ -703,6 +733,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (state?.thinkingLevel !== undefined) {
       setLiveThinkingLevel(asConcreteThinkingLevel(state.thinkingLevel));
     }
+    setRoutedModel(state?.routedModel ?? null);
+    setCacheWarming(state?.cacheWarming ?? null);
     setAutomation((prev) => ({
       autoCompactionEnabled: state?.autoCompactionEnabled ?? prev.autoCompactionEnabled,
       autoRetryEnabled: state?.autoRetryEnabled ?? prev.autoRetryEnabled,
@@ -758,11 +790,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const cancelEdit = useCallback(() => setEdit(null), [setEdit]);
 
   const sessionStats = useMemo(() => {
+    const selectedModelKey = currentModel ? `${currentModel.provider}/${currentModel.modelId}` : undefined;
     if (sessionStatsOverride) {
       return {
         ...sessionStatsOverride,
         totalActiveMs: data?.totalActiveMs,
         ...(contextUsage ? { contextUsage } : {}),
+        ...(selectedModelKey ? { selectedModelKey } : {}),
       };
     }
     const fileStats = data?.stats;
@@ -775,8 +809,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       ...stats,
       totalActiveMs: data?.totalActiveMs,
       ...(contextUsage ? { contextUsage } : {}),
+      ...(cacheWarming ? { cacheWarming } : {}),
+      ...(selectedModelKey ? { selectedModelKey } : {}),
     } satisfies SessionStatsInfo;
-  }, [messages, sessionStatsOverride, contextUsage, data?.context.messages, data?.filePath, data?.totalActiveMs, data?.stats, session?.id, session?.name]);
+  }, [messages, sessionStatsOverride, contextUsage, cacheWarming, currentModel, data?.context.messages, data?.filePath, data?.totalActiveMs, data?.stats, session?.id, session?.name]);
 
   const sessionReadIdRef = useRef(0);
   useEffect(() => () => { sessionGenerationRef.current += 1; }, []);
@@ -1338,6 +1374,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         });
         break;
       }
+      case "setStatus":
+        setExtensionStatuses((prev) => {
+          const rest = prev.filter((item) => item.key !== request.statusKey);
+          return request.statusText !== undefined
+            ? [...rest, { key: request.statusKey, text: request.statusText }]
+            : rest;
+        });
+        break;
       case "setWidget":
         setExtensionWidgets((prev) => updateExtensionWidgets(
           prev,
@@ -1875,13 +1919,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "compaction_start":
         setIsCompacting(true);
         setCompactError(null);
+        setCompactNotice(null);
         setCompactResult(null);
         break;
       case "compaction_end":
         setIsCompacting(false);
         if (event.errorMessage) {
-          setCompactError(event.errorMessage as string);
-          setCompactResult(null);
+          reportCompactFailure(event.errorMessage as string);
         } else if (!event.aborted) {
           setCompactResult(readCompactResult(event.result, (event.reason as string | undefined) ?? "auto"));
           if (sessionIdRef.current) loadSession(sessionIdRef.current);
@@ -1937,14 +1981,21 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "extension_ui_closed":
         setExtensionDialogs((queue) => removeExtensionUiRequest(queue, event.id as string));
         break;
+      case "session_replaced":
+        // An extension command called ctx.newSession / fork / switchSession: the
+        // server already created (or resolved) the target, so follow it like a fork.
+        if (typeof event.sessionId === "string" && event.sessionId !== sessionIdRef.current) {
+          onSessionForked?.(event.sessionId);
+        }
+        break;
     }
-  }, [addNotice, applyContextUsage, cancelEventStreamGrace, dispatch, handleExtensionUiRequest, loadSession, notifyPromptStage, onAgentEnd, onSessionRenamed, refreshContextUsage, scheduleEventStreamClose, settleUiStage, syncLiveModel]);
+  }, [addNotice, applyContextUsage, cancelEventStreamGrace, dispatch, handleExtensionUiRequest, loadSession, notifyPromptStage, onAgentEnd, onSessionForked, reportCompactFailure, onSessionRenamed, refreshContextUsage, scheduleEventStreamClose, settleUiStage, syncLiveModel]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
     const trimmedMessage = message.trim();
     if (!trimmedMessage && !images?.length) return;
-    if (agentRunningRef.current || bashRunningRef.current) {
+    if (agentRunningRef.current || bashRunningRef.current || branchSummarySessionIdRef.current) {
       restoreSubmission(message, images, composerDraftKey);
       return;
     }
@@ -2222,11 +2273,55 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [addNotice, loadSession, t]);
   handleNavigateRef.current = handleNavigate;
 
-  const handleLeafChange = useCallback(async (leafId: string | null) => {
+  // A summarized switch cannot switch the view first: pi writes the summary as the new
+  // leaf, so the transcript to show only exists once the request returns.
+  const summarizeAndNavigate = useCallback(async (leafId: string, customInstructions?: string) => {
+    const sid = sessionIdRef.current;
+    if (!sid || branchSummarySessionIdRef.current) return;
+    branchSummarySessionIdRef.current = sid;
+    setBranchSummarySessionId(sid);
+    try {
+      const result = await sendAgentCommand<{ cancelled?: boolean; aborted?: boolean }>(sid, {
+        type: "navigate_tree",
+        targetId: leafId,
+        summarize: true,
+        ...(customInstructions ? { customInstructions } : {}),
+      });
+      if (sessionIdRef.current !== sid) return;
+      if (result?.aborted) {
+        addNotice({ type: "info", message: t("chat.branchSummaryStopped") });
+      } else if (result?.cancelled) {
+        addNotice({ type: "info", message: t("chat.branchSwitchCancelled") });
+      } else {
+        await loadSession(sid);
+      }
+    } catch (e) {
+      if (sessionIdRef.current === sid) {
+        addNotice({ type: "error", message: t("chat.branchSummaryFailed", { error: e instanceof Error ? e.message : String(e) }) });
+      }
+    } finally {
+      branchSummarySessionIdRef.current = null;
+      setBranchSummarySessionId(null);
+    }
+  }, [addNotice, loadSession, t]);
+
+  const handleAbortBranchSummary = useCallback(() => {
+    const sid = branchSummarySessionIdRef.current;
+    if (!sid) return;
+    sendAgentCommand(sid, { type: "abort_branch_summary" }).catch((e) => {
+      console.error("Failed to stop the branch summary:", e);
+    });
+  }, []);
+
+  const handleLeafChange = useCallback(async (leafId: string | null, options?: LeafChangeOptions) => {
     // pi refuses navigate_tree mid-run: it moves the one leaf the running agent
     // appends to. Switching only the view would render the live run under
     // another branch, so the switch waits for the run like the server does.
-    if (bashRunningRef.current || agentRunningRef.current || isCompacting) return;
+    if (bashRunningRef.current || agentRunningRef.current || isCompacting || branchSummarySessionIdRef.current) return;
+    if (options?.summarize && leafId) {
+      await summarizeAndNavigate(leafId, options.customInstructions);
+      return;
+    }
     setActiveLeafId(leafId);
     const sid = sessionIdRef.current;
     if (!sid) return;
@@ -2241,7 +2336,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         addNotice({ type: "error", message: t("chat.navigateFailed", { error: e instanceof Error ? e.message : String(e) }) });
       });
     }
-  }, [addNotice, isCompacting, loadContext, t]);
+  }, [addNotice, isCompacting, loadContext, summarizeAndNavigate, t]);
 
   const handleModelChange = useCallback(async (provider: string, modelId: string) => {
     if (isNew) {
@@ -2300,6 +2395,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!sid || isCompacting) return;
     setIsCompacting(true);
     setCompactError(null);
+    setCompactNotice(null);
     setCompactResult(null);
     try {
       const result = await sendAgentCommand<CompactCommandResult>(sid, { type: "compact" });
@@ -2309,12 +2405,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // until the next turn (PR #38).
       await loadSession(sid, true, true);
     } catch (e) {
-      setCompactError(e instanceof Error ? e.message : String(e));
-      setCompactResult(null);
+      reportCompactFailure(e instanceof Error ? e.message : String(e));
     } finally {
       setIsCompacting(false);
     }
-  }, [isCompacting, loadSession]);
+  }, [isCompacting, loadSession, reportCompactFailure]);
 
   const loadModels = useCallback(async (signal?: AbortSignal) => {
     const modelCwd = newSessionCwd ?? session?.cwd ?? "";
@@ -2440,6 +2535,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (!sid || isCompacting) return complete({ handled: true, error: "No active session to compact" });
           setIsCompacting(true);
           setCompactError(null);
+          setCompactNotice(null);
           setCompactResult(null);
           const result = await sendAgentCommand<CompactCommandResult>(sid, {
             type: "compact",
@@ -2545,11 +2641,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           return { handled: false };
       }
     } catch (e) {
-      return complete({ handled: true, error: e instanceof Error ? e.message : String(e) });
+      const message = e instanceof Error ? e.message : String(e);
+      if (commandName === "compact" && compactNoopMessage(message)) {
+        // The composer banner already says why; an error toast on top would repeat it.
+        reportCompactFailure(message);
+        return { handled: true };
+      }
+      return complete({ handled: true, error: message });
     } finally {
       if (commandName === "compact") setIsCompacting(false);
     }
-  }, [activeLeafId, addNotice, ensureNewSession, isCompacting, loadModels, loadSession, loadSlashCommands, loadTools, promoteNewSession, onOpenSettings, onSessionForked, onSessionStatsPanelOpen, onSessionRenamed, slashCommandsForMcp]);
+  }, [activeLeafId, addNotice, reportCompactFailure, ensureNewSession, isCompacting, loadModels, loadSession, loadSlashCommands, loadTools, promoteNewSession, onOpenSettings, onSessionForked, onSessionStatsPanelOpen, onSessionRenamed, slashCommandsForMcp]);
 
   // Let AgentSession.prompt decide atomically whether to queue against the
   // current run or start a new turn if it settled while the request was in
@@ -2888,7 +2990,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     return () => onSystemInfoLoaderChange?.(null);
   }, [loadSystemInfoFor, onSystemInfoLoaderChange]);
 
-  const branchSwitchLocked = agentRunning || bashRunning || isCompacting;
+  const branchSummaryPending = branchSummarySessionId !== null && branchSummarySessionId === (session?.id ?? null);
+  const branchSwitchLocked = agentRunning || bashRunning || isCompacting || branchSummaryPending;
   useEffect(() => {
     if (!onBranchDataChange) return;
     onBranchDataChange(data?.tree ?? [], activeLeafId, handleLeafChange, branchSwitchLocked);
@@ -2963,6 +3066,20 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     return () => clearTimeout(t);
   }, [compactResult]);
 
+  // A failed compaction is a one-off answer to the last attempt, not a standing
+  // state: without this the banner stayed above the composer until the next compact.
+  useEffect(() => {
+    if (!compactError) return;
+    const t = setTimeout(() => setCompactError(null), 8000);
+    return () => clearTimeout(t);
+  }, [compactError]);
+
+  useEffect(() => {
+    if (!compactNotice) return;
+    const t = setTimeout(() => setCompactNotice(null), 6000);
+    return () => clearTimeout(t);
+  }, [compactNotice]);
+
   // Pause notice expiry while hovered or focused.
   // The remainingMs/startedAt/oldestId refs implement a true pause-and-resume instead of resetting the 5s timer.
   const [pausedNoticeId, setPausedNoticeId] = useState<string | null>(null);
@@ -3033,7 +3150,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     data, loading, error, activeLeafId, messages, activeToolResults, entryIds, historyCursor, hasEarlierMessages, streamState,
     agentRunning, modelNames, modelList, modelError, modelScopeWarnings: visibleModelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel,
     retryInfo, contextUsage, systemPrompt, forkingEntryId, retryLoad, dismissModelScopeWarnings,
-    isCompacting, compactError, compactResult, currentModel, displayModel, modelSwitching, sessionStats,
+    isCompacting, compactError, compactNotice, compactResult, currentModel, displayModel, modelSwitching, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages,
     notices: noticeState.visible, addNotice, extensionDialog, waitingExtensionDialogCount, extensionCustomUi, waitingExtensionCustomUiCount, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
     isAutoModelSelection: isNew && newSessionModel === null,
@@ -3049,6 +3166,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     initialScrollDoneRef,
     isNearBottomRef, messagesEndRef,
     // Actions
+    branchSummaryPending, handleAbortBranchSummary, routedModel,
     applyTaskSetup, handleSend, handleAbort, handleAbortRetry, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,

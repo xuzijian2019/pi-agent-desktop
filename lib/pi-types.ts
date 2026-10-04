@@ -8,6 +8,8 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { AgentMessage as PiAgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
+import type { CacheWarmingInfo } from "./types";
+import type { UsageCostBreakdownEntry } from "./usage-breakdown";
 
 export type { PiAgentMessage };
 
@@ -58,6 +60,12 @@ export interface SessionStatsInfo {
   contextUsage?: ContextUsage;
   /** Estimated active time across all entries in the session file. */
   totalActiveMs?: number;
+  /** Cost per model that answered (lib/usage-breakdown.ts). */
+  costBreakdown?: UsageCostBreakdownEntry[];
+  /** Live sessions only. */
+  cacheWarming?: CacheWarmingInfo;
+  /** `provider/modelId` of the selected model; decides whether a one-row breakdown is worth showing. */
+  selectedModelKey?: string;
 }
 
 interface PromptTemplateLike {
@@ -77,13 +85,26 @@ interface ResourceLoaderLike {
   getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> };
 }
 
+export interface NavigateTreeOptions {
+  summarize?: boolean;
+  customInstructions?: string;
+  replaceInstructions?: boolean;
+  label?: string;
+}
+
 interface ExtensionRunnerLike {
   getRegisteredCommands(): Array<{
     invocationName: string;
     description?: string;
     sourceInfo: SlashCommandInfo["sourceInfo"];
   }>;
-  emit?(event: { type: "session_shutdown"; reason: "quit" }): Promise<unknown>;
+  hasHandlers?(eventType: string): boolean;
+  emit?(
+    event:
+      | { type: "session_shutdown"; reason: "quit" }
+      | { type: "session_before_switch"; reason: "new" | "resume"; targetSessionFile?: string }
+      | { type: "session_before_fork"; entryId: string; position: "before" | "at" },
+  ): Promise<unknown>;
   setUIContext?(uiContext?: unknown, mode?: "tui" | "rpc" | "json" | "print"): void;
 }
 
@@ -206,7 +227,11 @@ export interface AgentSessionLike {
   abortBash(): void;
   readonly isBashRunning: boolean;
   setModel(model: ModelLike): Promise<void>;
-  navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<NavigateTreeResult>;
+  navigateTree(targetId: string, options?: NavigateTreeOptions): Promise<NavigateTreeResult>;
+  /** Command-capable context bound to this session, handed to an extension's `withSession()` callback. */
+  createReplacedSessionContext?(): unknown;
+  /** Rebuild the agent's context from the session manager after entries were appended outside a run. */
+  refreshContext?(): void;
   setThinkingLevel(level: string): void;
   compact(customInstructions?: string): Promise<unknown>;
   setSessionName(name: string): void;
@@ -224,5 +249,10 @@ export interface AgentSessionLike {
   getActiveToolNames(): string[];
   setActiveToolsByName(names: string[]): void;
   abortCompaction(): void;
+  /** Under a virtual model, the physical model of the latest successful response (pi >= 0.99). */
+  readonly routedModel?: { model: ModelLike; thinkingLevel?: string };
+  readonly cacheWarmingStatus?: NonNullable<CacheWarmingInfo["status"]>;
+  /** Stop a branch summary that `navigateTree({ summarize: true })` is generating. */
+  abortBranchSummary?(): void;
   getContextUsage(): ContextUsage | undefined;
 }

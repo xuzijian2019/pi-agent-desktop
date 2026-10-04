@@ -90,6 +90,12 @@ interface ValidatedProject {
   key: string;
 }
 
+// Server error codes with a translation; any other code is shown verbatim.
+const FILE_MANAGER_ERROR_KEYS: Record<string, string> = {
+  remote: "sidebar.openInExplorerRemoteOnly",
+  "unsupported-platform": "sidebar.openInExplorerUnsupported",
+};
+
 const SESSION_DETAILS_HYDRATION_DELAY_MS = 750;
 
 function loadUnreadSessionIds(): Set<string> {
@@ -274,6 +280,59 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   useEffect(() => () => {
     if (projectPathHintTimerRef.current) clearTimeout(projectPathHintTimerRef.current);
   }, []);
+  // "Open in file manager" on a project row. Only the server can raise a
+  // file-manager window, and only when the browser runs on that same machine,
+  // so the browser asks once and the menu shows the entry only where it works;
+  // the desktop shell reveals natively through revealItemInDirNative instead.
+  const [fileManagerAvailability, setFileManagerAvailability] = useState<{ supported: boolean; reason: string | null; platform: string } | null>(null);
+  const [projectRevealError, setProjectRevealError] = useState<string | null>(null);
+  useEffect(() => {
+    if (isTauriDesktop()) return;
+    let cancelled = false;
+    fetch("/api/open-in-explorer")
+      .then((res) => res.ok ? res.json() as Promise<{ supported: boolean; reason: string | null; platform: string }> : null)
+      .then((data) => { if (!cancelled && data) setFileManagerAvailability(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  const revealProjectInFileManager = useCallback(async (root: string) => {
+    setProjectRevealError(null);
+    if (isTauriDesktop()) {
+      try {
+        await revealItemInDirNative(root);
+        setProjectMenu(null);
+      } catch (e) {
+        setProjectRevealError(e instanceof Error ? e.message : String(e));
+      }
+      return;
+    }
+    try {
+      const res = await fetch("/api/open-in-explorer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd: root }),
+      });
+      if (res.ok) {
+        setProjectMenu(null);
+        return;
+      }
+      const data = await res.json().catch(() => ({})) as { error?: string };
+      const key = FILE_MANAGER_ERROR_KEYS[data.error ?? ""];
+      setProjectRevealError(key ? t(key) : (data.error ?? `HTTP ${res.status}`));
+    } catch (e) {
+      setProjectRevealError(e instanceof Error ? e.message : String(e));
+    }
+  }, [t]);
+  const fileManagerPlatform = isTauriDesktop()
+    ? (desktopPlatform === "macos" ? "darwin" : desktopPlatform === "windows" ? "win32" : "linux")
+    : fileManagerAvailability?.platform;
+  const revealProjectLabel = t(
+    fileManagerPlatform === "darwin"
+      ? "sidebar.openInFinder"
+      : fileManagerPlatform === "win32"
+        ? "sidebar.openInExplorer"
+        : "sidebar.openInFileManager",
+  );
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [explorerKey, setExplorerKey] = useState(0);
@@ -917,6 +976,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       : rect.bottom + 4;
     setProjectMenu({ root: projectRoot });
     setProjectMenuPos({ top, left });
+    setProjectRevealError(null);
   }, [projectMenu]);
 
   // Phase A: project tree — groups sessions by project root. Sorting is
@@ -1667,6 +1727,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               setProjectMenu(null);
               onOpenTerminal(cwd);
             }}>{t("sidebar.openTerminalHere")}</button>
+          )}
+          {(isTauriDesktop() || fileManagerAvailability?.supported) && (
+            <button type="button" role="menuitem" onClick={() => void revealProjectInFileManager(projectMenu.root)}>
+              {revealProjectLabel}
+            </button>
+          )}
+          {projectRevealError && (
+            <div className="sidebar-project-context-menu-hint" role="alert">{projectRevealError}</div>
           )}
           <button
             type="button"

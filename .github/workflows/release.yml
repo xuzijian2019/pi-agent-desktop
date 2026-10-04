@@ -103,35 +103,39 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
-            ## Pi Agent Desktop 0.4.9
+            ## Pi Agent Desktop 0.5.1
 
-            A Pi 1.0 and MCP-focused release: built-in MCP sessions now have a first-class desktop manager, Pi 1.0 tool exposure is visible, OAuth authorization is easier to complete, and macOS gains standard native menus.
+            A fix release for 0.5.0. The main change: **Code mode did not work in the installed app** and now does.
 
-            ### Highlights
+            ### Fixes
 
-            - Pi 1.0: upgrades the bundled agent SDK from 0.87.1 to 1.0.0 and enables built-in MCP sessions in normal chats while preserving Chat-only and subagent resource boundaries.
-            - MCP: a new master-detail manager lists global/project servers, live tool registration, scope, transport, and access; server enable/disable and codemode/deferred/direct/hidden exposure changes are written safely to mcp.json.
-            - Tools and auth: indirect codemode and deferred MCP tools are now visible in Tool Definitions, and MCP OAuth dialogs offer one-click opening of the authorization page.
-            - macOS: adds the standard application, File, Edit, Settings, View, and Window menus with native shortcuts.
-            - Stability: MCP HTTP URLs are redacted before display, project MCP config remains behind the trust boundary, config edits preserve unrelated fields, and full desktop/E2E validation now covers the manager.
+            - Code mode: the packaged app was missing the sandbox's runtime files, so every session reported "Cannot find module .../quickjs-wasi/quickjs.wasm" and Code mode (and any MCP tool reachable only through it) was switched off. The sandbox files are now shipped with the app.
+            - Composer: after a run finished, the send button could do nothing when the draft was unchanged, because it still treated the session as streaming.
+            - Packaging: extension loading and the Code mode sandbox files are now placed wherever the dependency tree puts them, instead of at one fixed path.
 
-            Bundled components: pi 1.0.0, pi-web 0.10.0.
+            ### Updates
+
+            - Bundled pi is now 1.0.2, which also clears a known denial-of-service advisory in a dependency.
+
+            Bundled components: pi 1.0.2, pi-web 0.10.0.
 
             ---
 
-            ## Pi Agent Desktop 0.4.9
+            ## Pi Agent Desktop 0.5.1
 
-            本次是 Pi 1.0 与 MCP 主题版本：内置 MCP 会话拥有桌面级管理界面，Pi 1.0 工具暴露方式清晰可见，OAuth 授权更容易完成，macOS 增加标准原生菜单。
+            这是 0.5.0 的修复版本。最主要的变化：**已安装的 App 里 Code mode 无法使用，现已修复。**
 
-            ### 主要更新
+            ### 修复
 
-            - Pi 1.0：内置 agent SDK 从 0.87.1 升级到 1.0.0，普通会话启用内核 MCP，同时保持 Chat-only 与 subagent 的资源加载边界。
-            - MCP：新增 master-detail 管理器，展示全局/项目 server、实时工具注册、来源、传输方式与访问方式；支持启用/禁用以及 codemode/deferred/direct/hidden 暴露策略，并安全写回 mcp.json。
-            - 工具与登录：Tool Definitions 面板显示间接 codemode/deferred MCP 工具；MCP OAuth 对话框提供一键打开授权页面。
-            - macOS：新增标准应用、File、Edit、Settings、View、Window 菜单与原生快捷键。
-            - 稳定性：MCP HTTP URL 显示前会移除凭证参数；项目 MCP 配置仍受信任边界保护；配置编辑保留无关字段；桌面与 E2E 验证覆盖 MCP 管理器。
+            - Code mode：打包后的 App 缺少沙箱运行所需的文件，每个会话都会提示 "Cannot find module .../quickjs-wasi/quickjs.wasm"，Code mode（以及只能通过它调用的 MCP 工具）因此被关闭。现在这些文件已随 App 一起发布。
+            - 输入框：一次运行结束后，如果草稿没有变化，发送按钮可能没有反应，因为它仍把会话当作正在流式输出。
+            - 打包：扩展加载和 Code mode 沙箱所需的文件现在会放到依赖树实际所在的位置，不再固定写死一个路径。
 
-            内置组件版本：pi 1.0.0、pi-web 0.10.0。
+            ### 更新
+
+            - 内置 pi 升级到 1.0.2，同时清除了一个依赖中已知的拒绝服务公告。
+
+            内置组件版本：pi 1.0.2、pi-web 0.10.0。
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: true

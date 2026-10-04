@@ -25,6 +25,7 @@ import { skillExpansionToCommand } from "@/lib/slash-display";
 import type { SubagentToolDetails } from "@/lib/subagent-extension";
 import { CODEMODE_TOOL_NAME, codemodeCalls, codemodeScript, codemodeScriptPreview, stripCodemodeHeader } from "@/lib/codemode-view";
 import { CodemodeCallList } from "./CodemodeToolView";
+import { resultImageFileName } from "@/lib/result-image";
 import { mcpToolLabel, prettyMcpResultText } from "@/lib/mcp-tool-display";
 import type {
   AgentMessage,
@@ -294,6 +295,9 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
   if (message.role === "custom") {
     if ((message as CustomMessage).customType === "compaction") {
       return <CompactionMessageView message={message as CustomMessage} />;
+    }
+    if ((message as CustomMessage).customType === "branch_summary") {
+      return <CompactionMessageView message={message as CustomMessage} kind="branch_summary" />;
     }
     return <CustomMessageView message={message as CustomMessage} cwd={cwd} onOpenFile={onOpenFile} />;
   }
@@ -1458,7 +1462,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+// Images a tool returned — including ones a codemode script generated with an image model,
+// which pi never writes to disk — so each one can be saved.
 function ResultImages({ images, isError }: { images: ImageContent[]; isError: boolean }) {
+  const { t } = useI18n();
   return (
     <div
       style={{
@@ -1474,26 +1481,35 @@ function ResultImages({ images, isError }: { images: ImageContent[]; isError: bo
         const src = imageSource(image);
         if (!src) return null;
         return (
-          <ImagePreview
-            key={`${src}-${index}`}
-            src={src}
-            style={{ maxWidth: "100%" }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={src}
-              alt=""
-              loading="lazy"
-              style={{
-                display: "block",
-                maxWidth: "min(100%, 720px)",
-                maxHeight: 520,
-                borderRadius: 6,
-                objectFit: "contain",
-                border: "1px solid var(--border)",
+          <div key={`${src}-${index}`} className="result-image" style={{ maxWidth: "100%" }}>
+            <ImagePreview src={src} style={{ maxWidth: "100%" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={src}
+                alt=""
+                loading="lazy"
+                style={{
+                  display: "block",
+                  maxWidth: "min(100%, 720px)",
+                  maxHeight: 520,
+                  borderRadius: 6,
+                  objectFit: "contain",
+                  border: "1px solid var(--border)",
+                }}
+              />
+            </ImagePreview>
+            <button
+              type="button"
+              className="result-image-save"
+              onClick={() => {
+                void import("@/lib/desktop-native")
+                  .then(({ downloadUrlAsFile }) => downloadUrlAsFile(src, resultImageFileName(imageMediaType(image), index)))
+                  .catch((error: unknown) => console.error("Failed to save image:", error));
               }}
-            />
-          </ImagePreview>
+            >
+              {t("chat.saveImage")}
+            </button>
+          </div>
         );
       })}
     </div>
@@ -1527,7 +1543,7 @@ function PairedResult({ text, isEmpty, isError }: {
   );
 }
 
-function CompactionMessageView({ message }: { message: CustomMessage }) {
+function CompactionMessageView({ message, kind = "compaction" }: { message: CustomMessage; kind?: "compaction" | "branch_summary" }) {
   const { t } = useI18n();
   const summary = getMessageText(message.content);
   const parsedSummary = useMemo(() => parseCompactionSummary(summary), [summary]);
@@ -1542,17 +1558,17 @@ function CompactionMessageView({ message }: { message: CustomMessage }) {
           className="msg-card-header"
         >
           <span className="msg-card-kind">
-            compaction
+            {kind === "branch_summary" ? "branch summary" : "compaction"}
           </span>
           {time && <span className="message-meta msg-time msg-timestamp">{time}</span>}
         </div>
 
         <div className="msg-card-body">
           <div className="msg-card-title">
-             {t("i18n.conversationCompacted")}
+             {t(kind === "branch_summary" ? "i18n.branchSummaryTitle" : "i18n.conversationCompacted")}
           </div>
           <div className="msg-card-lede">
-             {t("i18n.compactionDescription")}
+             {t(kind === "branch_summary" ? "i18n.branchSummaryDescription" : "i18n.compactionDescription")}
           </div>
           {parsedSummary.body ? (
             <MarkdownBody className="markdown-compaction-message">{parsedSummary.body}</MarkdownBody>
@@ -1712,6 +1728,10 @@ function getMessageText(content: CustomMessage["content"] | UserMessage["content
 function getMessageImages(content: CustomMessage["content"] | UserMessage["content"]): ImageContent[] {
   if (typeof content === "string") return [];
   return content.filter((b): b is ImageContent => b.type === "image");
+}
+
+function imageMediaType(img: ImageContent): string | undefined {
+  return img.source?.media_type ?? (img as unknown as { mimeType?: string }).mimeType;
 }
 
 function imageSource(img: ImageContent): string {

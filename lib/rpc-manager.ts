@@ -21,15 +21,18 @@ import { notifySessionComplete } from "./web-push";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
 import type { AgentSession, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import { PRODUCT_NAME } from "./branding";
-import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-types";
+import type { AgentSessionLike, ExtensionUiContextLike, NavigateTreeOptions, ToolInfo } from "./pi-types";
 import type {
+  CacheWarmingInfo,
   ExtensionUiRequest,
   ExtensionUiResponse,
   ExtensionWidgetItem,
+  RoutedModelInfo,
   SessionEntry,
   SessionInfo,
   SessionMessageEntry,
 } from "./types";
+import { getUsageCostBreakdown } from "./usage-breakdown";
 import { createHeadlessCustomUiTui, DEFAULT_CUSTOM_UI_COLUMNS, type HeadlessCustomUiTui } from "./custom-ui-terminal";
 import { createSubagentExtension, preferPiWebSubagentExtension } from "./subagent-extension";
 import { listSubagentProfiles, readSubagentRun, readSubagentSessionResources, SUBAGENT_CONTROL_TOOL_NAMES } from "./subagents";
@@ -103,12 +106,24 @@ type ExtensionUiRequestBody = Record<string, unknown> & {
   expiresAt?: number;
 };
 
+/** An extension's `withSession()` callback; it receives the target's ReplacedSessionContext. */
+type ReplacedSessionCallback = (ctx: unknown) => Promise<void>;
+
 type ExtensionCommandContextActionsLike = {
   waitForIdle: () => Promise<void>;
-  newSession: () => Promise<{ cancelled: boolean }>;
-  fork: () => Promise<{ cancelled: boolean }>;
-  navigateTree: (targetId: string, options?: { summarize?: boolean }) => Promise<{ cancelled: boolean }>;
-  switchSession: () => Promise<{ cancelled: boolean }>;
+  newSession: (options?: {
+    parentSession?: string;
+    setup?: (sessionManager: SessionManager) => Promise<void>;
+    withSession?: ReplacedSessionCallback;
+  }) => Promise<{ cancelled: boolean }>;
+  fork: (entryId: string, options?: {
+    position?: "before" | "at";
+    withSession?: ReplacedSessionCallback;
+  }) => Promise<{ cancelled: boolean }>;
+  navigateTree: (targetId: string, options?: NavigateTreeOptions) => Promise<{ cancelled: boolean }>;
+  switchSession: (sessionPath: string, options?: {
+    withSession?: ReplacedSessionCallback;
+  }) => Promise<{ cancelled: boolean }>;
   reload: () => Promise<void>;
 };
 
@@ -203,6 +218,8 @@ export interface RpcSessionStartOptions {
   initialModel?: { provider: string; modelId: string };
   allowInitialModelFallback?: boolean;
   thinkingLevel?: ThinkingLevel;
+  /** Header `parentSession` of a brand-new session (ignored when opening a file). */
+  parentSession?: string;
 }
 
 const CODING_TOOL_NAMES = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
@@ -624,11 +641,13 @@ export class AgentSessionWrapper {
    */
   private async navigateTreeKeepingToolSelection(
     targetId: string,
-    options: { summarize?: boolean },
-  ): Promise<{ cancelled: boolean }> {
+    options: NavigateTreeOptions,
+  ): Promise<{ cancelled: boolean; aborted?: boolean }> {
     const activeBefore = this.inner.getActiveToolNames();
     const result = await this.inner.navigateTree(targetId, options);
-    if (result.cancelled || this.chatOnly) return { cancelled: result.cancelled };
+    if (result.cancelled || this.chatOnly) {
+      return { cancelled: result.cancelled, ...(result.aborted ? { aborted: true } : {}) };
+    }
 
     const entries = this.inner.sessionManager.getEntries() as unknown as SessionEntry[];
     if (!readSubagentSessionResources(entries)) {
@@ -1017,6 +1036,8 @@ export class AgentSessionWrapper {
           thinkingLevel: this.inner.agent.state?.thinkingLevel ?? "off",
           extensionStatuses: this.getExtensionStatuses(),
           extensionWidgets: this.getExtensionWidgets(),
+          routedModel: this.getRoutedModel(),
+          cacheWarming: this.getCacheWarming(),
         };
       }
 
@@ -1053,37 +1074,7 @@ export class AgentSessionWrapper {
           const entry = sessionManager.getEntry(entryId);
           if (!entry) throw new Error("Invalid entry ID for forking");
 
-          const sessionDir = sessionManager.getSessionDir();
-          let newSessionFile: string;
-          let forkedManager: SessionManager;
-
-          if (!entry.parentId) {
-            // Fork before the first message: create an empty session linked to this one
-            forkedManager = SessionManager.create(sessionManager.getCwd(), sessionDir, {
-              parentSession: currentSessionFile,
-            });
-            newSessionFile = forkedManager.getSessionFile() as string;
-          } else {
-            // Fork after some history: copy path up to (but not including) the fork point
-            if (!existsSync(currentSessionFile)) throw new Error(UNSAVED_SESSION_FORK_ERROR);
-            forkedManager = SessionManager.open(currentSessionFile, sessionDir);
-            const forkedPath = forkedManager.createBranchedSession(entry.parentId);
-            if (!forkedPath) throw new Error("Failed to create forked session");
-            newSessionFile = forkedPath;
-          }
-
-          if (!existsSync(newSessionFile)) {
-            const header = forkedManager.getHeader();
-            if (!header) throw new Error("Forked session is missing a session header");
-            const content = [header, ...forkedManager.getEntries()]
-              .map((forkedEntry) => JSON.stringify(forkedEntry))
-              .join("\n") + "\n";
-            writeFileSync(newSessionFile, content, { encoding: "utf8", flag: "wx" });
-          }
-
-          const newSessionId = forkedManager.getSessionId();
-          cacheSessionPath(newSessionId, newSessionFile);
-          invalidateSessionListCache();
+          const { newSessionId } = this.writeForkedSession(entry.parentId ?? null);
           if (!keepSource) await this.shutdownAfterSessionReplacement("fork");
           return { cancelled: false, newSessionId };
         });
@@ -1144,7 +1135,20 @@ export class AgentSessionWrapper {
         if (this.inner.isBashRunning) {
           throw new Error("Cannot navigate while a shell command is running");
         }
-        return this.navigateTreeKeepingToolSelection(command.targetId as string, {});
+        // `summarize` asks pi to summarize the branch being left onto the target (pi's
+        // "Summarize branch?" in /tree); the request blocks until the summary is written,
+        // and abort_branch_summary answers it with { cancelled: true, aborted: true }.
+        return this.navigateTreeKeepingToolSelection(command.targetId as string, {
+          ...(command.summarize === true ? { summarize: true } : {}),
+          ...(typeof command.customInstructions === "string" && command.customInstructions.trim()
+            ? { customInstructions: command.customInstructions.trim() }
+            : {}),
+        });
+      }
+
+      case "abort_branch_summary": {
+        this.inner.abortBranchSummary?.();
+        return null;
       }
 
       case "set_thinking_level": {
@@ -1178,6 +1182,8 @@ export class AgentSessionWrapper {
         return {
           ...this.inner.getSessionStats(),
           sessionName: this.inner.sessionManager.getSessionName(),
+          costBreakdown: getUsageCostBreakdown(this.inner.sessionManager.getEntries() as unknown as SessionEntry[]),
+          cacheWarming: this.getCacheWarming(),
         };
       }
 
@@ -1493,6 +1499,27 @@ export class AgentSessionWrapper {
     const pending = this.pendingUiResponses.get(response.id);
     if (!pending) return;
     pending.resolve(response);
+  }
+
+  private getRoutedModel(): RoutedModelInfo | undefined {
+    const routed = this.inner.routedModel;
+    if (!routed) return undefined;
+    return {
+      provider: routed.model.provider,
+      id: routed.model.id,
+      ...(routed.thinkingLevel ? { thinkingLevel: routed.thinkingLevel } : {}),
+    };
+  }
+
+  private getCacheWarming(): CacheWarmingInfo | undefined {
+    // Structural fakes and pre-0.86 sessions have no cache warming to report.
+    const mode = this.inner.settingsManager?.getCacheWarmingMode?.();
+    if (!mode) return undefined;
+    const status = this.inner.cacheWarmingStatus;
+    return {
+      mode,
+      ...(status ? { status: structuredClone(status) } : {}),
+    };
   }
 
   private getExtensionStatuses(): Array<{ key: string; text: string }> {
@@ -2018,17 +2045,156 @@ export class AgentSessionWrapper {
     };
   }
 
+  /**
+   * Copies the active path up to `targetLeafId` into a new session file, or creates an empty
+   * session linked to this one when there is nothing before the fork point.
+   */
+  private writeForkedSession(targetLeafId: string | null): { newSessionId: string; newSessionFile: string } {
+    const sessionManager = this.inner.sessionManager;
+    const currentSessionFile = this.inner.sessionFile;
+    if (!currentSessionFile) throw new Error("Persisted session is missing a session file");
+    const sessionDir = sessionManager.getSessionDir();
+    let newSessionFile: string;
+    let forkedManager: SessionManager;
+
+    if (!targetLeafId) {
+      // Fork before the first message: create an empty session linked to this one
+      forkedManager = SessionManager.create(sessionManager.getCwd(), sessionDir, {
+        parentSession: currentSessionFile,
+      });
+      newSessionFile = forkedManager.getSessionFile() as string;
+    } else {
+      // Fork after some history: copy path up to and including the target leaf
+      if (!existsSync(currentSessionFile)) throw new Error(UNSAVED_SESSION_FORK_ERROR);
+      forkedManager = SessionManager.open(currentSessionFile, sessionDir);
+      const forkedPath = forkedManager.createBranchedSession(targetLeafId);
+      if (!forkedPath) throw new Error("Failed to create forked session");
+      newSessionFile = forkedPath;
+    }
+
+    if (!existsSync(newSessionFile)) {
+      const header = forkedManager.getHeader();
+      if (!header) throw new Error("Forked session is missing a session header");
+      const content = [header, ...forkedManager.getEntries()]
+        .map((forkedEntry) => JSON.stringify(forkedEntry))
+        .join("\n") + "\n";
+      writeFileSync(newSessionFile, content, { encoding: "utf8", flag: "wx" });
+    }
+
+    const newSessionId = forkedManager.getSessionId();
+    cacheSessionPath(newSessionId, newSessionFile);
+    invalidateSessionListCache();
+    return { newSessionId, newSessionFile };
+  }
+
+  /*
+   * ctx.newSession / ctx.fork / ctx.switchSession from an extension command. The pi CLI
+   * replaces its single session in place (AgentSessionRuntime); Pi Web hosts many, so the
+   * target gets its own wrapper, this one finishes the command that asked for the move, and
+   * the browser follows a `session_replaced` event. `session_before_switch` and
+   * `session_before_fork` handlers can cancel, as in the CLI.
+   */
+
+  private async cancelledBySessionReplacementHook(
+    event: Exclude<Parameters<NonNullable<AgentSessionLike["extensionRunner"]["emit"]>>[0], { type: "session_shutdown" }>,
+  ): Promise<boolean> {
+    const runner = this.inner.extensionRunner;
+    if (!runner.emit || runner.hasHandlers?.(event.type) === false) return false;
+    const result = await runner.emit.call(runner, event) as { cancel?: boolean } | undefined;
+    return result?.cancel === true;
+  }
+
+  private async moveToReplacementSession(
+    sessionId: string,
+    sessionFile: string,
+    withSession: ReplacedSessionCallback | undefined,
+    started?: AgentSessionWrapper,
+  ): Promise<{ cancelled: boolean }> {
+    this.emit({ type: "session_replaced", sessionId } as unknown as AgentEvent);
+    if (withSession) {
+      const target = started ?? (await startRpcSession(sessionId, sessionFile, undefined)).session;
+      const ctx = target.inner.createReplacedSessionContext?.();
+      if (!ctx) throw new Error("This pi version cannot hand the new session to the extension");
+      await withSession(ctx);
+    }
+    return { cancelled: false };
+  }
+
+  private async newSessionForExtension(options?: Parameters<ExtensionCommandContextActionsLike["newSession"]>[0]) {
+    if (await this.cancelledBySessionReplacementHook({ type: "session_before_switch", reason: "new" })) {
+      return { cancelled: true };
+    }
+    // Unlike the CLI's /new, the browser keeps showing the model and tools picked for this
+    // session, so the new one starts with the same selection.
+    const entries = this.inner.sessionManager.getEntries() as unknown as SessionEntry[];
+    const toolNames = readSessionToolSelection(entries);
+    const model = this.inner.model;
+    const thinkingLevel = this.inner.agent.state?.thinkingLevel;
+    const { session, realSessionId } = await startRpcSession(`__ext__${randomUUID()}`, "", this.cwd, {
+      ...(toolNames !== undefined ? { toolNames } : {}),
+      ...(model ? { initialModel: { provider: model.provider, modelId: model.id }, allowInitialModelFallback: true } : {}),
+      ...(thinkingLevel && THINKING_LEVEL_NAMES.has(thinkingLevel as ThinkingLevel)
+        ? { thinkingLevel: thinkingLevel as ThinkingLevel }
+        : {}),
+      ...(options?.parentSession ? { parentSession: options.parentSession } : {}),
+    });
+    if (options?.setup) {
+      await options.setup(session.inner.sessionManager);
+      session.inner.refreshContext?.();
+    }
+    invalidateSessionListCache();
+    return this.moveToReplacementSession(realSessionId, "", options?.withSession, session);
+  }
+
+  private async forkForExtension(
+    entryId: string,
+    options?: Parameters<ExtensionCommandContextActionsLike["fork"]>[1],
+  ) {
+    const position = options?.position ?? "before";
+    if (await this.cancelledBySessionReplacementHook({ type: "session_before_fork", entryId, position })) {
+      return { cancelled: true };
+    }
+    const entry = this.inner.sessionManager.getEntry(entryId);
+    if (!entry) throw new Error("Invalid entry ID for forking");
+    let targetLeafId: string | null;
+    if (position === "at") {
+      targetLeafId = entry.id;
+    } else {
+      if (entry.type !== "message" || entry.message.role !== "user") throw new Error("Invalid entry ID for forking");
+      targetLeafId = entry.parentId ?? null;
+    }
+    if (!this.inner.sessionManager.isPersisted()) return { cancelled: true };
+    const { newSessionId, newSessionFile } = this.writeForkedSession(targetLeafId);
+    return this.moveToReplacementSession(newSessionId, newSessionFile, options?.withSession);
+  }
+
+  private async switchSessionForExtension(
+    sessionPath: string,
+    options?: Parameters<ExtensionCommandContextActionsLike["switchSession"]>[1],
+  ) {
+    if (!existsSync(sessionPath)) throw new Error(`Session file not found: ${sessionPath}`);
+    if (await this.cancelledBySessionReplacementHook({
+      type: "session_before_switch",
+      reason: "resume",
+      targetSessionFile: sessionPath,
+    })) {
+      return { cancelled: true };
+    }
+    const sessionId = SessionManager.open(sessionPath, undefined).getSessionId();
+    cacheSessionPath(sessionId, sessionPath);
+    return this.moveToReplacementSession(sessionId, sessionPath, options?.withSession);
+  }
+
   private createExtensionCommandContextActions(): ExtensionCommandContextActionsLike {
     return {
       waitForIdle: async () => {
         const agent = this.inner.agent as { waitForIdle?: () => Promise<void> };
         await agent.waitForIdle?.();
       },
-      newSession: async () => ({ cancelled: true }),
-      fork: async () => ({ cancelled: true }),
-      navigateTree: (targetId, options) =>
-        this.navigateTreeKeepingToolSelection(targetId, { summarize: options?.summarize }),
-      switchSession: async () => ({ cancelled: true }),
+      newSession: (options) => this.newSessionForExtension(options),
+      fork: (entryId, options) => this.forkForExtension(entryId, options),
+      navigateTree: (targetId, options) => this.navigateTreeKeepingToolSelection(targetId, options ?? {}),
+      switchSession: (sessionPath, options) => this.switchSessionForExtension(sessionPath, options),
       reload: async () => {
         this.extensionStatuses.clear();
         this.resetExtensionWidgetsForReload();
@@ -2480,7 +2646,11 @@ export async function startRpcSession(
     sessionManager = SessionManager.open(sessionFile, undefined);
   } else {
     if (!cwd) throw new Error("cwd is required for a new session");
-    sessionManager = SessionManager.create(cwd, undefined);
+    sessionManager = SessionManager.create(
+      cwd,
+      undefined,
+      options.parentSession ? { parentSession: options.parentSession } : undefined,
+    );
   }
   // Restore the session's selection rather than applying today's new-session preference.
   const sessionCwd = sessionManager.getCwd();

@@ -184,8 +184,9 @@ test("in-session branch switches wait for a run, and both fork top-bar navigator
     source.indexOf("  const handleLeafChange = useCallback"),
     source.indexOf("  const handleModelChange = useCallback"),
   );
-  assert.match(leafChangeSource, /if \(bashRunningRef\.current \|\| agentRunningRef\.current \|\| isCompacting\) return;/);
-  assert.match(source, /const branchSwitchLocked = agentRunning \|\| bashRunning \|\| isCompacting;/);
+  // A branch summary being generated holds the leaf too, like compaction.
+  assert.match(leafChangeSource, /if \(bashRunningRef\.current \|\| agentRunningRef\.current \|\| isCompacting \|\| branchSummarySessionIdRef\.current\) return;/);
+  assert.match(source, /const branchSwitchLocked = agentRunning \|\| bashRunning \|\| isCompacting \|\| branchSummaryPending;/);
   assert.match(source, /onBranchDataChange\(data\?\.tree \?\? \[\], activeLeafId, handleLeafChange, branchSwitchLocked\)/);
   assert.match(appShellSource, /setBranchSwitchLocked\(locked\)/);
   // The fork mounts two BranchNavigators (top bar, and the mobile row); both are locked.

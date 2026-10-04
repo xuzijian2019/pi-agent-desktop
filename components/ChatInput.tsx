@@ -18,7 +18,7 @@ import type { TaskSetup } from "@/lib/task-types";
 import { BranchControl } from "./workbench/BranchControl";
 import { selectableThinkingLevels } from "@/lib/thinking-level-options";
 import { ImageLightbox } from "./ImageLightbox";
-import type { SessionInfo } from "@/lib/types";
+import type { RoutedModelInfo, SessionInfo } from "@/lib/types";
 import { getMarkdownListContinuation } from "@/lib/markdown-list-continuation";
 import { isBareMcpCommand, isBuiltinMcpCommand } from "@/lib/mcp-command";
 import { FolderIcon, getFileIcon } from "./FileIcons";
@@ -28,7 +28,7 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import { useEnterSendMode } from "@/hooks/useEnterSendMode";
 import { useI18n } from "@/hooks/useI18n";
 import type { ExtensionStatusItem } from "@/lib/types";
-import { ExtensionStatusBar } from "./ExtensionStatusBar";
+import { ExtensionStatusLine } from "./ExtensionStatusLine";
 import type { ContextUsage, SessionStatsInfo } from "@/lib/pi-types";
 import { ContextUsageRing } from "./ContextUsageRing";
 import { useChatAppearance } from "@/hooks/useChatAppearance";
@@ -76,6 +76,8 @@ interface Props {
   onAbortCompaction?: () => void;
   isCompacting?: boolean;
   compactError?: string | null;
+  /** A compact the SDK declined with nothing to do — informational, not a failure. */
+  compactNotice?: string | null;
   compactResult?: CompactResultInfo | null;
   /** Compaction/branch-summary generation is in retry backoff (attempt/max). */
   summarizationRetry?: { attempt: number; maxAttempts: number } | null;
@@ -94,6 +96,11 @@ interface Props {
   retryInfo?: { attempt: number; maxAttempts: number; errorMessage?: string } | null;
   /** Cancel the auto-retry backoff (pi ≥ 0.86) shown in the retry banner. */
   onAbortRetry?: () => void;
+  /** Under a virtual model, the physical model the latest response was routed to. */
+  routedModel?: RoutedModelInfo | null;
+  /** A summarized branch switch is generating its summary (blocking; abortable). */
+  branchSummaryPending?: boolean;
+  onAbortBranchSummary?: () => void;
   automation?: { autoCompactionEnabled: boolean | null; autoRetryEnabled: boolean | null; steeringMode: string | null; followUpMode: string | null };
   onSetAutomation?: (change: {
     autoCompaction?: boolean;
@@ -743,7 +750,7 @@ export function ModelScopeWarningBanner({
   );
 }
 
-/** Quick commits stay quiet; a slow save never adds a row to the editor. */
+/** Remounted on text changes: slow saves show after typing pauses, without adding a row. */
 function DraftSavingIndicator({ loading }: { loading: boolean }) {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
@@ -763,10 +770,10 @@ function DraftSavingIndicator({ loading }: { loading: boolean }) {
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange, modelSwitching,
   defaultModel, onSetDefaultModel,
-  compactError, compactResult, toolPreset, onToolPresetChange,
+  compactError, compactNotice, compactResult, toolPreset, onToolPresetChange,
   thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   savedDefaultThinkingLevel, onSetDefaultThinkingLevel,
-  retryInfo, onAbortRetry, queuedMessages, inputHistory = [], onRecallQueue,
+  retryInfo, onAbortRetry, routedModel, branchSummaryPending = false, onAbortBranchSummary, queuedMessages, inputHistory = [], onRecallQueue,
   slashCommands, slashCommandsLoading, onLoadSlashCommands,
   onBuiltinCommand, onViewCommand,
   onPromptWithStreamingBehavior,
@@ -2058,6 +2065,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, [modelList, modelNames, fallbackProvider]);
   const filteredModelOptions = filterModelOptions(modelOptions, modelFilter);
   const showModelFilter = modelOptions.length > MODEL_FILTER_THRESHOLD;
+  const routedModelName = routedModel
+    ? modelOptions.find((option) => option.provider === routedModel.provider && option.modelId === routedModel.id)?.name
+      ?? modelNames?.[routedModel.id]
+      ?? routedModel.id
+    : null;
 
   // Group options by provider, preserving insertion order
   const modelsByProvider: { provider: string; options: ModelOption[] }[] = [];
@@ -2198,12 +2210,42 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
              )}
           </div>
         )}
+        {branchSummaryPending && (
+          <div role="status" className="composer-compact-banner">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <line x1="6" y1="3" x2="6" y2="15" />
+              <circle cx="18" cy="6" r="3" />
+              <circle cx="6" cy="18" r="3" />
+              <path d="M18 9a9 9 0 0 1-9 9" />
+            </svg>
+            {t("chat.branchSummarizing")}
+            {onAbortBranchSummary && (
+              <button
+                type="button"
+                onClick={onAbortBranchSummary}
+                className="composer-status-action"
+              >
+                {t("chat.branchSummaryStop")}
+              </button>
+            )}
+          </div>
+        )}
         {compactResultText && (
           <div className="composer-compact-banner">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon">
               <polyline points="20 6 9 17 4 12" />
             </svg>
             {compactResultText}
+          </div>
+        )}
+        {compactNotice && (
+          <div role="status" className="composer-compact-banner">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="16" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+            {compactNotice}
           </div>
         )}
         {compactError && (
@@ -2417,7 +2459,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           })()}
           <div ref={composerRef} className="chat-composer">
           {draftKey && (persistenceStatus === "pending" || persistenceStatus === "loading") && (
-            <DraftSavingIndicator key={draftKey} loading={persistenceStatus === "loading"} />
+            <DraftSavingIndicator key={JSON.stringify([draftKey, value])} loading={persistenceStatus === "loading"} />
           )}
           {draftKey && (persistenceStatus === "failed" || persistenceStatus === "conflict") && (
             <div role="status" className="composer-draft-conflict">
@@ -2797,6 +2839,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   })()}
                 </div>
             )}
+            {routedModel && routedModelName && (
+              <span
+                className="routed-model-hint"
+                title={t("chat.routedModelHint", { model: `${routedModel.provider}/${routedModel.id}${routedModel.thinkingLevel ? ` • ${routedModel.thinkingLevel}` : ""}` })}
+              >
+                → {routedModelName}{routedModel.thinkingLevel && !isNarrow ? ` • ${routedModel.thinkingLevel}` : ""}
+              </span>
+            )}
             {onThinkingLevelChange && (
               <div ref={thinkingDropdownRef} className="composer-anchor">
                 <button
@@ -2850,7 +2900,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 )}
               </div>
             )}
-            <ExtensionStatusBar statuses={extensionStatuses} />
+            <ExtensionStatusLine statuses={extensionStatuses} />
           </div>
 
           {/* Usage is separated from the model and effort settings. */}
