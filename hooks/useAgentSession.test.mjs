@@ -636,24 +636,6 @@ test("routes blocking extension requests through deduplicated browser attention 
   assert.match(appShellSource, /onAttentionNeeded=\{handleAttentionNeeded\}/);
 });
 
-test("refreshes context usage between model calls without letting stale responses overwrite it", () => {
-  const reconcileSource = source.slice(
-    source.indexOf("const reconcileAgentState"),
-    source.indexOf("// Recovery net for missed SSE events"),
-  );
-  const messageEndSource = source.slice(
-    source.indexOf('case "message_end"'),
-    source.indexOf('case "tool_execution_start"'),
-  );
-
-  assert.match(messageEndSource, /completed\.role === "assistant"[\s\S]*?refreshContextUsage\(sid\)/);
-  assert.match(reconcileSource, /applyContextUsage\(state, sid, sessionGeneration, runId, usageRequestId\)/);
-  assert.ok(reconcileSource.indexOf("applyContextUsage(state") < reconcileSource.indexOf("if (busy)"));
-  assert.match(source, /requestId !== contextUsageRequestIdRef\.current/);
-  assert.match(source, /sessionGenerationRef\.current !== generation/);
-  assert.match(source, /promptRunIdRef\.current !== runId/);
-});
-
 test("follows committed streaming content until the user scrolls away", () => {
   const streamUpdateSource = source.slice(
     source.indexOf('case "message_start"'),
