@@ -36,8 +36,8 @@ import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useDesktopConnection } from "@/lib/desktop-connection";
 import { isTauriDesktop, setCloseQuitsNative } from "@/lib/desktop-native";
-import { menuPointBelow, showNativeMenu } from "@/lib/desktop-menu";
 import { useNativeContextMenu } from "@/hooks/useNativeContextMenu";
+import { DomContextMenuHost } from "./DomContextMenuHost";
 import { getFileName } from "@/lib/file-paths";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
 import { PRODUCT_NAME } from "@/lib/branding";
@@ -1329,29 +1329,24 @@ export function AppShell() {
       closeSettingsMenu();
       return;
     }
-    // Desktop shell: the same section list as a native popup.
-    if (isTauriDesktop()) {
-      void showNativeMenu(
-        SETTINGS_SECTION_ITEMS.map((item) => ({
-          label: translate(item.labelKey),
-          disabled: item.requiresProject && !projectTrustCwd,
-          onSelect: () => setSettingsSection(item.id),
-        })),
-        menuPointBelow(event.currentTarget),
-      );
-      return;
-    }
     const rect = event.currentTarget.getBoundingClientRect();
-    const menuWidth = 184;
-    const menuHeight = 236;
-    const left = Math.max(8, Math.min(rect.left, window.innerWidth - menuWidth - 8));
-    const below = rect.bottom + 6;
-    const top = below + menuHeight > window.innerHeight - 8
-      ? Math.max(8, rect.top - menuHeight - 6)
-      : below;
-    setSettingsMenuPos({ top, left });
-    setSettingsMenuOpen(true);
-  }, [settingsMenuOpen, closeSettingsMenu, translate, projectTrustCwd]);
+    const openDomMenu = () => {
+      const menuWidth = 184;
+      const menuHeight = 236;
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - menuWidth - 8));
+      const below = rect.bottom + 6;
+      const top = below + menuHeight > window.innerHeight - 8
+        ? Math.max(8, rect.top - menuHeight - 6)
+        : below;
+      setSettingsMenuPos({ top, left });
+      setSettingsMenuOpen(true);
+    };
+    // Always the DOM menu, also in the desktop shell: tauri's `menu.popup` command
+    // holds the webview's resource-table lock while the main thread runs the
+    // menu, so one IPC call that needs the lock in that window freezes the app.
+    // Settings is the only way into the panel, so it must not depend on that.
+    openDomMenu();
+  }, [settingsMenuOpen, closeSettingsMenu]);
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showChat;
 
@@ -1724,7 +1719,7 @@ export function AppShell() {
             flexShrink: 0,
             padding: "7px 12px",
             background: "color-mix(in srgb, var(--danger) 14%, var(--bg-panel))",
-            borderBottom: "1px solid color-mix(in srgb, var(--danger) 35%, var(--border))",
+            borderBottom: "var(--hairline) solid color-mix(in srgb, var(--danger) 35%, var(--border))",
             color: "var(--text)",
             fontSize: 12,
             zIndex: 300,
@@ -1737,7 +1732,7 @@ export function AppShell() {
             style={{
               height: 24,
               padding: "0 10px",
-              border: "1px solid var(--border)",
+              border: "var(--hairline) solid var(--border)",
               borderRadius: 5,
               background: "var(--bg)",
               color: "var(--accent)",
@@ -1779,7 +1774,7 @@ export function AppShell() {
         style={{
           "--sidebar-width": `${sidebarResizer.width}px`,
           background: "var(--bg-panel)",
-          borderRight: "1px solid var(--border)",
+          borderRight: "var(--hairline) solid var(--border)",
           display: "flex",
           flexDirection: "column",
           flexShrink: 0,
@@ -2099,7 +2094,7 @@ export function AppShell() {
           "--right-panel-width": `${rightPanelResizer.width}px`,
           display: "flex",
           flexDirection: "column",
-          borderLeft: "1px solid var(--border)",
+          borderLeft: "var(--hairline) solid var(--border)",
           background: "var(--bg)",
         } as React.CSSProperties}
       >
@@ -2449,6 +2444,7 @@ export function AppShell() {
       />
     )}
     <UpdateReminder onOpenSettings={() => setSettingsSection("general")} />
+    <DomContextMenuHost />
     </>
 
   );

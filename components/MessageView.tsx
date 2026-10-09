@@ -126,7 +126,7 @@ function SafeMarkdownBody({ children, className, ...props }: React.ComponentProp
           width: "100%",
           margin: "4px 0",
           padding: "7px 10px",
-          border: "1px solid var(--border)",
+          border: "var(--hairline) solid var(--border)",
           borderRadius: 6,
           background: "var(--bg-panel)",
           color: "var(--text-muted)",
@@ -831,7 +831,7 @@ function AssistantMessageView({
           style={{
             marginTop: blocks.length > 0 || providerError ? 8 : 0,
             padding: "7px 10px",
-            border: "1px solid rgba(234,179,8,0.3)",
+            border: "var(--hairline) solid rgba(234,179,8,0.3)",
             borderRadius: 6,
             background: "rgba(234,179,8,0.07)",
             color: "#ca8a04",
@@ -852,7 +852,7 @@ function AssistantMessageView({
                 display: "block",
                 marginTop: 8,
                 padding: "3px 8px",
-                border: "1px solid currentColor",
+                border: "var(--hairline) solid currentColor",
                 borderRadius: 5,
                 background: "transparent",
                 color: "inherit",
@@ -1103,7 +1103,7 @@ function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOp
             onClick={() => onOpenSession(subagent.sessionId)}
             title={t("subagent.open")}
             aria-label={t("subagent.open")}
-            style={{ width: 32, display: "grid", placeItems: "center", border: "none", borderLeft: "1px solid var(--border)", background: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}
+            style={{ width: 32, display: "grid", placeItems: "center", border: "none", borderLeft: "var(--hairline) solid var(--border)", background: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
           </button>
@@ -1128,7 +1128,7 @@ function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOp
 
       {/* ── Expanded: applied-patch split diff ── */}
       {expanded && patchFiles && (
-        <div style={{ borderTop: "1px solid rgba(34,197,94,0.15)", background: "var(--bg)" }}>
+        <div style={{ borderTop: "var(--hairline) solid rgba(34,197,94,0.15)", background: "var(--bg)" }}>
           <ApplyPatchDiffView files={patchFiles} />
         </div>
       )}
@@ -1494,7 +1494,7 @@ function ResultImages({ images, isError }: { images: ImageContent[]; isError: bo
                   maxHeight: 520,
                   borderRadius: 6,
                   objectFit: "contain",
-                  border: "1px solid var(--border)",
+                  border: "var(--hairline) solid var(--border)",
                 }}
               />
             </ImagePreview>
@@ -1661,7 +1661,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
                       <img
                         src={src}
                         alt=""
-                        style={{ maxWidth: 240, maxHeight: 240, borderRadius: 6, objectFit: "contain", display: "block", border: "1px solid var(--border)" }}
+                        style={{ maxWidth: 240, maxHeight: 240, borderRadius: 6, objectFit: "contain", display: "block", border: "var(--hairline) solid var(--border)" }}
                       />
                     </ImagePreview>
                   );

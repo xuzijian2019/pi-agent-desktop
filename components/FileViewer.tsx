@@ -67,7 +67,7 @@ const FILE_LINE_NUMBER_STYLE: CSSProperties = {
   textAlign: "right",
   color: "var(--text-dim)",
   background: "var(--bg-panel)",
-  borderRight: "1px solid var(--border)",
+  borderRight: "var(--hairline) solid var(--border)",
   fontFamily: "var(--font-mono)",
   fontSize: 11,
   fontStyle: "normal",
@@ -375,8 +375,8 @@ function DiffView({ patch }: { patch: string }) {
                 color: "var(--text-dim)",
                 background: "var(--bg-panel)",
                 fontSize: 11,
-                borderTop: "1px solid var(--border)",
-                borderBottom: "1px solid var(--border)",
+                borderTop: "var(--hairline) solid var(--border)",
+                borderBottom: "var(--hairline) solid var(--border)",
               }}
             >
               ... {seg.count} unchanged lines ...
@@ -751,7 +751,7 @@ function VideoViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
           alignItems: "center",
           gap: 12,
           padding: "4px 16px",
-          borderBottom: "1px solid var(--border)",
+          borderBottom: "var(--hairline) solid var(--border)",
           fontSize: 11,
           color: "var(--text-dim)",
           background: "var(--bg)",
@@ -1434,7 +1434,7 @@ function TextFileViewer({
             justifyContent: "center",
             gap: 10,
             padding: "5px 8px",
-            border: "1px solid var(--border)",
+            border: "var(--hairline) solid var(--border)",
             borderRadius: 6,
             color: "var(--text-dim)",
             fontSize: 11,

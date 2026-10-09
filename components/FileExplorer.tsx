@@ -453,7 +453,7 @@ export function TreeNode({
               padding: "0 8px",
               height: 20,
               background: "var(--bg-panel)",
-              border: "1px solid var(--border)",
+              border: "var(--hairline) solid var(--border)",
               borderRadius: 4,
               color: "var(--accent)",
               cursor: "pointer",
@@ -484,7 +484,7 @@ export function TreeNode({
               padding: "0 5px",
               height: 20,
               background: "var(--bg-panel)",
-              border: "1px solid var(--border)",
+              border: "var(--hairline) solid var(--border)",
               borderRadius: 4,
               color: "var(--text-muted)",
               cursor: "pointer",
@@ -530,7 +530,7 @@ export function TreeNode({
               height: 20,
               padding: "0 8px",
               background: "var(--bg-panel)",
-              border: "1px solid var(--border)",
+              border: "var(--hairline) solid var(--border)",
               borderRadius: 4,
               color: "var(--accent)",
               cursor: allowingLink ? "default" : "pointer",
@@ -686,7 +686,7 @@ function ChangeRow({
             padding: "0 8px",
             height: 20,
             background: "var(--bg-panel)",
-            border: "1px solid var(--border)",
+            border: "var(--hairline) solid var(--border)",
             borderRadius: 4,
             color: "var(--accent)",
             cursor: "pointer",
@@ -1082,7 +1082,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     <div style={{ minHeight: "100%" }}>
       <input ref={uploadInputRef} type="file" multiple hidden onChange={handleUploadInput} />
       {showUploadFeedback && (
-        <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
+        <div style={{ padding: "6px 8px", borderBottom: "var(--hairline) solid var(--border)" }}>
         {uploadBusy && (
           <div role="status" aria-live="polite" aria-label={uploadPhase === "checking" ? t("files.checking") : t("files.uploading", { progress: uploadProgress })}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minHeight: 14, color: "var(--text-muted)" }}>
@@ -1108,7 +1108,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
         )}
 
         {pendingConflict && (
-          <div role="alert" style={{ padding: 7, border: "1px solid color-mix(in srgb, #f59e0b 55%, var(--border))", borderRadius: 4, background: "color-mix(in srgb, #f59e0b 9%, var(--bg-panel))" }}>
+          <div role="alert" style={{ padding: 7, border: "var(--hairline) solid color-mix(in srgb, #f59e0b 55%, var(--border))", borderRadius: 4, background: "color-mix(in srgb, #f59e0b 9%, var(--bg-panel))" }}>
             <div style={{ fontSize: 11, color: "var(--text)", lineHeight: 1.35, overflowWrap: "anywhere" }}>
               {t("files.conflictSummary", { count: pendingConflict.conflicts.length, countSuffix: pendingConflict.conflicts.length === 1 ? "" : "s", files: pendingConflict.conflicts.join(", ") })}
             </div>
@@ -1118,10 +1118,10 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
               </div>
             )}
             <div style={{ display: "flex", gap: 5, marginTop: 7 }}>
-              <button type="button" onClick={() => void performUpload(pendingConflict.files, "overwrite")} style={{ height: 22, padding: "0 7px", border: "1px solid #ef4444", borderRadius: 4, background: "transparent", color: "#ef4444", cursor: "pointer", fontSize: 10 }}>
+              <button type="button" onClick={() => void performUpload(pendingConflict.files, "overwrite")} style={{ height: 22, padding: "0 7px", border: "var(--hairline) solid #ef4444", borderRadius: 4, background: "transparent", color: "#ef4444", cursor: "pointer", fontSize: 10 }}>
                 {t("files.replace")}
               </button>
-              <button type="button" onClick={() => void performUpload(pendingConflict.files, "skip")} style={{ height: 22, padding: "0 7px", border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text)", cursor: "pointer", fontSize: 10 }}>
+              <button type="button" onClick={() => void performUpload(pendingConflict.files, "skip")} style={{ height: 22, padding: "0 7px", border: "var(--hairline) solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text)", cursor: "pointer", fontSize: 10 }}>
                 {t("files.skipExisting")}
               </button>
               <button type="button" onClick={() => setPendingConflict(null)} style={{ height: 22, padding: "0 7px", border: "none", borderRadius: 4, background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 10 }}>
@@ -1176,7 +1176,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
                   onClick={addUploadedFilesToChat}
                   title={uploadSummary.uploaded.length === 1 ? t("files.addUploadedFile") : t("files.addAllUploadedFiles")}
                   aria-label={uploadSummary.uploaded.length === 1 ? t("files.addUploadedFile") : t("files.addAllUploadedFiles")}
-                  style={{ height: 22, padding: "0 7px", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, flexShrink: 0, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--accent)", cursor: "pointer", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}
+                  style={{ height: 22, padding: "0 7px", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, flexShrink: 0, border: "var(--hairline) solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--accent)", cursor: "pointer", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}
                 >
                   <MentionIcon />
                   {t("files.mention")}
@@ -1212,7 +1212,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
             onKeyDown={(event) => { if (event.key === "Escape" && !isImeComposing(event)) onFileSearchOpenChange?.(false); }}
             placeholder={t("sidebar.searchFilesPlaceholder")}
             aria-label={t("sidebar.searchFiles")}
-            style={{ width: "100%", boxSizing: "border-box", padding: "6px 24px", border: "1px solid var(--border)", borderRadius: 5, outline: "none", background: "var(--bg)", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: 11 }}
+            style={{ width: "100%", boxSizing: "border-box", padding: "6px 24px", border: "var(--hairline) solid var(--border)", borderRadius: 5, outline: "none", background: "var(--bg)", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: 11 }}
           />
           {searchQuery && (
             <button

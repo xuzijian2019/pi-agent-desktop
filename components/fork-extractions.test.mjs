@@ -101,11 +101,12 @@ const FORK_FEATURES = [
     name: "ChatWindow new-session header",
     file: "components/ChatWindow.tsx",
     // Upstream renders an empty-state branding header (app icon + product name +
-    // version badge) directly above the composer. The fork strips it and keeps
-    // only the update chip, so merging upstream's ChatWindow.tsx would silently
-    // put the branding back — the absence check is the point of this entry.
-    markers: ["NewSessionUpdateLink"],
-    forbiddenMarkers: ["apple-touch-icon", "PRODUCT_NAME"],
+    // version badge) directly above the composer. The fork strips it, and later
+    // dropped the update chip that replaced it, so merging upstream's
+    // ChatWindow.tsx would silently put the header back — the absence checks
+    // are the point of this entry.
+    markers: ["isEmptyNew"],
+    forbiddenMarkers: ["apple-touch-icon", "PRODUCT_NAME", "NewSessionUpdateLink"],
   },
   {
     name: "sidebar header controls",
@@ -338,3 +339,8 @@ for (const removal of REMOVED_UPSTREAM_UI) {
     }
   });
 }
+
+test("the shell mounts the shared in-app file context menu host", async () => {
+  const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
+  assert.match(source, /<DomContextMenuHost \/>/);
+});

@@ -28,14 +28,9 @@ test("the overlay composer and message list share one column axis", () => {
   );
 });
 
-test("the new-session empty state keeps only the update chip above the composer", () => {
-  const start = source.indexOf("{isEmptyNew ? (");
-  assert.notEqual(start, -1, "the empty-session branch must still exist");
-  const block = source.slice(start, source.indexOf(") : (", start));
-
-  assert.match(block, /<NewSessionUpdateLink /, "the update chip is the empty state's only chrome");
-  assert.match(block, /\{chatInputElement\}/);
-  assert.doesNotMatch(block, /apple-touch-icon|PRODUCT_NAME/, "the product branding must not come back above the composer");
+test("the new-session screen has no header row above the composer", () => {
+  assert.doesNotMatch(source, /NewSessionUpdateLink|apple-touch-icon|PRODUCT_NAME/);
+  assert.doesNotMatch(source, /\/api\/app-update/);
 });
 
 test("composer and message columns share one padding and one max width", () => {
@@ -53,4 +48,8 @@ test("composer and message columns share one padding and one max width", () => {
     "message list and overlay composer share the appearance width",
   );
   assert.equal(inputSource.split(maxWidth).length - 1, 1, "the composer shares the appearance width");
+});
+
+test("session controls follow the input card instead of sitting inside it", () => {
+  assert.match(inputSource, /Session controls sit below the input card, not inside it\. \*\/\}\s*<\/div>\s*\{\/\* Bash mode status label/);
 });

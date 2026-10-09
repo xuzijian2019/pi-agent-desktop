@@ -4,8 +4,7 @@ import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useMe
 import { isImeComposing } from "@/lib/ime";
 import { WEB_SLASH_COMMANDS, parseWebSlashCommand, type ViewSlashCommand } from "@/lib/web-slash-commands";
 import { createPortal } from "react-dom";
-import { isTauriDesktop } from "@/lib/desktop-updater";
-import { menuPointBelow, showNativeMenu } from "@/lib/desktop-menu";
+import { canUseNativeMenu, menuPointBelow, showNativeMenu } from "@/lib/desktop-menu";
 import type { BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
 import type { SkillsResponse } from "@/lib/api-types";
 import type { ModelScopeWarning } from "@/lib/model-scope-warnings";
@@ -716,7 +715,7 @@ export function WorkspaceUnavailableBanner({ workspace, onRecheck }: { workspace
             style={{
               flexShrink: 0,
               padding: "2px 8px",
-              border: "1px solid rgba(239,68,68,0.45)",
+              border: "var(--hairline) solid rgba(239,68,68,0.45)",
               borderRadius: 5,
               background: "transparent",
               color: "inherit",
@@ -2704,6 +2703,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             </button>
           )}
           </div>
+          {/* Session controls sit below the input card, not inside it. */}
+          </div>
 
         {/* Bash mode status label */}
         {bashMode && (
@@ -2746,7 +2747,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     if (projectOptions.length > 0 && onProjectChange) {
                       setProjectPathTip(null);
                       // Desktop shell: the project list as a native popup.
-                      if (isTauriDesktop()) {
+                      if (canUseNativeMenu()) {
                         void showNativeMenu(
                           projectOptions.map((projectRoot) => ({
                             label: getProjectLabel(projectRoot) ?? projectRoot,
@@ -2756,7 +2757,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             },
                           })),
                           menuPointBelow(event.currentTarget),
-                        );
+                        ).then((shown) => { if (!shown) setProjectDropdownOpen(true); });
                         return;
                       }
                       setProjectDropdownOpen((open) => !open);
@@ -3095,7 +3096,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           </div>
 
         </div>
-          </div>
         </div>
       </div>
     </div>

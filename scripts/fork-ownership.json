@@ -25,28 +25,28 @@
   "driftedUpstreamFiles": {
     "components/SessionSidebar.tsx": {
       "risk": "high",
-      "drift": 2813,
+      "drift": 2968,
       "reason": "~500 lines were MOVED OUT into components/ProjectPicker.tsx and components/path-ui.tsx, which do not exist upstream. git merge does not track cross-file moves: an upstream edit to the project-picker block can merge back cleanly and silently resurrect a second copy.",
-      "structuralDrift": 2098,
+      "structuralDrift": 2246,
       "disposition": "accepted"
     },
     "components/AppShell.tsx": {
       "risk": "high",
-      "drift": 2333,
+      "drift": 2470,
       "reason": "Top-bar redesign (toolbar consolidated into a more-menu, inline styles to classNames) plus the mount point for desktop chrome. The desktop-only parts moved to components/desktop/; the rest is the fork's own interaction design, not desktop plumbing, so this file stays high risk by design rather than by neglect. Header/More cleanup (ui-refresh decisions 7 and 8) DELETES upstream UI rather than adding fork UI \u2014 the Full history toolbar button, the Session stats more-item and the session top panel \u2014 which raises structural drift by 37 lines, because upstream still ships all of it. Numbers are the measured values from `npm run drift` against the recorded baseline. Saved-task append and chip conflict fixes bring measured structural drift to 1411. Phase 4 adds an import, one local element and one prop to fill ChatWindow's empty-state slot: 3 structural lines.",
-      "structuralDrift": 1837,
+      "structuralDrift": 1968,
       "disposition": "accepted"
     },
     "components/FileViewer.tsx": {
       "risk": "high",
-      "drift": 608,
+      "drift": 618,
       "reason": "Adds FileViewerToolbar and FileViewerStatus, file icons, a live-sync indicator and a retry action. Both components are defined inside FileViewer.tsx rather than moved out, so there is no cross-file resurrection risk \u2014 only a large diff. Kept deliberately.",
       "structuralDrift": 464,
       "disposition": "accepted"
     },
     "components/FileExplorer.tsx": {
       "risk": "medium",
-      "drift": 108,
+      "drift": 128,
       "reason": "Adds selection highlighting (selectedPath/onSelectPath) and moves git status colours onto CSS variables. Generic improvement, no desktop coupling. Kept deliberately.",
       "structuralDrift": 108,
       "disposition": "accepted"
@@ -60,9 +60,9 @@
     },
     "components/ChatWindow.tsx": {
       "risk": "high",
-      "drift": 1457,
+      "drift": 1431,
       "reason": "Redesigned empty state \u2014 the new-session branding header (app icon + PRODUCT_NAME) is removed and only the update chip remains. Overlay composer, recap and side chat stay fork-owned. Kept deliberately.",
-      "structuralDrift": 1280,
+      "structuralDrift": 1243,
       "disposition": "accepted"
     },
     "hooks/useTheme.ts": {
@@ -74,14 +74,14 @@
     },
     "components/ChatInput.tsx": {
       "risk": "high",
-      "drift": 2485,
+      "drift": 2559,
       "reason": "Composer chrome restyle. Phase 3 stream H2 and Phase 4 part C together replaced 134 of the 136 inline style objects with classes in app/native-theme.css; the 2 that remain carry a measured popover position. Structural drift is 1044 against 1002 on main: +5 from the part C checkpoint (the per-tone banner colour constant and the queued-message recall button's pointer handlers), +3 from diff realignment across the remaining conversions, and +34 from dropping the onMouseEnter/onMouseLeave colour hacks on the composer controls, which the classifier scores as structural because it deletes upstream lines. That last 34 is isolated in a single commit. Saved-draft restoration adds 4 structural lines, bringing the current measured structural drift to 1015. Upstream changed this file in v0.8.1, and components/ChatInput*.test.mjs plus tests/e2e/workbench.spec.ts cover it.",
-      "structuralDrift": 1685,
+      "structuralDrift": 1746,
       "disposition": "accepted"
     },
     "components/MessageView.tsx": {
       "risk": "high",
-      "drift": 902,
+      "drift": 914,
       "reason": "Message bubble markup adjusted. Transcript search adds read-only historical rendering and exact-match expansion. Phase 3 stream H3 then replaced ~90 inline style objects with classes in app/native-theme.css, which is why the total is large and almost two thirds cosmetic; the structural half is unchanged transcript-search and written-file rendering. The 2026-09-20 upstream merge added transcript tool expansion and tool-result image hooks on top of the fork's transcript-search rendering, which pushed structural drift just over the high threshold.",
       "structuralDrift": 330,
       "disposition": "accepted"
@@ -102,14 +102,14 @@
     },
     "lib/rpc-manager.ts": {
       "risk": "high",
-      "drift": 499,
+      "drift": 525,
       "reason": "Small fork edit in a file upstream changes often. Workbench activity tracking was removed on 2026-09-25, which dropped structural drift back under the high threshold. Upstream/main 26eb188 (2026-10-04 merge, round 1) added running-state broadcasts and the built-in MCP extension on the desktop side, which pi-web 96966e5 does not have; measured against that baseline this lifts structural drift to 269. Still accepted.",
-      "structuralDrift": 499,
+      "structuralDrift": 525,
       "disposition": "accepted"
     },
     "components/BranchNavigator.tsx": {
       "risk": "medium",
-      "drift": 109,
+      "drift": 117,
       "reason": "className hook only, no structural change \u2014 the intended shape for every restyled file. Upstream/main c5a70eb (2026-10-04 merge, round 2) brought pi-web 6fcd7d4 changes to this file through abcwyc's merge; measured against the 96966e5 baseline they count as drift (32 structural). Round 3 moves the baseline to 6fcd7d4.",
       "structuralDrift": 93,
       "disposition": "accepted"
@@ -236,6 +236,7 @@
     "2026-09-26 \u2014 components/ChatWindow.tsx: the empty-session branding header upstream renders above the composer (app icon + product name + version badge) is removed entirely rather than rebranded; the row now carries only NewSessionUpdateLink, which self-hides, so the row keeps no margin of its own. This is a deletion, not a move, so it needed a new sentinel direction: FORK_FEATURES entries gained `forbiddenMarkers` in components/fork-extractions.test.mjs, pinning apple-touch-icon and PRODUCT_NAME out of ChatWindow.tsx. A merge that re-adopts upstream's empty state now fails that test instead of silently restoring the branding.",
     "2026-09-26 \u2014 Merged desktop upstream 73bc9f1 (0.4.8). Retained fork model/file menus and transcript controls; adopted direct DOM composer spacing, render caches, IME guards, tool-result projection and isolated HTML script preview. CSS baseline pinned to pi-web 96966e5; fork anchor styling moved to native-theme.css.",
     "2026-10-04 \u2014 baseline moved 96966e5 -> 6fcd7d4. Segment G (c5a70eb) was a single-parent commit, so git never recorded 6fcd7d4 as merged: merge-base stayed at 96966e5, `npm run drift` reported structural 18077 instead of 9959, and a merge of the upstream tag would have replayed the whole range (39 conflicts in a dry run). An `-s ours` merge now records the ancestry without touching the tree. Risk levels re-measured: lib/file-access.ts low->medium, lib/directory-browser.ts and components/FileExplorer.tsx medium->low; components/FileIcons.tsx no longer differs from upstream and its entry is removed.",
-    "2026-10-04 \u2014 Round 3 merge of desktop upstream f66ba13 on round 2 9bb3a4b. Baseline 6fcd7d4; all registered drift numbers re-measured for this fork. Branch summary options forwarded through the fork callback; cost-by-model and cache-warming UI lives in the existing /session dialog; extension statuses and routed-model hints restored in the fork composer. Fork FileExplorer remains medium (108 structural), directory-browser low (25), BranchNavigator medium (93), rpc-manager high (499)."
+    "2026-10-04 \u2014 Round 3 merge of desktop upstream f66ba13 on round 2 9bb3a4b. Baseline 6fcd7d4; all registered drift numbers re-measured for this fork. Branch summary options forwarded through the fork callback; cost-by-model and cache-warming UI lives in the existing /session dialog; extension statuses and routed-model hints restored in the fork composer. Fork FileExplorer remains medium (108 structural), directory-browser low (25), BranchNavigator medium (93), rpc-manager high (499).",
+    "2026-10-09 \u2014 Merged desktop upstream f59e0b18 (0.6.3): adopted DOM context menus, macOS Open With, popup lock fix, type scale/hairlines/contrast, controls below the input card, and update-chip removal. Preserved fork interaction design and CSS radius tokens; drift measured against pi-web 6fcd7d4. See .agents/notes/upstream-merge-20261009-handoff.md."
   ]
 }
