@@ -50,7 +50,8 @@ test("right panel block is an outer-row child after the main column (full height
   const panelIdx = source.indexOf("right-panel-container");
   assert.ok(mainColumn !== -1 && toggle > mainColumn && panelIdx > toggle, "panel block must follow the main column");
   // Main column (inner row + column) closes right before the panel block.
-  assert.match(source, /\n        <\/div>\n      <\/div>\n\n      <button\n        type="button"\n        className=\{`right-panel-toggle-button/);
+  // The toggle is hidden on the Scheduled page (upstream #84), hence the guard.
+  assert.match(source, /\n        <\/div>\n      <\/div>\n\n(?:      \{\/\*[^\n]*\*\/\}\n)?      \{showFilePanelToggle && \(\n        <button\n          type="button"\n          className=\{`right-panel-toggle-button/);
 });
 
 test("topbar sits in the main column after the sidebar (sidebar runs full height)", () => {

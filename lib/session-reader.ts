@@ -225,6 +225,7 @@ function mapScannedSession(
     created: scanned.created.toISOString(),
     modified: scanned.modified.toISOString(),
     messageCount: scanned.messageCount,
+    ...(scanned.compactionCount ? { compactionCount: scanned.compactionCount } : {}),
     // A pending row has no first message yet; the placeholder would read as a
     // real "(no messages)" session until the details arrive.
     firstMessage: detailsPending && !scanned.firstMessage

@@ -2,6 +2,7 @@
 import { registerAbortHandler } from "@/hooks/useKeyboardShortcuts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import type { UnavailableWorkspace } from "@/lib/workspace-availability";
 import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, BlockingExtensionUiRequest, ExtensionUiRequest, LeafChangeOptions, SessionInfo, SessionTreeNode, ToolResultMessage, UserMessage } from "@/lib/types";
 import { normalizeCustomPanelLines } from "@/lib/ansi";
 import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
@@ -53,6 +54,9 @@ interface Props {
   onSessionForked?: (newSessionId: string) => void;
   onSessionRenamed?: (sessionId: string, name: string) => void;
   modelsRefreshKey?: number;
+  /** The cwd is known to be gone or unusable; the composer explains it and blocks new runs. */
+  workspaceUnavailable?: UnavailableWorkspace | null;
+  onRecheckWorkspace?: () => void;
   chatInputRef?: React.RefObject<ChatInputHandle | null>;
   onBranchDataChange?: (tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null, options?: LeafChangeOptions) => void, locked: boolean) => void;
   onSystemPromptChange?: (prompt: string | null) => void;
@@ -332,7 +336,7 @@ function NewSessionUpdateLink({
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onContextUsageChange, onSelectProject, projectOptions, onProjectChange, onOpenFile, onProjectFilesImported, onOpenModelsConfig, onBranchNavigate, onAppCommand, onSideModeChange, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionDraftKey, onAttentionNeeded, onSystemToolsChange, onSystemInfoLoaderChange, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed }: Props) {
+export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onContextUsageChange, onSelectProject, projectOptions, onProjectChange, onOpenFile, onProjectFilesImported, onOpenModelsConfig, onBranchNavigate, onAppCommand, onSideModeChange, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionDraftKey, onAttentionNeeded, onSystemToolsChange, onSystemInfoLoaderChange, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed }: Props) {
   const { t } = useI18n();
   const [commandDialog, setCommandDialog] = useState<"fork" | "hotkeys" | "session" | null>(null);
   const openStats = useCallback(() => { onSessionStatsPanelOpen?.(); setCommandDialog("session"); }, [onSessionStatsPanelOpen]);
@@ -1277,6 +1281,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       modelNames={modelNames}
       modelList={modelList}
       modelError={modelError}
+      workspaceUnavailable={workspaceUnavailable}
+      onRecheckWorkspace={onRecheckWorkspace}
       modelScopeWarnings={modelScopeWarnings}
       onDismissModelScopeWarnings={dismissModelScopeWarnings}
       onOpenModelsConfig={onOpenModelsConfig}

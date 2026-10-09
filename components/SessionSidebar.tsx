@@ -9,7 +9,7 @@ import { skillExpansionToCommand } from "@/lib/slash-display";
 
 import { workspaceKeyOf } from "@/lib/workspace-memory";
 import { useI18n } from "@/hooks/useI18n";
-import { formatRelativeTime } from "@/lib/i18n/format";
+import { formatCompactRelativeTime, formatRelativeTime } from "@/lib/i18n/format";
 import { createPortal } from "react-dom";
 import { ProjectPicker } from "./ProjectPicker";
 import { AnimatedDropdown, PathLabel, displayCwd, getRecentProjects } from "./path-ui";
@@ -19,8 +19,11 @@ import { moveProject, orderProjects } from "@/lib/project-order";
 import { notifyDesktop } from "@/lib/desktop-notify";
 import { revealItemInDirNative } from "@/lib/desktop-native";
 import { isTauriDesktop } from "@/lib/desktop-updater";
+import { menuPointBelow, showNativeMenu, type NativeMenuPoint } from "@/lib/desktop-menu";
 import { getDesktopPlatform, type DesktopPlatform } from "@/lib/desktop-window";
 import { useWindowDrag } from "./desktop";
+import { ScheduledSidebarRow } from "./scheduled/ScheduledSidebarRow";
+import { isScheduledRunSession } from "@/hooks/useScheduledTasks";
 import { isImeComposing } from "@/lib/ime";
 import { SessionSearch } from "./SessionSearch";
 import { prefetchSessionData, invalidateSessionData } from "@/lib/session-data-cache";
@@ -56,6 +59,9 @@ interface Props {
   actionsRef?: React.RefObject<SidebarProjectActions | null>;
   /** Window-chrome controls (theme + sidebar collapse) rendered at the top-right of the sidebar. */
   headerControls?: ReactNode;
+  /** Opens the Scheduled page; the row under New Session is absent without it. */
+  onOpenScheduled?: () => void;
+  scheduledOpen?: boolean;
 }
 
 interface WorktreeEntry {
@@ -171,7 +177,7 @@ function buildSessionTree(sessions: SessionInfo[]): SessionTreeNode[] {
   return roots;
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onProjectsChange, actionsRef, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange, headerControls, onOpenTerminal }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onProjectsChange, actionsRef, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange, headerControls, onOpenTerminal, onOpenScheduled, scheduledOpen = false }: Props) {
   const { t, locale } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   // Tracked in a ref only: the version is compared against the polled value to
@@ -235,7 +241,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [wtPollTick, setWtPollTick] = useState(0);
   const wtDropdownRef = useRef<HTMLDivElement>(null);
   const wtNewInputRef = useRef<HTMLInputElement>(null);
-  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => new Set());
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => {
+    const stored = getPrefJson<unknown>(APP_PREF_KEYS.collapsedProjects);
+    return Array.isArray(stored)
+      ? new Set(stored.filter((root): root is string => typeof root === "string"))
+      : new Set();
+  });
   const [expandedProjectSessions, setExpandedProjectSessions] = useState<Set<string>>(() => new Set());
   const [archivedProjectRoots, setArchivedProjectRoots] = useState<Set<string>>(() => {
     const stored = getPrefJson<unknown>(APP_PREF_KEYS.archivedProjects);
@@ -463,6 +474,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [archivedProjectRoots]);
 
   useEffect(() => {
+    if (collapsedProjects.size === 0) removePref(APP_PREF_KEYS.collapsedProjects);
+    else setPrefJson(APP_PREF_KEYS.collapsedProjects, [...collapsedProjects]);
+  }, [collapsedProjects]);
+
+  useEffect(() => {
     // Live running status via SSE — no polling. The server pushes the current
     // set of running session ids whenever any session starts/stops working.
     let source: EventSource | null = null;
@@ -546,8 +562,17 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         .filter((session) => session.relation?.kind === "subagent")
         .map((session) => session.id),
     );
+    // A scheduled run says how it ended (and what failed) through its own notification.
+    const knownScheduledIds = new Set(
+      allSessions
+        .filter((session) => session.relation?.kind === "scheduled")
+        .map((session) => session.id),
+    );
     const completedWithNotifications = completedInBackground.filter(
-      (id) => !previousSuppressedCompletionSessionIdsRef.current.has(id) && !knownSubagentIds.has(id),
+      (id) => !previousSuppressedCompletionSessionIdsRef.current.has(id)
+        && !knownSubagentIds.has(id)
+        && !knownScheduledIds.has(id)
+        && !isScheduledRunSession(id),
     );
     const newlyRunning = [...runningSessionIds].filter((id) => !previous.has(id));
 
@@ -960,8 +985,31 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     if (actionsRef) actionsRef.current = { newSession: handleNewSession, removeProject: archiveProject, addProject: handleAddProject };
   }, [actionsRef, handleNewSession, archiveProject, handleAddProject]);
 
+  // Desktop shell: a native popup version of the project menu, with the same
+  // items as the DOM menu below. `projectMenu` stays set while it is up (it keeps
+  // the row's "…" visible) but `projectMenuPos` stays null, so the DOM menu never renders.
+  const showNativeProjectMenu = useCallback(async (projectRoot: string, at: NativeMenuPoint): Promise<boolean> => {
+    setProjectMenu({ root: projectRoot });
+    setProjectMenuPos(null);
+    setProjectRevealError(null);
+    const shown = await showNativeMenu([
+      ...(onOpenTerminal
+        ? [{ label: t("sidebar.openTerminalHere"), onSelect: () => onOpenTerminal(projectRoot) }]
+        : []),
+      { label: revealProjectLabel, onSelect: () => void revealProjectInFileManager(projectRoot) },
+      { kind: "separator" as const },
+      { label: t("sidebar.archiveProject"), onSelect: () => archiveProject(projectRoot) },
+    ], at);
+    setProjectMenu((current) => (current?.root === projectRoot ? null : current));
+    return shown;
+  }, [archiveProject, onOpenTerminal, revealProjectInFileManager, revealProjectLabel, t]);
+
   const openProjectMenu = useCallback((e: React.MouseEvent<HTMLButtonElement>, projectRoot: string) => {
     e.stopPropagation();
+    if (isTauriDesktop()) {
+      void showNativeProjectMenu(projectRoot, menuPointBelow(e.currentTarget));
+      return;
+    }
     if (projectMenu?.root === projectRoot) {
       setProjectMenu(null);
       setProjectMenuPos(null);
@@ -977,17 +1025,20 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     setProjectMenu({ root: projectRoot });
     setProjectMenuPos({ top, left });
     setProjectRevealError(null);
-  }, [projectMenu]);
+  }, [projectMenu, showNativeProjectMenu]);
 
   // Phase A: project tree — groups sessions by project root. Sorting is
   const trimmedSessionQuery = sessionQuery.trim().toLowerCase();
+  // Runs of scheduled tasks live under Scheduled, not in the project tree: an
+  // hourly task would otherwise bury the sessions the user started themselves.
+  const treeSessions = allSessions.filter((session) => session.relation?.kind !== "scheduled");
   const filteredSessions = trimmedSessionQuery
-    ? allSessions.filter((session) =>
+    ? treeSessions.filter((session) =>
         (session.name ?? "").toLowerCase().includes(trimmedSessionQuery)
         || session.firstMessage.toLowerCase().includes(trimmedSessionQuery)
         || (session.projectRoot ?? session.cwd ?? "").toLowerCase().includes(trimmedSessionQuery)
         || (session.cwd ?? "").toLowerCase().includes(trimmedSessionQuery))
-    : allSessions;
+    : treeSessions;
   const sessionFamilies = listSessionFamilies(filteredSessions);
   const allProjects = orderProjects(groupByProject(filteredSessions, { runningIds: runningSessionIds, unreadIds: unreadSessionIds }), projectOrder);
   const activeProjects = allProjects.filter((group) => !archivedProjectRoots.has(group.projectRoot));
@@ -1069,6 +1120,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       // chat into a new task for this project; that stays on the "+" button.
     };
 
+    const isMenuOpen = projectMenu?.root === group.projectRoot;
+
     return (
       <div
         key={group.projectRoot}
@@ -1106,7 +1159,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           endProjectDrag();
         }}
       >
-        <div className="sidebar-project-tree-row">
+        <div className={`sidebar-project-tree-row${isMenuOpen ? " is-menu-open" : ""}`}>
           <button
             type="button"
             className="sidebar-project-tree-row-main"
@@ -1127,11 +1180,17 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             aria-label={group.cwdMissing ? `${group.projectRoot} · ${t("sidebar.cwdMissing")}` : group.projectRoot}
           >
             <span className="sidebar-project-tree-folder" aria-hidden="true">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              {/* Closed folder vs. folder with its flap lifted; the closed one
+                  carries a faint fill so the pair reads as shut / open. */}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
                 {isCollapsed ? (
-                  <path d="M3.5 6.5a1.5 1.5 0 0 1 1.5-1.5h4l2 2h8a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5Z" />
+                  <path
+                    d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
+                    fill="currentColor"
+                    fillOpacity="0.1"
+                  />
                 ) : (
-                  <path d="M3.5 7.5h6l2 2H21l-2 9.5H5a1.5 1.5 0 0 1-1.5-1.5Z" />
+                  <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />
                 )}
               </svg>
             </span>
@@ -1141,19 +1200,30 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 {branchSubtitle}
               </span>
             )}
-            <span className="sidebar-project-tree-meta">
-              {runningCount > 0 && (
-                <span className="sidebar-project-tree-chip is-running" title={t("sidebar.runningCount", { count: runningCount })}>
-                  {runningCount}
-                </span>
-              )}
-              {unreadCount > 0 && (
-                <span className="sidebar-project-tree-chip is-unread" title={t("sidebar.unreadCount", { count: unreadCount })}>
-                  {unreadCount}
-                </span>
-              )}
-            </span>
+            {/* A folded project hides its rows, so the count (and any running
+                or unread chips) must stay readable on the header itself. */}
+            {isCollapsed && (
+              <span className="sidebar-project-tree-count" title={t("sidebar.sessionCount", { count: groupTree.length })}>
+                ({groupTree.length})
+              </span>
+            )}
+            {isCollapsed && (
+              <span className="sidebar-project-tree-meta">
+                {runningCount > 0 && (
+                  <span className="sidebar-project-tree-chip is-running" title={t("sidebar.runningCount", { count: runningCount })}>
+                    {runningCount}
+                  </span>
+                )}
+                {unreadCount > 0 && (
+                  <span className="sidebar-project-tree-chip is-unread" title={t("sidebar.unreadCount", { count: unreadCount })}>
+                    {unreadCount}
+                  </span>
+                )}
+              </span>
+            )}
           </button>
+          {/* Hover-only overlay, left of the chevron: it covers the tail of a
+              long name instead of reserving width the rest of the time. */}
           <div className="sidebar-project-tree-row-actions" data-no-drag>
             <button
               type="button"
@@ -1175,7 +1245,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               onClick={(e) => openProjectMenu(e, group.projectRoot)}
               title={t("sidebar.moreActions")}
               aria-label={t("sidebar.moreActions")}
-              aria-expanded={projectMenu?.root === group.projectRoot}
+              aria-expanded={isMenuOpen}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <circle cx="5" cy="12" r="1.6" />
@@ -1184,6 +1254,18 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               </svg>
             </button>
           </div>
+          {/* Redundant with the row button for keyboards and screen readers. */}
+          <button
+            type="button"
+            className="sidebar-project-tree-chevron-button"
+            onClick={toggleCollapse}
+            tabIndex={-1}
+            aria-hidden="true"
+          >
+            <svg className="sidebar-project-tree-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
         </div>
         {!isCollapsed && (
           <div className="sidebar-project-tree-children">
@@ -1259,6 +1341,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           </span>
           {t("sidebar.newChat")}
         </button>
+
+        {onOpenScheduled && <ScheduledSidebarRow active={scheduledOpen} onOpen={onOpenScheduled} />}
 
         {/* Row 2: current folder — flat row */}
         <div className={`sidebar-folder-row${showLegacyHeaderProjectRows ? "" : " is-hidden"}`} data-no-drag>
@@ -1670,7 +1754,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 title={t("sidebar.moreActions")}
                 aria-label={t("sidebar.moreActions")}
                 onClick={() => {
-                  if (collapsedProjects.size === 0) {
+                  if (allProjects.some((g) => !collapsedProjects.has(g.projectRoot))) {
                     setCollapsedProjects(new Set(allProjects.map((g) => g.projectRoot)));
                   } else {
                     setCollapsedProjects(new Set());
@@ -2053,17 +2137,72 @@ function SessionItem({
 
   // "…" menu: fixed-position portal so the sidebar's overflow/backdrop-filter can't clip it
   const MENU_WIDTH = 190;
+  // Desktop shell: the same actions as the DOM menu below, as a native popup.
+  // `menuOpen` stays true while it is up so the trailing "…" button does not
+  // swap back to the timestamp; `menuPos` stays null, so no DOM menu renders.
+  const showNativeSessionMenu = useCallback(async (at: NativeMenuPoint): Promise<boolean> => {
+    if (session.transient) return false;
+    setMenuOpen(true);
+    const shown = await showNativeMenu([
+      { label: t("sidebar.rename"), onSelect: startRename },
+      { label: t("sidebar.delete"), onSelect: () => setConfirmDelete(true) },
+      { kind: "separator" },
+      {
+        label: `${formatRelativeTime(session.modified, locale)} · ${t("sidebar.messagesCount", { count: session.messageCount })}`,
+        disabled: true,
+      },
+      ...((session.compactionCount ?? 0) > 0
+        ? [{ label: t("sidebar.compactionCount", { count: session.compactionCount ?? 0 }), disabled: true }]
+        : []),
+      ...(session.worktreeBranch ? [{ label: session.worktreeBranch, disabled: true }] : []),
+    ], at);
+    setMenuOpen(false);
+    return shown;
+  }, [locale, session.compactionCount, session.messageCount, session.modified, session.transient, session.worktreeBranch, startRename, t]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const handled = dispatchSessionRowContextMenu({
+      id: session.id,
+      path: session.path,
+      cwd: session.cwd,
+      name: session.name,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      refresh: () => { onRenamed?.(); },
+    });
+    if (handled) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    // Replace the webview's own context menu (Reload / Inspect) with the row's actions.
+    if (isTauriDesktop() && !session.transient) {
+      e.preventDefault();
+      e.stopPropagation();
+      void showNativeSessionMenu({ x: e.clientX, y: e.clientY });
+    }
+  }, [onRenamed, session.cwd, session.id, session.name, session.path, session.transient, showNativeSessionMenu]);
+
   const toggleMenu = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     if (menuOpen) { setMenuOpen(false); return; }
     const rect = e.currentTarget.getBoundingClientRect();
-    const estHeight = 124;
-    const left = Math.max(8, Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8));
-    let top = rect.bottom + 4;
-    if (top + estHeight > window.innerHeight - 8) top = rect.top - estHeight - 4;
-    setMenuPos({ top, left });
-    setMenuOpen(true);
-  }, [menuOpen]);
+    const openDomMenu = () => {
+      const estHeight = 124;
+      const left = Math.max(8, Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8));
+      let top = rect.bottom + 4;
+      if (top + estHeight > window.innerHeight - 8) top = rect.top - estHeight - 4;
+      setMenuPos({ top, left });
+      setMenuOpen(true);
+    };
+    if (isTauriDesktop()) {
+      void showNativeSessionMenu(menuPointBelow(e.currentTarget)).then((shown) => {
+        if (!shown) openDomMenu();
+      });
+      return;
+    }
+    openDomMenu();
+  }, [menuOpen, showNativeSessionMenu]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -2097,22 +2236,6 @@ function SessionItem({
     setConfirmDelete(false);
   }, []);
 
-  // Fixed-height outer wrapper — content swaps in place so the list never reflows.
-  // Matches the Chats/Files view-switcher tab height.
-  const handleContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const handled = dispatchSessionRowContextMenu({
-      id: session.id,
-      path: session.path,
-      cwd: session.cwd,
-      name: session.name,
-      clientX: e.clientX,
-      clientY: e.clientY,
-      refresh: () => { onRenamed?.(); },
-    });
-    if (!handled) return;
-    e.preventDefault();
-    e.stopPropagation();
-  }, [onRenamed, session.cwd, session.id, session.name, session.path]);
 
   // Fixed-height outer wrapper — content swaps in place so the list never reflows
   return (
@@ -2231,25 +2354,38 @@ function SessionItem({
             </button>
           )}
 
-          {/* Action buttons — shown on hover (or always on touch devices,
-              which have no hover); transient runtime rows expose no
-              disk-backed actions. Also stays up for selection/open menu. */}
-          {(hovered || touchMode) && !session.transient && (
-            <button
-              ref={menuButtonRef}
-              onClick={toggleMenu}
-              title={t("sidebar.sessionActions")}
-              aria-label={t("sidebar.sessionActions")}
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              className={`sidebar-session-menu-button${menuOpen ? " is-open" : ""}`}
+          {/* Trailing slot: the row's last-activity time at rest, swapped in
+              place for the "…" action button on hover (always the button on
+              touch devices, which have no hover, and while its menu is open,
+              since the pointer then sits on the portal). Transient runtime
+              rows expose no disk-backed actions and have no reliable time.
+              The slot keeps one fixed width so the title never reflows. */}
+          {!session.transient && (
+            <div
+              className="session-item-trailing"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <circle cx="5" cy="12" r="1.7" />
-                <circle cx="12" cy="12" r="1.7" />
-                <circle cx="19" cy="12" r="1.7" />
-              </svg>
-            </button>
+              {hovered || touchMode || menuOpen ? (
+                <button
+                  ref={menuButtonRef}
+                  onClick={toggleMenu}
+                  title={t("sidebar.sessionActions")}
+                  aria-label={t("sidebar.sessionActions")}
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  className={`sidebar-session-menu-button${menuOpen ? " is-open" : ""}`}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <circle cx="5" cy="12" r="1.7" />
+                    <circle cx="12" cy="12" r="1.7" />
+                    <circle cx="19" cy="12" r="1.7" />
+                  </svg>
+                </button>
+              ) : (
+                <span className="session-item-time" title={formatRelativeTime(session.modified, locale)}>
+                  {formatCompactRelativeTime(session.modified, locale)}
+                </span>
+              )}
+            </div>
           )}
 
           {menuOpen && menuPos && createPortal(
@@ -2293,6 +2429,9 @@ function SessionItem({
                 <div title={session.created}>
                   {formatRelativeTime(session.modified, locale)} · {t("sidebar.messagesCount", { count: session.messageCount })}
                 </div>
+                {(session.compactionCount ?? 0) > 0 && (
+                  <div>{t("sidebar.compactionCount", { count: session.compactionCount ?? 0 })}</div>
+                )}
                 {session.worktreeBranch && (
                   <div title={`Worktree: ${session.cwd}`} className="sidebar-menu-meta-worktree">
                     <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="sidebar-glyph">

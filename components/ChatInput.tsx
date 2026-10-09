@@ -4,9 +4,12 @@ import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useMe
 import { isImeComposing } from "@/lib/ime";
 import { WEB_SLASH_COMMANDS, parseWebSlashCommand, type ViewSlashCommand } from "@/lib/web-slash-commands";
 import { createPortal } from "react-dom";
+import { isTauriDesktop } from "@/lib/desktop-updater";
+import { menuPointBelow, showNativeMenu } from "@/lib/desktop-menu";
 import type { BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
 import type { SkillsResponse } from "@/lib/api-types";
 import type { ModelScopeWarning } from "@/lib/model-scope-warnings";
+import type { UnavailableWorkspace } from "@/lib/workspace-availability";
 import type { TextContent, UserMessage } from "@/lib/types";
 import { mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft as rekeyStoredDraft, clearDraft, getDraft, setDraft, loadDraft, subscribeDrafts, getDraftStatus, retryDraft, type ChatDraftImage } from "@/lib/draft-store";
 import { buildPasteToken, normalizePastedText, shouldChipPastedText, splicePastedTexts, type ChatDraftText, type PastedTextChip } from "@/lib/pasted-text";
@@ -60,6 +63,10 @@ interface Props {
   modelNames?: Record<string, string>;
   modelList?: { id: string; name: string; provider: string; input?: string[] }[];
   modelError?: string | null;
+  /** The cwd can no longer host a run (deleted, replaced by a file, unreadable): sending is blocked and the draft stays. */
+  workspaceUnavailable?: UnavailableWorkspace | null;
+  /** Probe the cwd again, e.g. after the folder was restored. */
+  onRecheckWorkspace?: () => void;
   /** Diagnostics from resolving `enabledModels`, e.g. a pattern that matched nothing. */
   modelScopeWarnings?: ModelScopeWarning[];
   /** Dismiss the current scope warnings for this conversation only. */
@@ -687,6 +694,46 @@ function ModelNoticeBanner({
   );
 }
 
+/** Shown instead of the model error that a missing cwd would otherwise cause (#1061). */
+export function WorkspaceUnavailableBanner({ workspace, onRecheck }: { workspace?: UnavailableWorkspace | null; onRecheck?: () => void }) {
+  const { t } = useI18n();
+  if (!workspace) return null;
+  const body = workspace.availability === "missing"
+    ? t("chat.workspaceMissing", { cwd: workspace.cwd })
+    : workspace.availability === "not-directory"
+      ? t("chat.workspaceNotDirectory", { cwd: workspace.cwd })
+      : t("chat.workspaceUnreadable", { cwd: workspace.cwd });
+  return (
+    <div data-workspace-unavailable={workspace.availability}>
+      <ModelNoticeBanner
+        tone="error"
+        title={t("chat.workspaceUnavailable")}
+        body={body}
+        action={onRecheck ? (
+          <button
+            type="button"
+            onClick={onRecheck}
+            style={{
+              flexShrink: 0,
+              padding: "2px 8px",
+              border: "1px solid rgba(239,68,68,0.45)",
+              borderRadius: 5,
+              background: "transparent",
+              color: "inherit",
+              cursor: "pointer",
+              fontSize: 11,
+              lineHeight: 1.4,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {t("chat.workspaceRecheck")}
+          </button>
+        ) : undefined}
+      />
+    </div>
+  );
+}
+
 export function ModelErrorBanner({ error }: { error?: string | null }) {
   const { t } = useI18n();
   if (!error) return null;
@@ -768,7 +815,7 @@ function DraftSavingIndicator({ loading }: { loading: boolean }) {
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
-  onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange, modelSwitching,
+  onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, workspaceUnavailable, onRecheckWorkspace, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange, modelSwitching,
   defaultModel, onSetDefaultModel,
   compactError, compactNotice, compactResult, toolPreset, onToolPresetChange,
   thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
@@ -1392,6 +1439,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       }
     }
     if (isStreaming) return;
+    // A run cannot start in a cwd that is gone; keep the draft until it is back or another project is picked.
+    if (workspaceUnavailable) return;
     if (preparingRef.current) return;
     preparingRef.current = true; setPreparationError("");
     try {
@@ -1401,7 +1450,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       onSend(prepared.text, prepared.images.length ? attachedImages : undefined);
       if (JSON.stringify(snapshotRef.current()) === original) clearInput();
     } catch (e) { setPreparationError(String(e)); } finally { preparingRef.current = false; }
-  }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, isStreaming, onBuiltinCommand, onSend, clearInput, prepare, dispatchBuiltin]);
+  }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, workspaceUnavailable, isStreaming, onBuiltinCommand, onSend, clearInput, prepare, dispatchBuiltin]);
 
   const slashQuery = !compact && value.startsWith("/") && !/\s/.test(value.slice(1))
     ? value.slice(1).toLowerCase()
@@ -1434,6 +1483,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     : t(slashQuery ? "chat.matches" : "chat.commands", { count: filteredSlashCommands.length });
   const hasInputText = Boolean(value.trim());
   const canQueueStreamingMessage = hasInputText || attachedImages.length > 0;
+  const canSend = canQueueStreamingMessage && !workspaceUnavailable;
   // Warn when images are attached but the selected model is known not to accept
   // image input (#584), including a resolved default. Unknown models stay silent.
   const showImageUnsupportedWarning = (
@@ -2173,7 +2223,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         }}
       />}
       <div className="chat-composer-wrap" style={{ maxWidth: showHints ? undefined : "var(--chat-content-max-width, 820px)" }}>
-        <ModelErrorBanner error={modelError} />
+        {workspaceUnavailable
+          ? <WorkspaceUnavailableBanner workspace={workspaceUnavailable} onRecheck={onRecheckWorkspace} />
+          : <ModelErrorBanner error={modelError} />}
         <ModelScopeWarningBanner warnings={modelScopeWarnings} onDismiss={onDismissModelScopeWarnings} dismissLabel={t("chat.modelScopeDismiss")} onOpenModelsConfig={onOpenModelsConfig} />
         {showImageUnsupportedWarning && (() => {
           const entry = modelList?.find((m) => m.provider === model?.provider && m.id === model?.modelId);
@@ -2641,7 +2693,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             <button
               className="native-primary-button composer-send-button"
               onClick={handleSend}
-              disabled={builtinCommandPending || (!value.trim() && !attachedImages.length)}
+              disabled={builtinCommandPending || !canSend}
               aria-label={t("chat.send")}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2690,9 +2742,23 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   aria-label={t("chat.currentProject", { path: projectPath ?? projectLabel })}
                   aria-haspopup={projectOptions.length > 0 && onProjectChange ? "menu" : undefined}
                   aria-expanded={projectOptions.length > 0 && onProjectChange ? projectDropdownOpen : undefined}
-                  onClick={() => {
+                  onClick={(event) => {
                     if (projectOptions.length > 0 && onProjectChange) {
                       setProjectPathTip(null);
+                      // Desktop shell: the project list as a native popup.
+                      if (isTauriDesktop()) {
+                        void showNativeMenu(
+                          projectOptions.map((projectRoot) => ({
+                            label: getProjectLabel(projectRoot) ?? projectRoot,
+                            checked: projectRoot === projectPath,
+                            onSelect: () => {
+                              if (projectRoot !== projectPath) onProjectChange(projectRoot);
+                            },
+                          })),
+                          menuPointBelow(event.currentTarget),
+                        );
+                        return;
+                      }
                       setProjectDropdownOpen((open) => !open);
                     } else onSelectProject?.();
                   }}

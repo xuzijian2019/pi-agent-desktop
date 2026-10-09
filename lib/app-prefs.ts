@@ -15,6 +15,8 @@ export const APP_PREF_KEYS = {
   unreadSessionIds: "pi-web:unread-session-ids",
   archivedProjects: "pi-web:archived-projects",
   projectOrder: "pi-web:project-order",
+  /** Project roots whose session list is folded in the sidebar tree. */
+  collapsedProjects: "pi-web:collapsed-projects",
   updateSnooze: "pi-web:update-snooze",
   closeQuits: "pi-desktop-close-quits",
   browserNotifications: "pi-browser-notifications",

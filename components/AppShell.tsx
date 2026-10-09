@@ -1,6 +1,7 @@
 "use client";
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
+import type { UnavailableWorkspace, WorkspaceAvailability } from "@/lib/workspace-availability";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -11,6 +12,8 @@ import { ChatWindow } from "./ChatWindow";
 import { selectProjectDirectoryNative } from "./ProjectPicker";
 import { MissingFolderNotice } from "./MissingFolderNotice";
 import type { SidebarProjectActions } from "@/lib/missing-folder";
+import { ScheduledView } from "./scheduled/ScheduledView";
+import { useScheduledRunNotifications } from "@/hooks/useScheduledRunNotifications";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
 
 import { TabBar, type Tab } from "./TabBar";
@@ -33,6 +36,8 @@ import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useDesktopConnection } from "@/lib/desktop-connection";
 import { isTauriDesktop, setCloseQuitsNative } from "@/lib/desktop-native";
+import { menuPointBelow, showNativeMenu } from "@/lib/desktop-menu";
+import { useNativeContextMenu } from "@/hooks/useNativeContextMenu";
 import { getFileName } from "@/lib/file-paths";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
 import { PRODUCT_NAME } from "@/lib/branding";
@@ -117,6 +122,11 @@ export function AppShell() {
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
   const [fileActionsMenuOpen, setFileActionsMenuOpen] = useState(false);
   const fileActionsMenuRef = useRef<HTMLDivElement>(null);
+  // The Scheduled page covers the chat area without unmounting it, so the open session keeps its state.
+  const [scheduledOpen, setScheduledOpen] = useState(() => searchParams?.get("view") === "scheduled");
+  // Read by handleSelectSession, whose identity must not change when the page opens.
+  const scheduledOpenRef = useRef(scheduledOpen);
+  useEffect(() => { scheduledOpenRef.current = scheduledOpen; }, [scheduledOpen]);
   const [explorerUploadBusy, setExplorerUploadBusy] = useState(false);
   const fileExplorerRef = useRef<FileExplorerHandle>(null);
   const [fileTreeOpen, setFileTreeOpen] = useState(true);
@@ -175,6 +185,7 @@ export function AppShell() {
   }, []);
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
+  useNativeContextMenu();
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [settingsMenuPos, setSettingsMenuPos] = useState<{ top: number; left: number } | null>(null);
   const settingsMenuRef = useRef<HTMLDivElement>(null);
@@ -183,22 +194,6 @@ export function AppShell() {
     setSettingsMenuOpen(false);
     setSettingsMenuPos(null);
   }, []);
-  const toggleSettingsMenu = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
-    if (settingsMenuOpen) {
-      closeSettingsMenu();
-      return;
-    }
-    const rect = event.currentTarget.getBoundingClientRect();
-    const menuWidth = 184;
-    const menuHeight = 236;
-    const left = Math.max(8, Math.min(rect.left, window.innerWidth - menuWidth - 8));
-    const below = rect.bottom + 6;
-    const top = below + menuHeight > window.innerHeight - 8
-      ? Math.max(8, rect.top - menuHeight - 6)
-      : below;
-    setSettingsMenuPos({ top, left });
-    setSettingsMenuOpen(true);
-  }, [settingsMenuOpen, closeSettingsMenu]);
   useEffect(() => {
     if (!settingsMenuOpen) return;
     const handleMouseDown = (event: MouseEvent) => {
@@ -221,6 +216,10 @@ export function AppShell() {
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
 
   const [projectTrust, setProjectTrust] = useState<ProjectTrustStatus | null>(null);
+  // "unknown": the probe itself failed, so nothing is blocked on its account.
+  const [workspaceStatus, setWorkspaceStatus] = useState<{ cwd: string; availability: WorkspaceAvailability | "unknown" } | null>(null);
+  const workspaceStatusRef = useRef(workspaceStatus);
+  const [workspaceStatusCheck, setWorkspaceStatusCheck] = useState(0);
   const [projectTrustDialogOpen, setProjectTrustDialogOpen] = useState(false);
   const [projectTrustBusy, setProjectTrustBusy] = useState(false);
   const [projectTrustError, setProjectTrustError] = useState<ProjectTrustFailure | null>(null);
@@ -836,6 +835,8 @@ export function AppShell() {
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false, entryId?: string, blockIndex?: number) => {
     navigationGeneration.current += 1;
+    // Picking a session means leaving Scheduled; a cold-start restore must not.
+    if (!isRestore) setScheduledOpen(false);
     setSearchTarget(entryId ? { sessionId: session.id, entryId, blockIndex } : null);
     invalidateWorkspaceRestore();
     const activeDraftKey = activeNewSessionDraftKeyRef.current;
@@ -888,7 +889,9 @@ export function AppShell() {
     // Tab-memory restore lands on `/` and must still write `?session=` so reload
     // and copy-link keep this session. replaceState, not router.replace: calling
     // replace in production Next.js triggers a Suspense remount loop.
-    if (!isRestore) {
+    if (isRestore && scheduledOpenRef.current) {
+      // A cold-start restore behind the Scheduled page leaves `?view=scheduled` alone.
+    } else if (!isRestore) {
       window.history.pushState({ ...window.history.state, piSession: session }, "", `?session=${encodeURIComponent(session.id)}`);
     } else if (new URLSearchParams(window.location.search).get("session") !== session.id) {
       window.history.replaceState({ ...window.history.state, piSession: session }, "", `?session=${encodeURIComponent(session.id)}`);
@@ -896,6 +899,7 @@ export function AppShell() {
   }, [activeCwd, activeFileTabId, invalidateWorkspaceRestore, isMobile, newSessionCwd, selectedSession]);
 
   const handleNewSession = useCallback((sessionId: string, cwd: string) => {
+    setScheduledOpen(false);
     invalidateWorkspaceRestore();
     navigationGeneration.current += 1;
     activeNewSessionDraftKeyRef.current = `new:${cwd}`;
@@ -1027,6 +1031,21 @@ export function AppShell() {
     }
   }, [handleSelectSession, sessionCatalog]);
 
+  const handleOpenScheduled = useCallback(() => {
+    setScheduledOpen(true);
+    if (isMobile) setSidebarOpen(false);
+    // Skip the replace when the URL already says so (see handleSelectSession).
+    if (new URLSearchParams(window.location.search).get("view") !== "scheduled") {
+      router.replace("?view=scheduled", { scroll: false });
+    }
+  }, [isMobile, router]);
+
+  // Validated and allow-listed like any project pick, which /api/models needs for the new folder.
+  const handleBrowseScheduledFolder = useCallback(
+    () => selectProjectDirectoryNative(selectedSession?.cwd ?? newSessionCwd ?? activeCwd, ""),
+    [selectedSession?.cwd, newSessionCwd, activeCwd],
+  );
+
   // Called by ChatWindow when a new session gets its real id from pi
   const handleSessionCreated = useCallback((session: SessionInfo, sourceDraftKey?: string) => {
     setRefreshKey(key => key + 1);
@@ -1094,6 +1113,26 @@ export function AppShell() {
       tag: targetSession ? `pi-session-complete:${targetSession.id}` : "pi-session-complete",
     });
   }, [deliverSessionNotification, hydrateSelectedSession, selectedSession, translate]);
+
+  // Scheduled runs have their own notification (success or failure, which task, why).
+  // The desktop app shows it natively; a browser tab uses the same path as session completion.
+  useScheduledRunNotifications({
+    // The fork has no completion sound (hooks/useAudio.ts was removed).
+    onSound: () => {},
+    deliverInBrowser: (notification) => {
+      if (!shouldShowBrowserNotification()) return;
+      void (async () => {
+        const { sessionId } = notification;
+        let targetSession: SessionInfo | null = sessionId ? sessionCatalog.find((s) => s.id === sessionId) ?? null : null;
+        if (!targetSession && sessionId) {
+          const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" }).catch(() => null);
+          const data = response?.ok ? await response.json().catch(() => null) as { info?: SessionInfo } | null : null;
+          targetSession = data?.info ?? null;
+        }
+        deliverSessionNotification({ targetSession, title: notification.title, body: notification.body, tag: notification.tag });
+      })();
+    },
+  });
 
   const handleAttentionNeeded = useCallback((request: BlockingExtensionUiRequest) => {
     if (selectedSession?.relation?.kind === "subagent") return;
@@ -1285,6 +1324,34 @@ export function AppShell() {
   // give way to one calm state. The session list already knows; a new-session
   // cwd falls back to the trust probe, which reports it as a status not an error.
   const activeCwdMissing = selectedSession ? selectedSession.cwdMissing === true : projectTrust?.cwdMissing === true;
+  const toggleSettingsMenu = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    if (settingsMenuOpen) {
+      closeSettingsMenu();
+      return;
+    }
+    // Desktop shell: the same section list as a native popup.
+    if (isTauriDesktop()) {
+      void showNativeMenu(
+        SETTINGS_SECTION_ITEMS.map((item) => ({
+          label: translate(item.labelKey),
+          disabled: item.requiresProject && !projectTrustCwd,
+          onSelect: () => setSettingsSection(item.id),
+        })),
+        menuPointBelow(event.currentTarget),
+      );
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const menuWidth = 184;
+    const menuHeight = 236;
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - menuWidth - 8));
+    const below = rect.bottom + 6;
+    const top = below + menuHeight > window.innerHeight - 8
+      ? Math.max(8, rect.top - menuHeight - 6)
+      : below;
+    setSettingsMenuPos({ top, left });
+    setSettingsMenuOpen(true);
+  }, [settingsMenuOpen, closeSettingsMenu, translate, projectTrustCwd]);
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showChat;
 
@@ -1367,11 +1434,53 @@ export function AppShell() {
     rightPanelOpen,
   ]);
 
+  // A workspace deleted outside the app keeps its history, but every cwd-scoped
+  // request then fails and the composer reported it as a model error (#1061).
+  // Probe the folder itself so the chat can say what happened and hold new runs.
+  useEffect(() => {
+    if (!projectTrustCwd) return;
+    const cwd = projectTrustCwd;
+    const controller = new AbortController();
+    fetch(`/api/cwd/status?cwd=${encodeURIComponent(cwd)}`, { signal: controller.signal })
+      .then(async (response) => {
+        const data = await response.json() as { availability?: WorkspaceAvailability };
+        return response.ok && data.availability ? data.availability : "unknown" as const;
+      })
+      .catch((error) => (error instanceof DOMException && error.name === "AbortError" ? null : "unknown" as const))
+      .then((availability) => {
+        if (!availability || controller.signal.aborted) return;
+        const previous = workspaceStatusRef.current;
+        const recovered = availability === "available"
+          && previous?.cwd === cwd
+          && previous.availability !== "available"
+          && previous.availability !== "unknown";
+        workspaceStatusRef.current = { cwd, availability };
+        setWorkspaceStatus({ cwd, availability });
+        // The model list loaded while the folder was gone only holds its error.
+        if (recovered) setModelsRefreshKey((key) => key + 1);
+      });
+    return () => controller.abort();
+  }, [projectTrustCwd, workspaceStatusCheck]);
+
+  const workspaceAvailability = projectTrustCwd && workspaceStatus?.cwd === projectTrustCwd
+    ? workspaceStatus.availability
+    : null;
+  const unavailableWorkspace = useMemo<UnavailableWorkspace | null>(() => (
+    projectTrustCwd && workspaceAvailability && workspaceAvailability !== "available" && workspaceAvailability !== "unknown"
+      ? { cwd: projectTrustCwd, availability: workspaceAvailability }
+      : null
+  ), [projectTrustCwd, workspaceAvailability]);
+  const recheckWorkspace = useCallback(() => setWorkspaceStatusCheck((check) => check + 1), []);
+
   useEffect(() => {
     setProjectTrust(null);
     setProjectTrustDialogOpen(false);
     setProjectTrustError(null);
     if (!projectTrustCwd) return;
+    // Wait for the folder check: a cwd that is gone is refused here as `cwd-denied`,
+    // which is not a trust problem worth reporting.
+    if (workspaceAvailability === null) return;
+    if (workspaceAvailability !== "available" && workspaceAvailability !== "unknown") return;
 
     const controller = new AbortController();
     // The answer also lists the project's MCP servers (`mcpFile`, `mcpServers`), unused here: the
@@ -1397,7 +1506,7 @@ export function AppShell() {
         console.error("Failed to load project trust:", error);
       });
     return () => controller.abort();
-  }, [projectTrustCwd]);
+  }, [projectTrustCwd, workspaceAvailability]);
 
   const handleTrustProject = useCallback(async () => {
     if (!projectTrustCwd || projectTrustBusy) return;
@@ -1442,12 +1551,14 @@ export function AppShell() {
   const activeFileTab = fileTabs.find((tab) => tab.id === activeFileTabId) ?? null;
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
   const windowTitle = [selectedSession ? (selectedSession.name || selectedSession.firstMessage || "Untitled task").slice(0, 70) : "New task", activeCwdName, PRODUCT_NAME].filter(Boolean).join(" - ");
-  const topBarTitle = selectedSession
-    ? selectedSession.name || selectedSession.firstMessage || translate("appshell.untitledTask")
-    : showChat
-      ? translate("appshell.newTask")
-      : PRODUCT_NAME;
-  const topBarSubtitle = activeCwdName ?? translate("appshell.subtitle");
+  const topBarTitle = scheduledOpen
+    ? translate("scheduled.title")
+    : selectedSession
+      ? selectedSession.name || selectedSession.firstMessage || translate("appshell.untitledTask")
+      : showChat
+        ? translate("appshell.newTask")
+        : PRODUCT_NAME;
+  const topBarSubtitle = scheduledOpen ? "" : activeCwdName ?? translate("appshell.subtitle");
 
   useEffect(() => {
     const feedback = (event: Event) => setRunFeedback((event as CustomEvent<{ running: number; unread: number }>).detail);
@@ -1514,6 +1625,8 @@ export function AppShell() {
         onOpenTerminal={handleOpenTerminal}
         onRunningSessionIdsChange={handleRunningSessionIdsChange}
         onSessionsChange={handleSessionsChange}
+        onOpenScheduled={handleOpenScheduled}
+        scheduledOpen={scheduledOpen}
       />
     </>
   );
@@ -1568,6 +1681,10 @@ export function AppShell() {
       </button>
     );
   };
+
+  // The file panel shows a project's files, which the Scheduled page has none of, so its
+  // toggle is hidden there. An already open panel keeps it: on desktop it is the only way to close it.
+  const showFilePanelToggle = !scheduledOpen || rightPanelOpen;
 
   return (
     <>
@@ -1686,7 +1803,7 @@ export function AppShell() {
 
       {/* Main column: everything right of the sidebar. The topbar starts at the
           center column so the sidebar runs the full window height. */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
+      <div className="app-main-column" style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
         {/* Top bar with sidebar toggle */}
         <div
           ref={topBarRef}
@@ -1719,7 +1836,7 @@ export function AppShell() {
             <span>{topBarTitle}</span>
             <small>{topBarSubtitle}</small>
           </div>
-          {showChat && projectTrust?.requiresTrust && !projectTrust.trusted && (
+          {showChat && !scheduledOpen && projectTrust?.requiresTrust && !projectTrust.trusted && (
             <button
               type="button"
               onClick={() => {
@@ -1755,7 +1872,7 @@ export function AppShell() {
               {!isMobile && <span>{translate("trust.resourcesNotLoaded")}</span>}
             </button>
           )}
-          {showChat && (
+          {showChat && !scheduledOpen && (
             <div inert={sideModeOpen} className="app-topbar-actions" style={{ opacity: sideModeOpen ? 0.45 : undefined, display: "flex", alignItems: "stretch", height: "100%" }}>
               {hasSubagentSessions && <button className="native-toolbar-button" onClick={() => toggleTopPanel("agents")}>{translate("agentSwitcher.title")}</button>}
               {(hasForks(branchTree) || activeTopPanel === "branches") && (
@@ -1819,11 +1936,11 @@ export function AppShell() {
         </div>
         <div style={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
       {/* Center: chat */}
-      <div inert={rightPanelFullWidth} style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
+      <div inert={rightPanelFullWidth} style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0, position: "relative" }}>
         {isMobile && renderProjectTrustWarning(true)}
 
         {/* Chat content */}
-        <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+        <div inert={scheduledOpen} aria-hidden={scheduledOpen || undefined} style={{ flex: 1, overflow: "hidden", position: "relative" }}>
           {showChat && activeCwdMissing && projectTrustCwd ? (
             <MissingFolderNotice
               cwd={projectTrustCwd}
@@ -1854,6 +1971,8 @@ export function AppShell() {
               onSessionForked={handleSessionForked}
               onSessionRenamed={handleSessionRenamed}
               modelsRefreshKey={modelsRefreshKey}
+              workspaceUnavailable={unavailableWorkspace}
+              onRecheckWorkspace={recheckWorkspace}
               chatInputRef={chatInputRef}
               onBranchDataChange={handleBranchDataChange}
               onOpenSettings={openSettingsSection}
@@ -1912,25 +2031,46 @@ export function AppShell() {
             )
           ) : null}
         </div>
+
+        {scheduledOpen && (
+          <ScheduledView
+            projectRoots={availableProjectRoots}
+            defaultCwd={selectedSession?.cwd ?? newSessionCwd ?? activeCwd}
+            onBrowseFolder={desktopMode ? handleBrowseScheduledFolder : undefined}
+            onOpenSession={async (sessionId) => {
+              // handleOpenSession only logs a failure; this page has to tell the user.
+              const known = sessionCatalog.some((s) => s.id === sessionId && !s.transient);
+              if (!known) {
+                const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" }).catch(() => null);
+                if (!response?.ok) return false;
+              }
+              await handleOpenSession(sessionId);
+              return true;
+            }}
+          />
+        )}
       </div>
         </div>
       </div>
 
-      <button
-        type="button"
-        className={`right-panel-toggle-button${rightPanelOpen ? " is-open" : ""}`}
-        onClick={handleRightPanelToggle}
-        aria-controls="file-panel"
-        aria-expanded={rightPanelOpen}
-        title={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
-        aria-label={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
-        aria-pressed={rightPanelOpen}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          <line x1="15" y1="3" x2="15" y2="21" />
-        </svg>
-      </button>
+      {/* Hidden on the Scheduled page, which has no project files; an open panel keeps it so it can close. */}
+      {showFilePanelToggle && (
+        <button
+          type="button"
+          className={`right-panel-toggle-button${rightPanelOpen ? " is-open" : ""}`}
+          onClick={handleRightPanelToggle}
+          aria-controls="file-panel"
+          aria-expanded={rightPanelOpen}
+          title={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
+          aria-label={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
+          aria-pressed={rightPanelOpen}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <line x1="15" y1="3" x2="15" y2="21" />
+          </svg>
+        </button>
+      )}
 
       <div
         aria-hidden="true"
