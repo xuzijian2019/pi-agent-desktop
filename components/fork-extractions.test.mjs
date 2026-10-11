@@ -340,6 +340,25 @@ for (const removal of REMOVED_UPSTREAM_UI) {
   });
 }
 
+test("fork project actions fall back when the native popup cannot open", async () => {
+  const source = await read("components/SessionSidebar.tsx");
+  const handler = source.slice(source.indexOf("const openProjectMenu ="), source.indexOf("// Phase A: project tree"));
+  assert.match(handler, /showNativeProjectMenu[\s\S]*\.then\(\(shown\)/);
+  assert.match(handler, /if \(!shown\) openDomMenu\(\)/);
+  assert.match(handler, /setProjectMenuPos\(\{ top, left \}\)/);
+});
+
+test("sidebar Settings keeps native menu imports and its DOM fallback", async () => {
+  const source = await read("components/AppShell.tsx");
+  // The fork removed these imports with the topbar More menu. Upstream's
+  // Settings handler later merged cleanly without restoring them.
+  assert.match(source, /import \{ canUseNativeMenu, menuPointBelow, showNativeMenu \} from "@\/lib\/desktop-menu"/);
+  const handler = source.slice(source.indexOf("const toggleSettingsMenu ="), source.indexOf("// While restoring initial session"));
+  assert.match(handler, /SETTINGS_SECTION_ITEMS\.map/);
+  assert.match(handler, /disabled: item\.requiresProject && !projectTrustCwd/);
+  assert.match(handler, /if \(!shown\) openDomMenu\(\)/);
+});
+
 test("the shell mounts the shared in-app file context menu host", async () => {
   const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
   assert.match(source, /<DomContextMenuHost \/>/);

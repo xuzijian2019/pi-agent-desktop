@@ -25,16 +25,16 @@
   "driftedUpstreamFiles": {
     "components/SessionSidebar.tsx": {
       "risk": "high",
-      "drift": 2968,
+      "drift": 2973,
       "reason": "~500 lines were MOVED OUT into components/ProjectPicker.tsx and components/path-ui.tsx, which do not exist upstream. git merge does not track cross-file moves: an upstream edit to the project-picker block can merge back cleanly and silently resurrect a second copy.",
-      "structuralDrift": 2246,
+      "structuralDrift": 2251,
       "disposition": "accepted"
     },
     "components/AppShell.tsx": {
       "risk": "high",
-      "drift": 2470,
+      "drift": 2481,
       "reason": "Top-bar redesign (toolbar consolidated into a more-menu, inline styles to classNames) plus the mount point for desktop chrome. The desktop-only parts moved to components/desktop/; the rest is the fork's own interaction design, not desktop plumbing, so this file stays high risk by design rather than by neglect. Header/More cleanup (ui-refresh decisions 7 and 8) DELETES upstream UI rather than adding fork UI \u2014 the Full history toolbar button, the Session stats more-item and the session top panel \u2014 which raises structural drift by 37 lines, because upstream still ships all of it. Numbers are the measured values from `npm run drift` against the recorded baseline. Saved-task append and chip conflict fixes bring measured structural drift to 1411. Phase 4 adds an import, one local element and one prop to fill ChatWindow's empty-state slot: 3 structural lines.",
-      "structuralDrift": 1968,
+      "structuralDrift": 1979,
       "disposition": "accepted"
     },
     "components/FileViewer.tsx": {
@@ -237,6 +237,7 @@
     "2026-09-26 \u2014 Merged desktop upstream 73bc9f1 (0.4.8). Retained fork model/file menus and transcript controls; adopted direct DOM composer spacing, render caches, IME guards, tool-result projection and isolated HTML script preview. CSS baseline pinned to pi-web 96966e5; fork anchor styling moved to native-theme.css.",
     "2026-10-04 \u2014 baseline moved 96966e5 -> 6fcd7d4. Segment G (c5a70eb) was a single-parent commit, so git never recorded 6fcd7d4 as merged: merge-base stayed at 96966e5, `npm run drift` reported structural 18077 instead of 9959, and a merge of the upstream tag would have replayed the whole range (39 conflicts in a dry run). An `-s ours` merge now records the ancestry without touching the tree. Risk levels re-measured: lib/file-access.ts low->medium, lib/directory-browser.ts and components/FileExplorer.tsx medium->low; components/FileIcons.tsx no longer differs from upstream and its entry is removed.",
     "2026-10-04 \u2014 Round 3 merge of desktop upstream f66ba13 on round 2 9bb3a4b. Baseline 6fcd7d4; all registered drift numbers re-measured for this fork. Branch summary options forwarded through the fork callback; cost-by-model and cache-warming UI lives in the existing /session dialog; extension statuses and routed-model hints restored in the fork composer. Fork FileExplorer remains medium (108 structural), directory-browser low (25), BranchNavigator medium (93), rpc-manager high (499).",
-    "2026-10-09 \u2014 Merged desktop upstream f59e0b18 (0.6.3): adopted DOM context menus, macOS Open With, popup lock fix, type scale/hairlines/contrast, controls below the input card, and update-chip removal. Preserved fork interaction design and CSS radius tokens; drift measured against pi-web 6fcd7d4. See .agents/notes/upstream-merge-20261009-handoff.md."
+    "2026-10-09 \u2014 Merged desktop upstream f59e0b18 (0.6.3): adopted DOM context menus, macOS Open With, popup lock fix, type scale/hairlines/contrast, controls below the input card, and update-chip removal. Preserved fork interaction design and CSS radius tokens; drift measured against pi-web 6fcd7d4. See .agents/notes/upstream-merge-20261009-handoff.md.",
+    "2026-10-10 — Merged desktop upstream 1cabde80 (0.6.4): Rust-built native popups enabled by default, Settings native section menu and file-menu DOM fallback. Restored AppShell imports removed with the fork topbar and repaired fork project-menu fallback; two new extraction sentinels protect those integration paths. Measured against pi-web 6fcd7d4: AppShell 1979 structural and SessionSidebar 2251 structural, both accepted high risk. See .agents/notes/upstream-merge-20261010-handoff.md."
   ]
 }

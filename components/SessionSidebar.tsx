@@ -1006,10 +1006,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
   const openProjectMenu = useCallback((e: React.MouseEvent<HTMLButtonElement>, projectRoot: string) => {
     e.stopPropagation();
-    if (canUseNativeMenu()) {
-      void showNativeProjectMenu(projectRoot, menuPointBelow(e.currentTarget));
-      return;
-    }
     if (projectMenu?.root === projectRoot) {
       setProjectMenu(null);
       setProjectMenuPos(null);
@@ -1022,9 +1018,18 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const top = rect.bottom + menuHeight > window.innerHeight - 8
       ? rect.top - menuHeight - 4
       : rect.bottom + 4;
-    setProjectMenu({ root: projectRoot });
-    setProjectMenuPos({ top, left });
-    setProjectRevealError(null);
+    const openDomMenu = () => {
+      setProjectMenu({ root: projectRoot });
+      setProjectMenuPos({ top, left });
+      setProjectRevealError(null);
+    };
+    if (canUseNativeMenu()) {
+      void showNativeProjectMenu(projectRoot, menuPointBelow(e.currentTarget)).then((shown) => {
+        if (!shown) openDomMenu();
+      });
+      return;
+    }
+    openDomMenu();
   }, [projectMenu, showNativeProjectMenu]);
 
   // Phase A: project tree — groups sessions by project root. Sorting is
