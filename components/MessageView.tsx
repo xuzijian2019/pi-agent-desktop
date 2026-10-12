@@ -25,7 +25,7 @@ import { skillExpansionToCommand } from "@/lib/slash-display";
 import type { SubagentToolDetails } from "@/lib/subagent-extension";
 import { CODEMODE_TOOL_NAME, codemodeCalls, codemodeScript, codemodeScriptPreview, stripCodemodeHeader } from "@/lib/codemode-view";
 import { CodemodeCallList } from "./CodemodeToolView";
-import { resultImageFileName } from "@/lib/result-image";
+import { imageSource, resultImageFileName } from "@/lib/result-image";
 import { mcpToolLabel, prettyMcpResultText } from "@/lib/mcp-tool-display";
 import type {
   AgentMessage,
@@ -425,16 +425,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
   const imageBlocksNode = imageBlocks.length > 0 && (
     <div className={content ? "msg-attachments is-spaced" : "msg-attachments"}>
       {imageBlocks.map((img, i) => {
-        // lib/types.ts ImageContent uses {source:{type,data,media_type,url}}
-        // pi-ai on-disk format uses flat {data, mimeType} — handle both
-        const flat = img as unknown as { data?: string; mimeType?: string };
-        const src = img.source
-          ? img.source.type === "base64"
-            ? `data:${img.source.media_type};base64,${img.source.data}`
-            : img.source.url ?? ""
-          : flat.data
-            ? `data:${flat.mimeType};base64,${flat.data}`
-            : "";
+        const src = imageSource(img);
         return (
           <button
             key={i}
@@ -1481,7 +1472,7 @@ function ResultImages({ images, isError }: { images: ImageContent[]; isError: bo
         const src = imageSource(image);
         if (!src) return null;
         return (
-          <div key={`${src}-${index}`} className="result-image" style={{ maxWidth: "100%" }}>
+          <div key={index} className="result-image" style={{ maxWidth: "100%" }}>
             <ImagePreview src={src} style={{ maxWidth: "100%" }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -1732,16 +1723,6 @@ function getMessageImages(content: CustomMessage["content"] | UserMessage["conte
 
 function imageMediaType(img: ImageContent): string | undefined {
   return img.source?.media_type ?? (img as unknown as { mimeType?: string }).mimeType;
-}
-
-function imageSource(img: ImageContent): string {
-  const flat = img as unknown as { data?: string; mimeType?: string };
-  if (img.source) {
-    return img.source.type === "base64"
-      ? `data:${img.source.media_type};base64,${img.source.data}`
-      : img.source.url ?? "";
-  }
-  return flat.data ? `data:${flat.mimeType};base64,${flat.data}` : "";
 }
 
 function safeJson(value: unknown): string {

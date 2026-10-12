@@ -1247,6 +1247,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       onLoadSlashCommands={loadSlashCommands}
       onViewCommand={handleViewCommand}
       onBuiltinCommand={dispatchCommand}
+      autoFocus={isNew}
       draftKey={session?.id ?? newSessionDraftKey ?? undefined}
       cwd={session?.cwd ?? newSessionCwd}
       projectPath={session?.projectRoot ?? session?.cwd ?? newSessionCwd}
