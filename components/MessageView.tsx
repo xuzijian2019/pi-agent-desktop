@@ -27,6 +27,7 @@ import { CODEMODE_TOOL_NAME, codemodeCalls, codemodeScript, codemodeScriptPrevie
 import { CodemodeCallList } from "./CodemodeToolView";
 import { imageSource, resultImageFileName } from "@/lib/result-image";
 import { mcpToolLabel, prettyMcpResultText } from "@/lib/mcp-tool-display";
+import { AGENT_SUMMARY_MESSAGE_TYPE, agentSummaryParts, formatRunDuration, parseAgentSummary, type AgentSummaryData } from "@/lib/cc-extension-entries";
 import type {
   AgentMessage,
   UserMessage,
@@ -298,6 +299,10 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     }
     if ((message as CustomMessage).customType === "branch_summary") {
       return <CompactionMessageView message={message as CustomMessage} kind="branch_summary" />;
+    }
+    if ((message as CustomMessage).customType === AGENT_SUMMARY_MESSAGE_TYPE) {
+      const summary = parseAgentSummary((message as CustomMessage).details);
+      if (summary) return <AgentRunSummaryView summary={summary} />;
     }
     return <CustomMessageView message={message as CustomMessage} cwd={cwd} onOpenFile={onOpenFile} />;
   }
@@ -902,7 +907,9 @@ function BlockView({ block, searchTarget, toolResults, isStreaming, streamingDur
     return <div data-message-text data-search-target={searchTarget || undefined}><TextBlock block={block as TextContent} isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} /></div>;
   }
   if (block.type === "thinking") {
-    return <ThinkingBlock block={block as ThinkingContent} duration={streamingDuration} sessionId={sessionId} entryId={entryId} blockIndex={blockIndex} />;
+    const measuredMs = (block as ThinkingContent).durationMs;
+    const duration = measuredMs !== undefined ? Math.max(1, Math.round(measuredMs / 1000)) : streamingDuration;
+    return <ThinkingBlock block={block as ThinkingContent} duration={duration} sessionId={sessionId} entryId={entryId} blockIndex={blockIndex} />;
   }
   if (block.type === "toolCall") {
     const tc = block as ToolCallContent;
@@ -996,9 +1003,6 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
         >
            {loading ? t("i18n.loadingThinking") : error ?? (block.deferred ? content : block.thinking)}
         </div>
-      )}
-      {duration !== undefined && (
-        <span style={{ flexShrink: 0, color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
       )}
     </div>
   );
@@ -1569,6 +1573,22 @@ function CompactionMessageView({ message, kind = "compaction" }: { message: Cust
           <CompactionFileMetadata readFiles={parsedSummary.readFiles} modifiedFiles={parsedSummary.modifiedFiles} />
         </div>
       </div>
+    </div>
+  );
+}
+
+function AgentRunSummaryView({ summary }: { summary: AgentSummaryData }) {
+  const { t } = useI18n();
+  const parts = agentSummaryParts(summary).map(({ key, count }) => (
+    <span key={key} className={key === "failed" ? "msg-run-summary-part is-failed" : "msg-run-summary-part"}>
+      {t(`agentSummary.${key}${count === 1 ? ".one" : ""}`, { count })}
+    </span>
+  ));
+  const duration = formatRunDuration(summary.durationMs);
+  return (
+    <div className="msg-run-summary" role="note" aria-label={t("agentSummary.label")}>
+      {parts}
+      {duration && <span className="msg-run-summary-part msg-run-summary-duration">{duration}</span>}
     </div>
   );
 }

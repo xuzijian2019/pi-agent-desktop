@@ -36,6 +36,8 @@ export interface ThinkingContent {
   thinking: string;
   /** Historical content is a short preview; full reasoning is loaded on demand. */
   deferred?: boolean;
+  /** Measured reasoning time, when an extension recorded one (pi-cc-extensions). */
+  durationMs?: number;
 }
 
 export interface ToolCallContent {

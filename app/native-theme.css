@@ -7325,6 +7325,36 @@ span.linenumber {
   font-variant-numeric: tabular-nums;
 }
 
+/* Per-run tool summary recorded by pi-cc-extensions; sits under the turn's answer. */
+.msg-run-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  margin: 2px 0 8px;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-style: italic;
+  font-variant-numeric: tabular-nums;
+}
+
+.msg-run-summary-part {
+  display: inline-block;
+}
+
+.msg-run-summary-part:first-child::first-letter {
+  text-transform: uppercase;
+}
+
+.msg-run-summary-part + .msg-run-summary-part::before {
+  content: "·";
+  margin: 0 6px;
+  font-style: normal;
+}
+
+.msg-run-summary-part.is-failed {
+  color: var(--danger);
+}
+
 .msg-thinking-body {
   padding: 8px 10px;
   border-top: 1px solid var(--border);

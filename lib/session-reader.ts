@@ -15,6 +15,7 @@ import { projectToolResultDetails, slimToolResultMessage } from "./tool-result-d
 import { resolveProject, type ProjectInfo } from "./worktree";
 import { readSubagentRun, SUBAGENT_META_TYPE } from "./subagents";
 import { listSessionsIncremental, type ScannedSessionInfo } from "./session-list-scanner";
+import { agentSummaryMessage, applyThinkingDurations, collectThinkingDurations } from "./cc-extension-entries";
 
 export { getAgentDir };
 
@@ -742,10 +743,11 @@ export function buildSessionContext(
   // Convert messages and their IDs together to keep fork/navigation targets aligned.
   const messages: AgentMessage[] = [];
   const entryIds: string[] = [];
+  const thinkingDurations = sliced.length > 0 ? collectThinkingDurations(entries) : null;
   for (const entry of sliced) {
     const m = entryToUiMessage(entry, options);
     if (m) {
-      messages.push(m);
+      messages.push(applyThinkingDurations(m, thinkingDurations));
       entryIds.push(entry.id);
     }
   }
@@ -993,6 +995,8 @@ function entryToUiMessage(
         details: entry.details,
         timestamp: parseEntryTimestamp(entry.timestamp),
       };
+    case "custom":
+      return agentSummaryMessage(entry, parseEntryTimestamp(entry.timestamp));
     default:
       return null;
   }
