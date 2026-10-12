@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from "react";
+import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import type { UnavailableWorkspace, WorkspaceAvailability } from "@/lib/workspace-availability";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -455,6 +455,15 @@ export function AppShell() {
     setSidebarPeek(true);
     closeSidebarPeekAfter(SIDEBAR_PEEK_IDLE_MS);
   }, [closeSidebarPeekAfter]);
+  // The sidebar's own toggle and the topbar's reopen button occupy the same spot,
+  // so hiding the sidebar with a click leaves the pointer right over the reopen
+  // button — which would peek the sidebar straight back. Skip that one hover; it
+  // ends when the pointer leaves the button.
+  const sidebarPeekSuppressedRef = useRef(false);
+  const handleSidebarHeaderToggle = useCallback((event: ReactMouseEvent) => {
+    if (sidebarOpen && event.detail > 0) sidebarPeekSuppressedRef.current = true;
+    handleSidebarToggle();
+  }, [handleSidebarToggle, sidebarOpen]);
   useEffect(() => {
     if (sidebarOpen || isMobile) {
       holdSidebarPeek();
@@ -1580,10 +1589,25 @@ export function AppShell() {
     document.title = `${prefix}${title}`;
   }, [windowTitle, runFeedback, extensionWindowTitle, selectedSession?.id, activeCwdName]);
 
-  // Settings + collapse controls at the sidebar's own top-right (Claude Desktop
-  // style). When the sidebar is closed, the topbar shows a reopen button.
+  // Collapse + settings controls in the sidebar's own header row (Claude Desktop
+  // style). The collapse toggle sits at the left, exactly where the topbar's
+  // reopen button sits while the sidebar is closed (CSS offsets it past the macOS
+  // traffic lights), so it never jumps between open / closed / peek: during a
+  // hover peek the sidebar covers the topbar button and this one takes its place,
+  // which leaves a single "pin it open" control instead of two.
+  const sidebarToggleLabel = sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show");
   const sidebarHeaderControls = (
     <>
+      <button
+        className="sidebar-chrome-button sidebar-chrome-button--toggle"
+        onClick={handleSidebarHeaderToggle}
+        title={sidebarToggleLabel}
+        aria-label={sidebarToggleLabel}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="3" x2="9" y2="21" />
+        </svg>
+      </button>
       <button
         ref={settingsMenuButtonRef}
         className="sidebar-chrome-button"
@@ -1596,17 +1620,6 @@ export function AppShell() {
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="3" />
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-      </button>
-      <button
-        className="sidebar-chrome-button"
-        onClick={handleSidebarToggle}
-        // While peeking the same button pins the sidebar open again.
-        title={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
-        aria-label={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
-      >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="3" x2="9" y2="21" />
         </svg>
       </button>
     </>
@@ -1831,7 +1844,8 @@ export function AppShell() {
               // declares them with !important — inline overrides here would be dead.
               style={{ order: -2, flexShrink: 0 }}
               // Hovering this button peeks the sidebar; clicking it pins it open.
-              onMouseEnter={() => { if (!isMobile) openSidebarPeek(); }}
+              onMouseEnter={() => { if (!isMobile && !sidebarPeekSuppressedRef.current) openSidebarPeek(); }}
+              onMouseLeave={() => { sidebarPeekSuppressedRef.current = false; }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="3" x2="9" y2="21" />
