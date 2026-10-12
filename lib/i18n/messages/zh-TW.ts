@@ -1511,6 +1511,8 @@ export const zhTWLocale: LocalePlugin = {
     "appSettings.customCssOpen": "開啟 custom.css",
     "appSettings.customCssOpening": "正在開啟…",
     "appSettings.customCssOpenError": "無法開啟 custom.css",
+    "appSettings.showMessageUsage": "在回覆下方顯示 token 與費用",
+    "appSettings.showMessageUsageHint": "每則回覆下方的輸入/輸出 token、快取和費用列。彙總仍可透過上下文圓環和 /session 查看。",
     "appSettings.autoTitle": "自動為新工作階段命名",
     "appSettings.autoTitleHint": "根據第一則訊息產生標題；可用「產生標題」依整個工作階段重寫。",
     "appSettings.desktopSection": "桌面端",

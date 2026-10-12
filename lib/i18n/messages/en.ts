@@ -1578,6 +1578,8 @@ export const enLocale: LocalePlugin = {
     "appSettings.customCssOpen": "Open custom.css",
     "appSettings.customCssOpening": "Opening…",
     "appSettings.customCssOpenError": "Could not open custom.css",
+    "appSettings.showMessageUsage": "Show token and cost under replies",
+    "appSettings.showMessageUsageHint": "The per-reply line with input/output tokens, cache and cost. Totals stay available from the context ring and /session.",
     "appSettings.autoTitle": "Name new sessions automatically",
     "appSettings.autoTitleHint": "Generates a title from the first prompt. Use “Regenerate title” to rewrite it from the whole session.",
     "appSettings.desktopSection": "Desktop",
