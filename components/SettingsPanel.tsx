@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { useI18n } from "@/hooks/useI18n";
 import { useTheme } from "@/hooks/useTheme";
 import { useDiffViewMode } from "@/hooks/useDiffViewMode";
+import { useShowMessageUsage } from "@/hooks/useShowMessageUsage";
 import { PRODUCT_NAME } from "@/lib/branding";
 import { APP_PREF_KEYS, getPrefBool, setPrefBool } from "@/lib/app-prefs";
 import { openPathNative, isTauriDesktop } from "@/lib/desktop-native";
@@ -92,6 +93,7 @@ function GeneralSettings({
   const { locale, setLocale, supportedLocales, t } = useI18n();
   const { preference, setThemePreference } = useTheme();
   const { mode: diffViewMode, setMode: setDiffViewMode } = useDiffViewMode();
+  const { showUsage, setShowUsage } = useShowMessageUsage();
   const { width: chatContentWidth, setWidth: setChatContentWidth, fontSize, setFontSize } = useChatAppearance();
   const desktop = isTauriDesktop();
   const enterSendMode = useEnterSendMode();
@@ -369,6 +371,14 @@ function GeneralSettings({
                     setAutoTitle(enabled);
                     setPrefBool(APP_PREF_KEYS.autoTitle, enabled);
                   }}
+                />
+              </div>
+              <div className="settings-chat-option settings-chat-switch-option">
+                <span title={t("appSettings.showMessageUsageHint")}>{t("appSettings.showMessageUsage")}</span>
+                <ConfigSwitch
+                  checked={showUsage}
+                  label={t("appSettings.showMessageUsage")}
+                  onChange={setShowUsage}
                 />
               </div>
               <div className="settings-chat-option settings-chat-switch-option" role="radiogroup" aria-label={t("settings.enterSendMode")}>

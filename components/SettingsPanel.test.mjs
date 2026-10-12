@@ -189,9 +189,10 @@ test("groups chat display controls together without row backgrounds", () => {
   assert.doesNotMatch(appearanceSection, /settings-chat-content/);
   assert.match(chatSection, /className="settings-chat-options"/);
   // Chat group: thinking, width, font, quote, fork's auto-title switch, the
-  // merged send-mode radio, then the fork's diffViewMode choice.
-  assert.equal((chatSection.match(/className="settings-chat-option(?: |")/g) ?? []).length, 7);
-  assert.equal((chatSection.match(/<ConfigSwitch/g) ?? []).length, 3);
+  // per-reply usage switch, the merged send-mode radio, then the fork's
+  // diffViewMode choice.
+  assert.equal((chatSection.match(/className="settings-chat-option(?: |")/g) ?? []).length, 8);
+  assert.equal((chatSection.match(/<ConfigSwitch/g) ?? []).length, 4);
   for (const key of ["thinkingExpandedDefault", "chatContentWidth", "chatContentFontSize", "quoteSelection", "enterSendMode", "enterSendModeEnter", "enterSendModeCtrlEnter"]) {
     assert.match(chatSection, new RegExp(`t\\("settings\\.${key}"\\)`));
   }

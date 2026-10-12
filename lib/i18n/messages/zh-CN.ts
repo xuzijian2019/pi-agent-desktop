@@ -1578,6 +1578,8 @@ export const zhCNLocale: LocalePlugin = {
     "appSettings.customCssOpen": "打开 custom.css",
     "appSettings.customCssOpening": "正在打开…",
     "appSettings.customCssOpenError": "无法打开 custom.css",
+    "appSettings.showMessageUsage": "在回复下方显示 token 与费用",
+    "appSettings.showMessageUsageHint": "每条回复下方的输入/输出 token、缓存和费用行。汇总仍可通过上下文圆环和 /session 查看。",
     "appSettings.autoTitle": "自动为新会话命名",
     "appSettings.autoTitleHint": "根据第一条消息生成标题；可用“重新生成标题”按整个会话重写。",
     "appSettings.desktopSection": "桌面端",

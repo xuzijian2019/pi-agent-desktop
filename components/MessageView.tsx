@@ -8,6 +8,7 @@ import { ImagePreview } from "./ImagePreview";
 import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
 import { useDiffViewMode } from "@/hooks/useDiffViewMode";
+import { useShowMessageUsage } from "@/hooks/useShowMessageUsage";
 import { useTheme } from "@/hooks/useTheme";
 import { SyntaxHighlighter, vs, vscDarkPlus } from "@/lib/syntax-highlighting";
 import { getWrittenFile, sourceLanguageFromPath, type WrittenFile as ToolWrittenFile } from "@/lib/write-tool-display";
@@ -630,6 +631,7 @@ function AssistantMessageView({
   compactError?: string | null;
 }) {
   const { t } = useI18n();
+  const { showUsage } = useShowMessageUsage();
   const time = showTimestamp ? formatTime(message.timestamp) : null;
   const blockItems = useMemo(() => (message.content ?? [])
     .map((block, originalIndex) => ({ block, originalIndex }))
@@ -870,7 +872,7 @@ function AssistantMessageView({
       )}
 
       <div className="message-assistant-footer">
-        {message.usage && !isStreaming && (
+        {showUsage && message.usage && !isStreaming && (
           <div className="message-meta msg-usage">
             {formatUsage(message.usage)}
           </div>

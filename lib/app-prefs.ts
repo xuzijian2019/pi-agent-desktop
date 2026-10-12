@@ -26,6 +26,8 @@ export const APP_PREF_KEYS = {
   autoTitle: "pi-auto-title",
   chatDrafts: "pi-chat-drafts-v1",
   diffViewMode: "pi-diff-view-mode",
+  /** Per-message token / cost line under assistant replies (default shown). */
+  showMessageUsage: "pi-show-message-usage",
   /** Composer tool preset carried across sessions (none/default/full). */
   toolPreset: "pi-tool-preset",
   /** Composer effort (thinking) level carried across sessions. */
