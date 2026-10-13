@@ -376,6 +376,20 @@ export async function setCloseQuitsNative(quit: boolean): Promise<void> {
   await invoke("set_close_quits", { quit });
 }
 
+/** Whether the OS currently launches Pi Agent at login (false in a browser). */
+export async function isAutostartEnabledNative(): Promise<boolean> {
+  if (!isTauriDesktop()) return false;
+  const { isEnabled } = await import("@tauri-apps/plugin-autostart");
+  return isEnabled();
+}
+
+/** Add or remove the OS launch-at-login entry; rejects if the OS refuses. */
+export async function setAutostartNative(enabled: boolean): Promise<void> {
+  if (!isTauriDesktop()) return;
+  const { enable, disable } = await import("@tauri-apps/plugin-autostart");
+  await (enabled ? enable() : disable());
+}
+
 export async function quitAppNative(): Promise<void> {
   if (!isTauriDesktop()) return;
   const { invoke } = await import("@tauri-apps/api/core");

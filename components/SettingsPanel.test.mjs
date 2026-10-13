@@ -176,14 +176,28 @@ test("keeps language selection in General settings", () => {
   assert.match(panelSource, /setLocale\(plugin\.id/);
 });
 
+test("General keeps one copy of each relocated group and the fork notification switch", () => {
+  const columns = panelSource.split('<div className="settings-general-col">').slice(1);
+  assert.equal(columns.length, 2);
+  assert.match(columns[0], /<AppUpdatesSection/);
+  assert.match(columns[0], /t\("common\.language"\)/);
+  assert.match(columns[0], /t\("settings\.chat"\)/);
+  assert.doesNotMatch(columns[0], /t\("settings\.appearance"\)/);
+  assert.match(columns[1], /t\("settings\.appearance"\)/);
+  assert.match(columns[1], /<DesktopAppSection/);
+  assert.match(columns[1], /t\("settings\.browserNotifications"\)/);
+  for (const marker of ['<AppUpdatesSection', '<DesktopAppSection', 'className="settings-language-options"', 'className="settings-chat-options"', 'className="settings-theme-options"']) {
+    assert.equal(panelSource.split(marker).length - 1, 1, marker);
+  }
+  assert.doesNotMatch(panelSource, /setupPushSubscription|registerPush|pushRegistering|settings\.pushPermission/);
+});
+
 test("groups chat display controls together without row backgrounds", () => {
-  const appearanceSection = panelSource.slice(
-    panelSource.indexOf('{t("settings.appearance")}'),
-    panelSource.indexOf('{t("settings.chat")}'),
-  );
+  const appearanceStart = panelSource.indexOf('{t("settings.appearance")}');
+  const appearanceSection = panelSource.slice(appearanceStart, panelSource.indexOf("<DesktopAppSection", appearanceStart));
   const chatSection = panelSource.slice(
     panelSource.indexOf('{t("settings.chat")}'),
-    panelSource.indexOf("{shellSettings?.isWindows"),
+    appearanceStart,
   );
 
   assert.doesNotMatch(appearanceSection, /settings-chat-content/);

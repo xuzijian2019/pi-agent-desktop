@@ -1,9 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { APP_PREF_KEYS, getPrefBool, setPrefBool } from "@/lib/app-prefs";
-import { clearAppCacheNative, openLogDirNative, quitAppNative, setCloseQuitsNative } from "@/lib/desktop-native";
+import {
+  clearAppCacheNative,
+  isAutostartEnabledNative,
+  openLogDirNative,
+  quitAppNative,
+  setAutostartNative,
+  setCloseQuitsNative,
+} from "@/lib/desktop-native";
 import { useI18n } from "@/hooks/useI18n";
 import { ConfigButton, ConfigSwitch } from "@/components/SettingsUi";
 
@@ -32,11 +39,36 @@ export function DesktopAppSection() {
     () => getPrefBool(APP_PREF_KEYS.notifyOnComplete, true),
   );
 
+  // The OS entry is the source of truth, so this is read back, not persisted.
+  // null = not read yet (switch disabled so a click cannot race the read).
+  const [autostart, setAutostart] = useState<boolean | null>(null);
+  const [autostartError, setAutostartError] = useState(false);
+
   const [cacheState, setCacheState] = useState<
     { status: "idle" | "busy" | "error" } | { status: "done"; freed: number }
   >({ status: "idle" });
 
+  useEffect(() => {
+    if (!isDesktop) return;
+    let cancelled = false;
+    isAutostartEnabledNative()
+      .then((enabled) => { if (!cancelled) setAutostart(enabled); })
+      .catch(() => { if (!cancelled) setAutostartError(true); });
+    return () => { cancelled = true; };
+  }, [isDesktop]);
+
   if (!isDesktop) return null;
+
+  const toggleAutostart = async (next: boolean) => {
+    setAutostartError(false);
+    setAutostart(next);
+    try {
+      await setAutostartNative(next);
+    } catch {
+      setAutostart(!next);
+      setAutostartError(true);
+    }
+  };
 
   const clearCache = async () => {
     setCacheState({ status: "busy" });
@@ -65,6 +97,20 @@ export function DesktopAppSection() {
               setPrefBool(APP_PREF_KEYS.closeQuits, next);
               void setCloseQuitsNative(next);
             }}
+          />
+        </div>
+        <div className="settings-option">
+          <span className="settings-option-text">
+            <span className="settings-option-title">{t("appSettings.autostart")}</span>
+            <span className="settings-option-hint" role="status">
+              {autostartError ? t("appSettings.autostartError") : t("appSettings.autostartHint")}
+            </span>
+          </span>
+          <ConfigSwitch
+            checked={autostart === true}
+            disabled={autostart === null}
+            label={t("appSettings.autostart")}
+            onChange={(next) => void toggleAutostart(next)}
           />
         </div>
         <div className="settings-option">

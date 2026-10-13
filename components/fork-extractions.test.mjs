@@ -340,6 +340,15 @@ for (const removal of REMOVED_UPSTREAM_UI) {
   });
 }
 
+test("the fork extension status line keeps upstream's opaque background", async () => {
+  const composer = await read("components/ChatInput.tsx");
+  const css = await read("app/native-theme.css");
+  assert.match(composer, /<ExtensionStatusLine statuses=\{extensionStatuses\}/);
+  assert.doesNotMatch(composer, /<ExtensionStatusBar/);
+  const statusLine = css.match(/\.extension-status-line\s*\{([^}]*)\}/)?.[1] ?? "";
+  assert.match(statusLine, /background:\s*var\(--bg\)/);
+});
+
 test("fork project actions fall back when the native popup cannot open", async () => {
   const source = await read("components/SessionSidebar.tsx");
   const handler = source.slice(source.indexOf("const openProjectMenu ="), source.indexOf("// Phase A: project tree"));

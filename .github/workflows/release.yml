@@ -103,45 +103,55 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
-            ## Pi Agent Desktop 0.6.5
+            ## Pi Agent Desktop 0.6.6
 
-            A cleaner, more Mac-like look, and a Homebrew install option.
+            Quality-of-life and diagnosability release.
 
-            ### Changed
+            ### Added
 
-            - The sidebar, fonts and focus rings follow macOS conventions more closely.
-            - **Appearance** now offers **Light**, **Dark** and **System**. The Mist, Rose and Pine themes are removed; a saved choice of one of them falls back to System.
+            - The window remembers its size and position across launches.
+            - Timestamped log files, a panic hook and a server monitor, with an **Open logs** button to reach them from Settings.
+            - **Settings → General** gains a **Clear cache** button.
 
             ### Fixed
 
-            - In dark mode, the steering / follow-up delivery buttons and the sub-agent steer button had near-white text on a near-white background. They now use the proper contrast color.
+            - The composer input is focused automatically when a new session opens.
+            - The Plugins panel showed raw message keys (like `i18n.packageInstalled`) after installing, updating, enabling or removing a package, after reloading the session, and in its empty state. All six missing translations now exist in every language.
+            - Smoother rendering for image-heavy chats: image data URLs are built once per block and result images are keyed by index.
+            - The Homebrew cask uses the supported `depends_on :macos` form.
 
             ### Good to know
 
-            - On Apple Silicon Macs you can now install with Homebrew. See the README for the command.
+            - .docx previews now declare their rendering dependency (mammoth) correctly, so production installs that skip dev dependencies keep working.
+            - A static gate now verifies every translation call site — a missing key or a missing placeholder can no longer reach the UI unnoticed.
 
             Bundled components: pi 1.1.0, pi-web 0.10.0.
 
             ---
 
-            ## Pi Agent Desktop 0.6.5
+            ## Pi Agent Desktop 0.6.6
 
-            界面更干净、更接近 Mac 原生风格，并新增 Homebrew 安装方式。
+            体验与可诊断性版本。
 
-            ### 变更
+            ### 新增
 
-            - 侧边栏、字体和焦点样式更贴近 macOS 习惯。
-            - **外观**现在只有**浅色**、**深色**和**跟随系统**。移除了 Mist、Rose 和 Pine 主题；之前选了这些主题的会自动回到跟随系统。
+            - 窗口会记住上次的大小和位置。
+            - 日志文件带时间戳,新增崩溃钩子与服务器监控,可在设置中一键打开日志。
+            - **设置 → 常规**新增**清除缓存**按钮。
 
             ### 修复
 
-            - 深色模式下，引导 / 追加消息的投递按钮和子代理的引导按钮是近白色文字叠在近白色背景上，现在改用正确的对比色。
+            - 新开会话时自动聚焦输入框。
+            - 插件面板在安装、更新、启用、移除插件,重载会话后以及空状态下会显示原始键名(如 `i18n.packageInstalled`)。六个缺失的翻译现已在所有语言中补齐。
+            - 图片较多的会话渲染更流畅:图片数据 URL 每块只构建一次,结果图片按索引关联。
+            - Homebrew cask 改用受支持的 `depends_on :macos` 写法。
 
             ### 需要了解
 
-            - Apple Silicon Mac 上现在可以用 Homebrew 安装，命令见 README。
+            - .docx 预览的渲染依赖(mammoth)现在声明正确,不含开发依赖的生产安装不再受影响。
+            - 新增静态门禁校验所有翻译调用点,缺失键或缺失占位符不再可能悄悄进入界面。
 
-            内置组件版本：pi 1.1.0、pi-web 0.10.0。
+            内置组件版本:pi 1.1.0、pi-web 0.10.0。
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: true

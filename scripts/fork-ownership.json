@@ -151,8 +151,8 @@
     },
     "components/SettingsPanel.tsx": {
       "risk": "high",
-      "drift": 564,
-      "structuralDrift": 447,
+      "drift": 578,
+      "structuralDrift": 467,
       "disposition": "accepted",
       "reason": "AppSettings was folded into General: Version & Updates and desktop window/tray switches live here (via AppUpdatesSection / DesktopAppSection). The fork's autoTitle switch and web/desktop tagline split sit in the same tab. High structural drift because the JSX tree changed."
     }
@@ -238,6 +238,7 @@
     "2026-10-04 \u2014 baseline moved 96966e5 -> 6fcd7d4. Segment G (c5a70eb) was a single-parent commit, so git never recorded 6fcd7d4 as merged: merge-base stayed at 96966e5, `npm run drift` reported structural 18077 instead of 9959, and a merge of the upstream tag would have replayed the whole range (39 conflicts in a dry run). An `-s ours` merge now records the ancestry without touching the tree. Risk levels re-measured: lib/file-access.ts low->medium, lib/directory-browser.ts and components/FileExplorer.tsx medium->low; components/FileIcons.tsx no longer differs from upstream and its entry is removed.",
     "2026-10-04 \u2014 Round 3 merge of desktop upstream f66ba13 on round 2 9bb3a4b. Baseline 6fcd7d4; all registered drift numbers re-measured for this fork. Branch summary options forwarded through the fork callback; cost-by-model and cache-warming UI lives in the existing /session dialog; extension statuses and routed-model hints restored in the fork composer. Fork FileExplorer remains medium (108 structural), directory-browser low (25), BranchNavigator medium (93), rpc-manager high (499).",
     "2026-10-09 \u2014 Merged desktop upstream f59e0b18 (0.6.3): adopted DOM context menus, macOS Open With, popup lock fix, type scale/hairlines/contrast, controls below the input card, and update-chip removal. Preserved fork interaction design and CSS radius tokens; drift measured against pi-web 6fcd7d4. See .agents/notes/upstream-merge-20261009-handoff.md.",
+    "2026-10-13 — Merged desktop upstream dcc573ef (0.6.6): adopted General regrouping, the current/latest version card, launch at login, macOS chrome and packaging fixes. Kept the fork's auto-title, browser-notification and reply-usage switches plus aligned sidebar toggle. Ported the opaque extension shelf background to the fork's ExtensionStatusLine; sentinels cover the extracted status line and relocated settings groups. SettingsPanel measures 578 total / 467 structural against pi-web 6fcd7d4; risk remains accepted high. See .agents/notes/upstream-merge-20261013-handoff.md.",
     "2026-10-10 — Merged desktop upstream 1cabde80 (0.6.4): Rust-built native popups enabled by default, Settings native section menu and file-menu DOM fallback. Restored AppShell imports removed with the fork topbar and repaired fork project-menu fallback; two new extraction sentinels protect those integration paths. Measured against pi-web 6fcd7d4: AppShell 1979 structural and SessionSidebar 2251 structural, both accepted high risk. See .agents/notes/upstream-merge-20261010-handoff.md."
   ]
 }
