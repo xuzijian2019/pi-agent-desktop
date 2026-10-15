@@ -94,6 +94,8 @@ test("New restores the draft after session navigation and workspace auto-restore
         useGlobalKeyboardShortcuts() {},
         useNativeAppMenu() {},
         activeNewSessionDraftKeyRef: { current: `new:${cwd}` },
+        handleRightPanelClose() {},
+        rightPanelOpen: false,
         activeProjectKeyRef: { current: cwd },
         workspaceRestoreTokenRef: { current: 0 },
         suppressCwdBumpRef: { current: false },

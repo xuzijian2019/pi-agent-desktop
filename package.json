@@ -48,6 +48,7 @@
     "release:manifest": "node scripts/write-component-versions.mjs",
     "release:verify": "node scripts/verify-release-components.mjs",
     "drift": "node scripts/measure-fork-drift.mjs",
+    "preview-runtime": "node scripts/build-preview-runtime.mjs",
     "desktop:verify": "node scripts/verify-packaged-codemode.mjs",
     "test:release-tools": "node --test scripts/*.test.mjs",
     "test": "node --experimental-strip-types --test 'app/**/*.test.mjs' 'lib/**/*.test.mjs' 'scripts/**/*.test.mjs' 'components/**/*.test.mjs' 'hooks/**/*.test.mjs' 'public/**/*.test.mjs'",
@@ -60,10 +61,10 @@
     "test:e2e:upstream": "node e2e/run.mjs"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^1.1.0",
-    "@earendil-works/pi-ai": "^1.1.0",
-    "@earendil-works/pi-coding-agent": "^1.1.0",
-    "@earendil-works/pi-tui": "^1.1.0",
+    "@earendil-works/pi-agent-core": "^1.2.0",
+    "@earendil-works/pi-ai": "^1.2.0",
+    "@earendil-works/pi-coding-agent": "^1.2.0",
+    "@earendil-works/pi-tui": "^1.2.0",
     "@tauri-apps/api": "^2.12.1",
     "@tauri-apps/plugin-autostart": "^2.7.0",
     "@tauri-apps/plugin-clipboard-manager": "^2.4.1",
@@ -88,6 +89,7 @@
   "devDependencies": {
     "@lobehub/icons": "^5.6.0",
     "@playwright/test": "^1.63.0",
+    "@tailwindcss/browser": "4.2.2",
     "@tailwindcss/postcss": "^4.2.2",
     "@tauri-apps/cli": "^2.12.1",
     "@types/js-yaml": "^4.0.9",
@@ -100,6 +102,7 @@
     "@types/semver": "7.8.0",
     "@types/web-push": "^3.6.4",
     "ansi_up": "^6.0.6",
+    "esbuild": "0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
     "jiti": "^2.7.0",
@@ -115,8 +118,12 @@
     "remark-frontmatter": "^5.0.0",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
+    "sucrase": "3.35.0",
     "tailwindcss": "^4.2.2",
     "typescript": "^5"
+  },
+  "overrides": {
+    "katex": "$katex"
   },
   "allowScripts": {
     "esbuild@0.28.2": true,
@@ -124,8 +131,5 @@
     "@google/genai@2.21.0": true,
     "protobufjs@7.6.6": true,
     "node-pty@1.2.0-beta.15": true
-  },
-  "overrides": {
-    "katex": "$katex"
   }
 }

@@ -19,9 +19,11 @@ const source = readFileSync(new URL("./AppShell.tsx", import.meta.url), "utf8");
  * The third pins the 2026-09 full-height sidebar restructure: the sidebar is
  * a direct child of the outer row and the topbar moved into the main column
  * that follows it, so the topbar starts at the center column and the sidebar
- * runs the full window height (no blank strip above the sidebar). Since
- * 2026-09-25 the right panel is likewise an outer-row child: its header sits
- * beside the topbar at the top of the window.
+ * runs the full window height (no blank strip above the sidebar).
+ *
+ * The fourth pins the right panel as a full-height embedded pane: it remains
+ * a sibling of the main column, while hairline chrome and a shared header
+ * surface tie it back into the shell.
  */
 test("chat wrapper stays inside the center column (no 50/50 topbar split)", () => {
   // The column must NOT close between the topbar and the chat content block:
@@ -34,14 +36,12 @@ test("chat wrapper stays inside the center column (no 50/50 topbar split)", () =
   );
 });
 
-test("topbar dropdowns reserve split file-panel space, not the sidebar twice", () => {
-  // The topbar already starts at the sidebar's right edge, so subtracting the
-  // sidebar width again left a dead band. Keep the file-panel reservation.
-  assert.doesNotMatch(source, /const sidebarReserved = sidebarOpen && !isMobile \? sidebarResizer\.width : 0/);
-  assert.match(source, /const panelReserved = rightPanelOpen && !isMobile && wideSplitLayout \? rightPanelWidth : 0/);
+test("topbar dropdowns use the center column without double-reserving sibling panes", () => {
+  assert.doesNotMatch(source, /const sidebarReserved =/);
+  assert.doesNotMatch(source, /const panelReserved =/);
+  assert.match(source, /const available = topBarRect\.width/);
   assert.match(source, /width: Math\.min\(AGENT_PANEL_WIDTH, available\)/);
-  assert.doesNotMatch(source, /reserveLeft=\{sidebarOpen && !isMobile \? sidebarResizer\.width : 0\}/);
-  assert.match(source, /reserveRight=\{rightPanelOpen && !isMobile && wideSplitLayout \? rightPanelWidth : 0\}/);
+  assert.doesNotMatch(source, /reserve(?:Left|Right)=/);
 });
 
 test("right panel block is an outer-row child after the main column (full height)", () => {

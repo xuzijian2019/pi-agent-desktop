@@ -25,6 +25,7 @@ import { phaseLabel } from "@/lib/chat-phase-label";
 import { useAgentSession, type NoticeItem } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
+import { useArtifactPublisher } from "@/hooks/useArtifactPublisher";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { importDroppedProjectFiles, partitionChatDroppedFiles } from "@/lib/chat-file-drop";
 
@@ -34,6 +35,7 @@ import { findChatScrollAnchor, type ChatScrollPosition } from "@/lib/chat-scroll
 import { captureScrollDistance, getVisibleRenderWindow, isScrollAtTail, restoreScrollTop, VISIBLE_PAGE_SIZE } from "@/lib/chat-lazy-load";
 import { sessionVisibleCounts } from "@/lib/scroll-memory";
 import { isImeComposing } from "@/lib/ime";
+import { assignMessageKeys, createMessageKeyTracker } from "@/lib/message-keys";
 
 interface Props {
   onSideModeChange?: (open: boolean) => void;
@@ -944,6 +946,21 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
   const hasStreamingContent = Boolean(streamState.streamingMessage?.content.length);
   const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
+  // Keys that do not change when a sent or streamed message gets its entry id
+  // on the post-run reload; keying by the id remounted the sent bubble.
+  const messageKeyTrackerRef = useRef<{ sessionId: string | null; tracker: ReturnType<typeof createMessageKeyTracker> } | null>(null);
+  const messageKeySessionId = session?.id ?? sessionIdRef.current ?? null;
+  const messageKeys = useMemo(() => {
+    let current = messageKeyTrackerRef.current;
+    // A new session's id appears only after its first send; keep the tracker
+    // across that null -> id step so the first bubble survives it too.
+    if (!current || (current.sessionId !== null && current.sessionId !== messageKeySessionId)) {
+      current = { sessionId: messageKeySessionId, tracker: createMessageKeyTracker() };
+      messageKeyTrackerRef.current = current;
+    }
+    current.sessionId = messageKeySessionId;
+    return assignMessageKeys(current.tracker, messages, entryIds);
+  }, [messageKeySessionId, messages, entryIds]);
   const bottomComposerRef = useRef<HTMLDivElement | null>(null);
   const chatContentRegionRef = useRef<HTMLDivElement | null>(null);
   const composerOverlaySpacerRef = useRef<HTMLDivElement | null>(null);
@@ -1040,7 +1057,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       if (options.showTimestamp !== undefined) showTimestamp = options.showTimestamp;
       const view = (
         <MessageView
-          key={`${keyPrefix}-view-${idx}`}
+          key={`${keyPrefix}-view-${messageKeys[idx] ?? idx}`}
           message={msg}
           toolResults={toolResultsMap}
           modelNames={modelNames}
@@ -1064,9 +1081,9 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         />
       );
       if (!isVisible) return view;
-      if (options.attachRef === false) return <div key={`${keyPrefix}-${idx}`} data-entry-id={entryIds[idx]}>{view}</div>;
+      if (options.attachRef === false) return <div key={`${keyPrefix}-${messageKeys[idx] ?? idx}`} data-entry-id={entryIds[idx]}>{view}</div>;
       return (
-        <div key={`${keyPrefix}-${idx}`} data-entry-id={entryIds[idx]} data-conversation-turn={turnIndexByMessageIndex.get(idx)}>
+        <div key={`${keyPrefix}-${messageKeys[idx] ?? idx}`} data-entry-id={entryIds[idx]} data-conversation-turn={turnIndexByMessageIndex.get(idx)}>
           {view}
         </div>
       );
@@ -1128,7 +1145,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
           // on mount, so a turn first rendered without an answer would otherwise
           // stay open once its answer shows up (switching leaves of one turn).
           <ProcessDetailsGroup
-            key={`process-group-${groupStartIdx}-${finalAssistantIdx}-${finalAnswerMessage ? "answered" : "unanswered"}`}
+            key={`process-group-${messageKeys[groupStartIdx] ?? groupStartIdx}-${messageKeys[finalAssistantIdx] ?? finalAssistantIdx}-${finalAnswerMessage ? "answered" : "unanswered"}`}
             defaultExpanded={!finalAnswerMessage}
             reveal={Boolean(pendingSearchScroll && [...visibleProcessIndices, finalAssistantIdx].some(i => entryIds[i] === pendingSearchScroll.entryId))}
             messageCount={processCount}
@@ -1170,8 +1187,21 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     messages, activeToolResults, hasEarlierMessages, pendingSearchScroll, searchBlock, onOpenSession, entryIds, streamActive, sessionBusy, isNew, forkingEntryId,
     modelNames, messageCwd, onOpenFile, stableHandleEditContent, cancelEdit, editEntryId,
     stableHandleFork, sessionIdForViews, handleCompact, isCompacting, compactError,
-    visibleCount, t, sessionIdRef, setSentinelNode,
+    visibleCount, t, sessionIdRef, setSentinelNode, messageKeys,
   ]);
+
+  useArtifactPublisher(
+    session?.id ?? sessionIdRef.current,
+    messages,
+    streamState.isStreaming ? streamState.streamingMessage : null,
+    // While an earlier message is being edited, sending would replace that
+    // branch, so the request waits in the composer instead.
+    (text) => {
+      if (editEntryId) chatInputRef?.current?.insertText(text);
+      else void handleSend(text);
+    },
+  );
+
 
   const availableThinkingLevels = displayModelValue
     ? (modelThinkingLevels[`${displayModelValue.provider}:${displayModelValue.modelId}`] ?? null)

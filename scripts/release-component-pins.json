@@ -1,7 +1,7 @@
 {
   "pi": {
-    "version": "1.1.0",
-    "reason": "Merged upstream/main e62d5011, upgrading pi to 1.1.0 (upstream re-verified packaged Code mode: quickjs-wasi is hoisted, see scripts/stage-package.mjs); see .agents/notes/upstream-merge-20261008-handoff.md."
+    "version": "1.2.0",
+    "reason": "Merged upstream/main e5a55965 with pi 1.2.0; see .agents/notes/upstream-merge-20261015-handoff.md for integration and packaged Code mode verification."
   },
   "pi-web": {
     "version": "0.10.0",

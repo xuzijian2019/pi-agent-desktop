@@ -28,13 +28,22 @@ test("merged shell keeps chat below its header and supports terminal tabs and pa
   await page.keyboard.press("Enter");
   await expect(page.locator(".terminal-panel:visible .xterm-rows")).toContainText("MERGE_TERMINAL_OK");
 
+  if (!(await panel.locator("#file-tree-panel").isVisible())) await panel.locator(".file-tree-toggle").click();
   await panel.getByText("large.txt", { exact: true }).click();
   await expect(page.locator(".file-viewer-load-more")).toBeVisible();
+  await panel.locator(".file-tree-toggle").click();
+  await expect(panel.locator("#file-tree-panel")).toBeHidden();
   await page.getByRole("tab", { name: /Terminal:/ }).click();
   await expect(page.locator(".terminal-panel:visible .xterm-rows")).toContainText("MERGE_TERMINAL_OK");
+  // Replay uses raw PTY output, so shell redraws recorded at another width
+  // cannot reconstruct an exact screen. Verify fresh output at the restored width.
+  await page.locator(".terminal-panel:visible .xterm-helper-textarea").focus();
+  await page.keyboard.type("printf 'MERGE_REPLAY_%s\\n' OK");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".terminal-panel:visible .xterm-rows")).toContainText("MERGE_REPLAY_OK");
   await page.reload();
   await expect(page.locator(".terminal-panel:visible .is-ready")).toBeVisible();
-  await expect(page.locator(".terminal-panel:visible .xterm-rows")).toContainText("MERGE_TERMINAL_OK");
+  await expect(page.locator(".terminal-panel:visible .xterm-rows")).toContainText("MERGE_REPLAY_OK");
 
   await page.screenshot({ path: test.info().outputPath("merged-workbench.png") });
   const tabs = await page.evaluate(() => JSON.parse(sessionStorage.getItem("pi-web:terminal-tabs") ?? "{}").tabs ?? []);

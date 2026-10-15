@@ -23,7 +23,6 @@ const { getNextNodeArgs } = require("./pi-web-node-args");
 const { wireChildProcessLifecycle } = require("./process-lifecycle");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { getNetworkExposureWarning } = require("./network-exposure-warning");
-
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { attachReadyHandoff, shouldOpenBrowser } = require("../lib/browser-open");
 
@@ -44,6 +43,7 @@ if (launchOptions.help) {
 }
 
 const { port, hostname, openBrowser } = launchOptions;
+const wantOpen = openBrowser && shouldOpenBrowser(process.env);
 
 const pkgDir = path.join(__dirname, "..");
 const nextDir = path.join(pkgDir, ".next");
@@ -63,7 +63,6 @@ try {
   }
 }
 
-const wantOpen = openBrowser && shouldOpenBrowser(process.env);
 if (!fs.existsSync(nextDir)) {
   console.error("Build artifacts not found. Please report this issue.");
   process.exit(1);
@@ -82,12 +81,5 @@ const child = spawn(process.execPath, getNextNodeArgs(nextBin, nextArgs), {
   stdio: ["inherit", "pipe", "inherit"],
   env: { ...process.env, PI_WEB_HOSTNAME: hostname },
 });
-wireChildProcessLifecycle(child);
-
 attachReadyHandoff(child.stdout, { port, wantOpen });
-
-
-child.once("error", (error) => {
-  console.error(error);
-  process.exit(1);
-});
+wireChildProcessLifecycle(child);

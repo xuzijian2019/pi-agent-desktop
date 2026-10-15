@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { dirname } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { createJiti } from "jiti";
 
 /**
@@ -61,6 +62,17 @@ test("macOS keeps its native traffic lights and draws no buttons", () => {
   assert.equal(chrome.isMacOS, true);
   assert.equal(chrome.isDesktop && !chrome.isMacOS, false);
   assert.equal(chrome.dragRegionProps["data-tauri-drag-region"], true);
+});
+
+test("macOS traffic lights share the sidebar controls' centre line", () => {
+  const css = readFileSync(new URL("../../app/native-theme.css", import.meta.url), "utf8");
+  // The fork keeps a compact controls row beneath a shared 10px inset:
+  // 10 + 28 / 2 = 24, matching the native traffic-light centre.
+  const header = css.match(/\.session-sidebar-header \{([^}]*)\}/)?.[1] ?? "";
+  const button = css.match(/\.sidebar-chrome-button \{([^}]*)\}/)?.[1] ?? "";
+  assert.match(header, /padding: 10px 6px 0 !important;/);
+  assert.match(button, /height: 28px;/);
+  assert.doesNotMatch(css, /\.session-sidebar-header--mac-inset \{[^}]*padding-top: 0 !important;/);
 });
 
 test("windows and linux draw their own buttons", () => {

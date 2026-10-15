@@ -8,7 +8,7 @@ import test from "node:test";
 // restored on the mobile -> desktop transition.
 test("the desktop sidebar state survives closing the mobile drawer", async () => {
   const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
-  assert.match(source, /const desktopSidebarOpenRef = useRef\(true\)/);
+  assert.match(source, /const desktopSidebarOpenRef = useRef\(!initialNavigation\.sidebarCollapsed\)/);
   assert.match(
     source,
     /setSidebarOpen\(isMobile \? false : desktopSidebarOpenRef\.current\)/,

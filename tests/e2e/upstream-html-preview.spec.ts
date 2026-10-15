@@ -12,6 +12,7 @@ test("HTML preview loads local assets with scripts blocked and isolates explicit
   await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);
   await expect(page.getByRole("textbox", { name: "Message", exact: true })).toBeEditable();
   await page.locator(".right-panel-toggle-button").click();
+  await page.locator("#file-panel .file-tree-toggle").click();
   await page.locator("#file-panel").getByText("preview.html", { exact: true }).click();
   const iframe = page.locator('.file-viewer-shell iframe[title="HTML preview"]');
   const preview = page.frameLocator('.file-viewer-shell iframe[title="HTML preview"]');

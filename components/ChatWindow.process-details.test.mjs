@@ -27,7 +27,7 @@ test("resets process details when the turn gains or loses its final answer", () 
   // makes an answered turn start collapsed even if it first rendered unanswered.
   assert.match(
     source,
-    // The fork keys the group itself by position, with the answer state as a suffix.
-    /<ProcessDetailsGroup\s+key=\{`process-group-\$\{groupStartIdx\}-\$\{finalAssistantIdx\}-\$\{finalAnswerMessage \? "answered" : "unanswered"\}`\}[\s\S]*?defaultExpanded=\{!finalAnswerMessage\}/,
+    // The fork keys the group itself by stable message keys, with the answer state as a suffix.
+    /<ProcessDetailsGroup\s+key=\{`process-group-\$\{messageKeys\[groupStartIdx\] \?\? groupStartIdx\}-\$\{messageKeys\[finalAssistantIdx\] \?\? finalAssistantIdx\}-\$\{finalAnswerMessage \? "answered" : "unanswered"\}`\}[\s\S]*?defaultExpanded=\{!finalAnswerMessage\}/,
   );
 });

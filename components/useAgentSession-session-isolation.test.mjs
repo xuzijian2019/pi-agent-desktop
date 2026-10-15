@@ -78,6 +78,22 @@ test("the stable ChatWindow reloads whenever its session identity changes", asyn
   assert.match(effect, /\}, \[sessionIdentity\]\)/);
 });
 
+test("promoting a new session to its real id keeps the transcript on screen", async () => {
+  const source = await readFile(sourceUrl, "utf8");
+  // promoteNewSession records the draft-key -> id move it is about to cause
+  const promote = functionSlice(source, "const promoteNewSession = useCallback", "const ensureNewSession = useCallback");
+  assert.match(promote, /promotedIdentityRef\.current = \{ from: provisionalDraftKey, to: sid \}/);
+  // the render-phase switch skips the reset for exactly that move...
+  const switchBlock = functionSlice(source, "const promotedIdentity = promotedIdentityRef.current", "if (!isPromotion) {");
+  assert.match(switchBlock, /promotedIdentity\?\.from === previousIdentity/);
+  assert.match(switchBlock, /promotedIdentity\.to === sessionIdentity/);
+  assert.doesNotMatch(switchBlock, /setMessages\(\[\]\)/);
+  // The fork already keeps the live session on promotion; do not reload a
+  // not-yet-flushed file or restore an older snapshot over its live transcript.
+  const effect = functionSlice(source, "// Load session on mount and whenever", "useEffect(() => {\n    onSystemPromptChange");
+  assert.match(effect, /if \(session && !newSessionPromotedRef\.current\)/);
+});
+
 test("session loads reject A-B-A responses from an older generation", async () => {
   const source = await readFile(sourceUrl, "utf8");
   const body = functionSlice(source, "const loadSession = useCallback", "const loadContext = useCallback");

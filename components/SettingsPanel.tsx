@@ -40,6 +40,7 @@ import { AppUpdatesSection } from "./AppUpdatesSection";
 import { DesktopAppSection } from "./desktop";
 import { McpConfig } from "./McpConfig";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
+import { ArtifactsSettingRow } from "./ArtifactsSettingRow";
 
 interface Props {
   cwd: string | null;
@@ -335,6 +336,7 @@ function GeneralSettings({
                   onChange={setShowUsage}
                 />
               </div>
+              <ArtifactsSettingRow />
               <div className="settings-chat-option settings-chat-switch-option" role="radiogroup" aria-label={t("settings.enterSendMode")}>
                 <span>{t("settings.enterSendMode")}</span>
                 <div className="settings-send-mode-options">
@@ -454,6 +456,7 @@ function GeneralSettings({
               {shellError && <p role="alert" className="settings-general-error">{shellError}</p>}
             </section>
           )}
+
           {!desktop && (
             <section className="settings-general-section">
               <h3 className="settings-general-heading">{t("settings.browserNotifications")}</h3>

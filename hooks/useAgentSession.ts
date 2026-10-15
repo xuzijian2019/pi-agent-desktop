@@ -508,6 +508,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const slashCommandsLoadRef = useRef<Promise<SlashCommandInfo[] | null> | null>(null);
   const slashCommandsGenerationRef = useRef(0);
   const newSessionPromotedRef = useRef(false);
+  // Set by promoteNewSession: the identity change it causes (draft key -> real
+  // id) is the same live conversation, not a session switch.
+  const promotedIdentityRef = useRef<{ from: string; to: string } | null>(null);
   const newSessionModelOverrideRef = useRef<SelectedModel | null>(null);
   const thinkingLevelOverrideRef = useRef<ConcreteThinkingLevel | null>(isNew ? loadStoredThinkingLevel() : null);
   const thinkingLevelPinsRef = useRef<Record<string, string>>({});
@@ -572,12 +575,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // that session is already live under sessionIdRef.
   if (sessionIdentity !== appliedIdentity) {
     const previousIdentity = appliedIdentity;
-    const isPromotion =
-      typeof previousIdentity === "string"
-      && previousIdentity.startsWith("new:")
-      && typeof sessionIdentity === "string"
-      && !sessionIdentity.startsWith("new:")
-      && sessionIdRef.current === sessionIdentity;
+    const promotedIdentity = promotedIdentityRef.current;
+    const isPromotion = promotedIdentity?.from === previousIdentity
+      && promotedIdentity.to === sessionIdentity;
 
     setAppliedIdentity(sessionIdentity);
 
@@ -1070,6 +1070,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     newSessionPromotedRef.current = true;
     const provisionalDraftKey = newSessionDraftKey;
     if (!provisionalDraftKey) return;
+    promotedIdentityRef.current = { from: provisionalDraftKey, to: sid };
     if (provisionalDraftKey !== sid) {
       draftKeyAliasesRef.current.set(provisionalDraftKey, sid);
       const input = opts.chatInputRef?.current;
@@ -2856,6 +2857,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   useEffect(() => {
     sessionHookMountedRef.current = true;
     pendingInitialScrollTopRef.current = sessionScrollTops.get(sessionIdentity) ?? null;
+    promotedIdentityRef.current = null;
     if (session && !newSessionPromotedRef.current) {
       sessionIdRef.current = session.id;
       // Snapshot fast path: show the cached history window immediately, then

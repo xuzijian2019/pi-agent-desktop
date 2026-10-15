@@ -4,34 +4,30 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
-const { parseLaunchOptions } = require("../bin/pi-web-options.js");
-const { attachReadyHandoff, followChildUntilExit, shouldOpenBrowser } = require("../lib/browser-open.js");
+const { getHelpText, parseLaunchOptions } = require("../bin/pi-web-options.js");
+const { getNextNodeArgs } = require("../bin/pi-web-node-args.js");
+const { wireChildProcessLifecycle } = require("../bin/process-lifecycle.js");
+const { attachReadyHandoff, shouldOpenBrowser } = require("../lib/browser-open.js");
 
 const pkgDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const args = process.argv.slice(2);
-const { port, openBrowser } = parseLaunchOptions(args);
-const wantOpen = openBrowser && shouldOpenBrowser(process.env);
+const loopbackHosts = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
-function leftoverNextArgs(argv) {
-  const leftover = [];
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === "--no-open") continue;
-    if (arg === "-p" || arg === "--port" || arg === "-H" || arg === "--hostname") {
-      i += 1;
-      continue;
-    }
-    if (
-      arg.startsWith("-p=")
-      || arg.startsWith("--port=")
-      || arg.startsWith("-H=")
-      || arg.startsWith("--hostname=")
-    ) {
-      continue;
-    }
-    leftover.push(arg);
-  }
-  return leftover;
+let launchOptions;
+try {
+  launchOptions = parseLaunchOptions(process.argv.slice(2));
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}
+
+if (launchOptions.help) {
+  process.stdout.write(getHelpText());
+  process.exit(0);
+}
+
+if (!loopbackHosts.has(launchOptions.hostname)) {
+  console.error("npm run web listens on 127.0.0.1. Use npm run dev:lan to bind another host.");
+  process.exit(1);
 }
 
 function resolveNextBin() {
@@ -104,21 +100,21 @@ async function reclaimPort(targetPort) {
   }
 }
 
-await reclaimPort(port);
+await reclaimPort(launchOptions.port);
 
+const nextBin = resolveNextBin();
 const child = spawn(
   process.execPath,
-  [resolveNextBin(), "dev", "-H", "127.0.0.1", "-p", port, ...leftoverNextArgs(args)],
+  getNextNodeArgs(nextBin, ["dev", "-H", "127.0.0.1", "-p", launchOptions.port]),
   {
     cwd: pkgDir,
     stdio: ["inherit", "pipe", "inherit"],
+    env: { ...process.env, PI_WEB_HOSTNAME: "127.0.0.1" },
   },
 );
 
-attachReadyHandoff(child.stdout, { port, wantOpen });
-followChildUntilExit(child);
-
-child.once("error", (error) => {
-  console.error(error);
-  process.exit(1);
+attachReadyHandoff(child.stdout, {
+  port: launchOptions.port,
+  wantOpen: launchOptions.openBrowser && shouldOpenBrowser(process.env),
 });
+wireChildProcessLifecycle(child);

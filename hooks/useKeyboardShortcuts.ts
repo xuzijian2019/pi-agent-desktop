@@ -47,6 +47,8 @@ interface UseGlobalKeyboardShortcutsOptions {
   onNewSession?: (cwd: string) => void;
   /** The currently selected project directory (sidebar cwd). */
   activeCwd?: string | null;
+  /** Called by \\ to close the preview panel and return focus to the composer. */
+  onCloseRightPanel?: () => void;
 }
 
 /**
@@ -66,7 +68,7 @@ interface UseGlobalKeyboardShortcutsOptions {
 export function useGlobalKeyboardShortcuts(
   options: UseGlobalKeyboardShortcutsOptions,
 ): void {
-  const { onNewSession, activeCwd } = options;
+  const { onNewSession, activeCwd, onCloseRightPanel } = options;
 
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
@@ -77,6 +79,26 @@ export function useGlobalKeyboardShortcuts(
         if ((e.target as HTMLElement)?.isContentEditable || document.querySelector('[role="dialog"], [role="menu"]')) return;
         handleGlobalEscape(e);
         return;
+      }
+
+      // ---- \: hide the floating preview and go back to the conversation ----
+      if (
+        e.key === "\\"
+        && !e.metaKey
+        && !e.ctrlKey
+        && !e.altKey
+        && !e.shiftKey
+        && !e.defaultPrevented
+        && onCloseRightPanel
+      ) {
+        const target = e.target as HTMLElement | null;
+        const tag = target?.tagName;
+        const composing = target?.isContentEditable;
+        const insideComposer = Boolean(target?.closest?.(".chat-input-shell"));
+        if (!insideComposer && !composing && tag !== "TEXTAREA" && tag !== "INPUT" && tag !== "SELECT") {
+          e.preventDefault();
+          onCloseRightPanel();
+        }
       }
 
       // ---- ⌘N / Ctrl+N: new session ----
@@ -91,5 +113,5 @@ export function useGlobalKeyboardShortcuts(
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [activeCwd, onNewSession]);
+  }, [activeCwd, onNewSession, onCloseRightPanel]);
 }

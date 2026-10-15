@@ -685,3 +685,11 @@ test("keeps the registered name where no result names the server and tool", (t) 
   });
   assert.match(textOf(html), /mcp__docs_v2__search_pages\{\}/);
 });
+
+// Ephemeral Side Chat has no published artifact session; it must not borrow
+// the parent conversation's active artifact store and open a same-named card.
+test("only session-scoped replies render artifact directives as cards", () => {
+  const message = { role: "assistant", content: [{ type: "text", text: ':::artifact{identifier="shared" type="code" title="Scoped"}\n```js\nconsole.log("scoped");\n```\n:::' }] };
+  assert.match(renderMessage(message), /:::artifact/);
+  assert.doesNotMatch(renderMessage(message, { sessionId: "parent" }), /:::artifact/);
+});
