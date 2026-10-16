@@ -415,3 +415,10 @@ test("the shell mounts the shared in-app file context menu host", async () => {
   const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
   assert.match(source, /<DomContextMenuHost \/>/);
 });
+
+test("navigator jumps expand the fork's memoized transcript including process groups", async () => {
+  const source = await read("components/ChatWindow.tsx");
+  const renderer = source.slice(source.indexOf("const renderedMessages = useMemo"), source.indexOf("const selectConversationTurn ="));
+  assert.match(renderer, /data-conversation-turn=\{turnIndexByMessageIndex\.get\(idx\)\}/);
+  assert.match(source, /setVisibleCount\(\(current\) => Math\.max\(current, messages\.length \* 2\)\)/);
+});

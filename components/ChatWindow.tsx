@@ -1213,9 +1213,11 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
   // Jump to a conversation turn from the navigator rail. Turns can sit
   // outside the rendered window, so expand the window to the full branch
-  // first, then scroll once the anchor is mounted.
+  // first, then scroll once the anchor is mounted. The window counts rendered
+  // items, not messages: a turn's "Process details" group is one more item, so
+  // messages.length alone left the first turn outside the window.
   const selectConversationTurn = useCallback((turnIndex: number) => {
-    setVisibleCount(messages.length);
+    setVisibleCount((current) => Math.max(current, messages.length * 2));
     requestAnimationFrame(() => requestAnimationFrame(() => {
       const container = scrollContainerRef.current;
       const anchor = container?.querySelector<HTMLElement>(`[data-conversation-turn="${turnIndex}"]`);

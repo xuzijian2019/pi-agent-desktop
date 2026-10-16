@@ -28,6 +28,7 @@ import {
   type SettingsSection,
 } from "@/lib/settings-navigation";
 import { focusModalPanel, listenForPanelEscape } from "@/lib/stacked-dialog";
+import { applyUiPlatform } from "@/lib/ui-platform";
 import {
   isThinkingExpandedByDefault,
   setThinkingExpandedByDefault,
@@ -532,6 +533,9 @@ export function SettingsPanel({
   const [busy, setBusy] = useState(false);
 
   useEffect(() => setLastSettingsSection(initialSection), [initialSection]);
+
+  // Per-platform dialog styling (native-theme.css) keys off <html data-platform>; set before paint.
+  useLayoutEffect(() => { applyUiPlatform(); }, []);
 
   // Bubble phase, unless something nearer handled the key. The trust dialog,
   // which opens above Settings, takes Escape in the capture phase and stops it,
