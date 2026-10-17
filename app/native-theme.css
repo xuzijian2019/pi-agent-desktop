@@ -3783,14 +3783,15 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   box-shadow: none !important;
 }
 
+/* Focus only lifts the hairline a step; the caret already says where typing
+   goes, and the accent border read as a bright form-field ring in dark mode. */
 .chat-composer:focus-within {
-  border-color: var(--accent-border) !important;
-  outline: none !important;
-  box-shadow: var(--shadow-composer), 0 0 0 2px var(--focus-ring) !important;
+  border-color: color-mix(in srgb, var(--text) 22%, transparent) !important;
+  box-shadow: var(--shadow-composer) !important;
 }
 
-/* The shell above owns the ring for the whole composer, so the textarea
-   inside it must not stack a second, square one on top. */
+/* The card's hairline lift and the caret are the composer's only focus
+   affordance, so the textarea must not stack the generic square ring on top. */
 .chat-composer textarea:focus-visible {
   box-shadow: none;
 }
