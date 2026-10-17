@@ -4539,6 +4539,8 @@ html:not(.dark) .session-item.is-selected .session-item-time {
 }
 
 .chat-window {
+  container-type: inline-size;
+  --chat-column-padding: clamp(16px, 3cqw, 32px);
   background: var(--bg);
 }
 
@@ -8335,7 +8337,7 @@ span.linenumber {
    the frame — so only the box model below survives the move. */
 .chat-input-shell {
   flex-shrink: 0;
-  padding: 0 16px 8px;
+  padding: 0 var(--chat-column-padding, 16px) 8px;
 }
 
 .chat-composer-editor {

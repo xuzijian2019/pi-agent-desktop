@@ -89,7 +89,6 @@ interface Props {
   /** Completion sound state + controls, owned by AppShell so tasks finishing in
    *  a non-active workspace can still ring. */
 }
-const CHAT_COLUMN_PADDING = 16;
 
 function hasFinalAssistantAnswer(message: AgentMessage): boolean {
   if (message.role !== "assistant") return false;
@@ -1434,7 +1433,7 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
             left: 0,
             right: 0,
             zIndex: 40,
-            padding: `0 ${CHAT_COLUMN_PADDING}px`,
+            padding: "0 var(--chat-column-padding, 16px)",
             pointerEvents: "none",
           }}
         >
@@ -1447,7 +1446,7 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
           className="chat-scroll-container scrollbar-subtle min-w-0 flex-1 overflow-x-hidden overflow-y-scroll pt-4"
           style={{ paddingLeft: scrollbarGutter > 0 ? scrollbarGutter : undefined, visibility: pendingScrollRestore && !loading ? "hidden" : undefined }}
         >
-          <div style={{ minWidth: 0, padding: `0 ${CHAT_COLUMN_PADDING}px` }}>
+          <div style={{ minWidth: 0, padding: "0 var(--chat-column-padding, 16px)" }}>
             <div ref={messageContentRef} style={{ width: "100%", minWidth: 0, maxWidth: "var(--chat-content-max-width, 820px)", margin: "0 auto" }}>
               {loading || error ? (
                 <div className="flex min-h-[40vh] flex-col items-center justify-center gap-2 px-6 text-center">
@@ -1532,7 +1531,7 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
       >
         <div
           style={{
-            padding: `0 ${CHAT_COLUMN_PADDING}px`,
+            padding: "0 var(--chat-column-padding, 16px)",
           }}
         >
           <div style={{ maxWidth: "var(--chat-content-max-width, 820px)", margin: "0 auto" }}>
