@@ -88,8 +88,9 @@ test("latest selection, history, native links and project search", async ({ page
     if (name === "alpha") await page.keyboard.press("Control+Alt+n");
   }
   await page.reload();
-  const linkA = page.locator(`a[href="?session=${ids[0]}"]`);
-  const linkB = page.locator(`a[href="?session=${ids[1]}"]`);
+  const linkA = page.locator(`.sidebar-project-tree-group a[href="?session=${ids[0]}"]`);
+  const linkB = page.locator(`.sidebar-project-tree-group a[href="?session=${ids[1]}"]`);
+  await expect(linkA).toHaveCount(1); await expect(linkB).toHaveCount(1);
   await linkA.click(); await expect(page).toHaveURL(new RegExp(ids[0]));
   await expect(composer).toBeEditable(); await composer.fill("draft alpha");
   await linkB.click(); await expect(page).toHaveURL(new RegExp(ids[1]));
@@ -98,6 +99,19 @@ test("latest selection, history, native links and project search", async ({ page
   await expect(linkA).toHaveAttribute("aria-current", "page");
   await page.goForward(); await expect(page).toHaveURL(new RegExp(ids[1])); await expect(composer).toHaveValue("draft beta");
   await expect(page).toHaveTitle(/beta.*navigation-/);
+  // Recent and the project tree are distinct routes to the same session. Both
+  // must reflect selection and restore the same draft after either is clicked.
+  const recentA = page.locator(`.sidebar-recent-section a[href="?session=${ids[0]}"]`);
+  const recentB = page.locator(`.sidebar-recent-section a[href="?session=${ids[1]}"]`);
+  await expect(recentA).toHaveCount(1); await expect(recentB).toHaveCount(1);
+  await recentA.click(); await expect(page).toHaveURL(new RegExp(ids[0]));
+  await expect(composer).toHaveValue("draft alpha");
+  await expect(recentA).toHaveAttribute("aria-current", "page");
+  await expect(linkA).toHaveAttribute("aria-current", "page");
+  await recentB.click(); await expect(page).toHaveURL(new RegExp(ids[1]));
+  await expect(composer).toHaveValue("draft beta");
+  await expect(recentB).toHaveAttribute("aria-current", "page");
+  await expect(linkB).toHaveAttribute("aria-current", "page");
   const popupPromise = context.waitForEvent("page");
   await linkA.click({ modifiers: ["ControlOrMeta"] });
   const popup = await popupPromise; await popup.waitForLoadState(); await expect(popup).toHaveURL(new RegExp(ids[0])); await popup.close();
@@ -111,7 +125,7 @@ test("latest selection, history, native links and project search", async ({ page
   await page.keyboard.press("Control+Alt+n");
   release(); await expect(page).toHaveURL(/cwd=/); await expect(composer).toHaveValue("");
   // Search matches the project path even though session names are alpha/beta.
-  const search = page.getByRole("searchbox", { name: "Search all conversations...", exact: true });
+  const search = page.getByRole("searchbox", { name: "Search titles… · Enter for full text", exact: true });
   await expect(search).toBeVisible();
   {
     await search.fill(cwd.split("/").at(-1)!); await expect(linkA).toBeVisible(); await expect(linkB).toBeVisible();
@@ -265,7 +279,7 @@ test("returning to New Session restores its unsent large paste", async ({ page, 
   }, pasted);
   await expect(composer).toHaveValue(/\[Pasted text/);
   const token = await composer.inputValue();
-  await page.locator(`a[href="?session=${id}"]`).click();
+  await page.locator(`.sidebar-project-tree-group a[href="?session=${id}"]`).click();
   await expect(page).toHaveURL(new RegExp(id));
   await newSession.click();
   await expect(composer).toHaveValue(token, { timeout: 3_000 });

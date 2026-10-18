@@ -81,7 +81,7 @@ try {
       return new RegExp(source).test(panel?.querySelector(".xterm-rows")?.textContent ?? "");
     }, pattern);
     const showSidebar = async () => {
-      const button = page.getByRole("button", { name: "Show sidebar", exact: true });
+      const button = page.locator(".app-topbar").getByRole("button", { name: "Show sidebar", exact: true });
       if (await button.count()) await button.click();
     };
     const showPanel = () => page.getByRole("button", { name: "Show workspace", exact: true }).click();

@@ -19,7 +19,7 @@ export async function checkMcpManager(page, { agentDir, cwd }) {
   // Settings › MCP lists the files' servers without a session (ADR 0006 P2).
   // The fork opens Settings from the sidebar header's gear, which pops the
   // section menu; a previous check may have left the sidebar collapsed.
-  const showSidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
+  const showSidebar = page.locator(".app-topbar").getByRole("button", { name: "Show sidebar", exact: true });
   if (await showSidebar.isVisible()) await showSidebar.click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const mcpEntry = page.locator(".settings-entry-menu button", { hasText: "MCP" });

@@ -57,13 +57,22 @@ test("empty workspaces open the file tree and keep their mobile exit on Schedule
   await expect(panel.locator("#file-tree-panel")).toBeVisible();
   await expect(panel.getByText("workspace.txt", { exact: true })).toBeVisible();
   await panel.getByRole("button", { name: "Hide workspace", exact: true }).click();
-  await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
+  await expect(panel).toHaveClass(/right-panel-closed/);
+  await expect(panel).toHaveJSProperty("inert", true);
+  // Mobile visibility changes only after the slide-out transition completes.
+  await expect(panel).toBeHidden();
+  const showSidebar = page.locator(".app-topbar").getByRole("button", { name: "Show sidebar", exact: true });
+  await expect(showSidebar).toBeVisible();
+  await showSidebar.click({ trial: true });
+  await showSidebar.click();
   await page.locator(".sidebar-scheduled-row").click();
   await expect(page.locator(".scheduled-view")).toBeVisible();
   await expect(toggle).toBeVisible();
   await toggle.click();
   await expect(panel).toBeVisible();
   await panel.getByRole("button", { name: "Hide workspace", exact: true }).click();
+  await expect(panel).toHaveClass(/right-panel-closed/);
+  await expect(panel).toHaveJSProperty("inert", true);
   await expect(panel).toBeHidden();
   await expect(page.locator(".scheduled-view")).toBeVisible();
   await expect(page).toHaveURL(/\?view=scheduled$/);

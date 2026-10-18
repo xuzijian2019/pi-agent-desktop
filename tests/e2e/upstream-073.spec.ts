@@ -39,8 +39,23 @@ function projectGroup(page: Page, cwd: string) {
 
 async function openWorktrees(page: Page, cwd: string) {
   const group = projectGroup(page, cwd);
-  await group.hover();
-  await group.getByRole("button", { name: "Project actions", exact: true }).click();
+  // A group's center can be its child session. Only the project header owns
+  // the hover-only actions, so enter that actual row before clicking them.
+  const row = group.locator(":scope > .sidebar-project-tree-row");
+  await row.hover();
+  const actions = row.locator(".sidebar-project-tree-row-actions");
+  await expect(actions).toHaveCSS("opacity", "1");
+  await expect(actions).toHaveCSS("pointer-events", "auto");
+  const more = actions.getByRole("button", { name: "Project actions", exact: true });
+  await expect(more).toBeInViewport();
+  // Check the real hit target, including branch-text/overlay stacking. Never
+  // bypass this with force:true: an overlapped action would be unusable too.
+  await expect.poll(() => more.evaluate((button) => {
+    const rect = button.getBoundingClientRect();
+    const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    return hit !== null && button.contains(hit);
+  })).toBe(true);
+  await more.click();
   await expect(page.getByRole("menuitem", { name: "Switch branch", exact: true })).toHaveCount(0);
   await page.getByRole("menuitem", { name: "Worktrees…", exact: true }).click();
   const menu = page.locator(".sidebar-project-context-menu");

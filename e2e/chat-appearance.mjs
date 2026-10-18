@@ -33,7 +33,7 @@ export async function checkChatAppearanceReset(page) {
     appliedFontSize: document.documentElement.style.getPropertyValue("--chat-content-font-size"),
   })), { width: "820", fontSize: "14", appliedWidth: "820px", appliedFontSize: "14px" });
   await page.reload({ waitUntil: "networkidle" });
-  const showSidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
+  const showSidebar = page.locator(".app-topbar").getByRole("button", { name: "Show sidebar", exact: true });
   if (await showSidebar.isVisible()) await showSidebar.click();
   await openGeneralSettings(page);
   assert.equal(await width.inputValue(), "820");

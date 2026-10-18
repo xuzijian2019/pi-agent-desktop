@@ -60,7 +60,7 @@ try {
     await page.goto(base);
     await page.getByText("No projects found", { exact: true }).waitFor({ state: "attached" });
     const openSettings = async () => {
-      const sidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
+      const sidebar = page.locator(".app-topbar").getByRole("button", { name: "Show sidebar", exact: true });
       if (width <= 640) await sidebar.waitFor();
       if (await sidebar.isVisible()) {
         await sidebar.click();

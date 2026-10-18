@@ -52,7 +52,11 @@ test('native UI commands open existing settings, auth, trust, hotkeys and resume
  for(const name of ['settings','login','logout','trust','hotkeys']){
   await command(page,'/'+name);await expect(page.getByRole('dialog').first()).toBeVisible();await expect(input(page)).toHaveValue('');await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
  }
- await command(page,'/resume');await expect(page.getByRole('searchbox',{name:'Search all conversations...',exact:true})).toBeFocused();
+ await command(page,'/resume');
+ const search=page.getByRole('searchbox',{name:'Search titles… · Enter for full text',exact:true});
+ await expect(search).toHaveAttribute('id','session-search-input');
+ await expect(search).toBeFocused();
+ await expect(input(page)).toHaveValue('');
 });
 
 test('native model/thinking commands use SDK actions; invalid arguments never become prompts',async({page,request})=>{
