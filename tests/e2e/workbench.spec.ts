@@ -20,6 +20,9 @@ async function openPanel(page: Page) {
   const panel = page.locator("#file-panel");
   if (!(await panel.evaluate(el => el.classList.contains("right-panel-open")))) await page.locator(".right-panel-toggle-button").click();
   await expect(panel).toHaveClass(/right-panel-open/);
+  await expect(panel).toBeVisible();
+  await expect(panel).toHaveJSProperty("inert", false);
+  await expect.poll(() => panel.evaluate(el => el.getAnimations().every(animation => !animation.pending && animation.playState !== "running"))).toBe(true);
   return panel;
 }
 
@@ -162,14 +165,40 @@ test("composer metadata and rounded panel remain uncluttered at desktop and phon
   await expect(panel.locator(".right-panel-tab-strip")).toHaveCount(1);
   await expect(panel.getByRole("combobox")).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("panel-desktop.png") });
-  await page.getByRole("button", { name: "Hide file panel", exact: true }).click();
+  await page.getByRole("button", { name: "Hide workspace", exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
+  await expect(panel).toHaveClass(/right-panel-closed/);
+  await expect(panel).toHaveJSProperty("inert", true);
+  await expect(panel).toBeHidden();
+  // Wait for the closed panel to leave the viewport, rather than capturing a
+  // frame in its slide-out transition after the desktop-to-phone resize.
+  await expect.poll(() => panel.evaluate(el => {
+    const rect = el.getBoundingClientRect();
+    return rect.left >= innerWidth - 1 && el.getAnimations().every(animation => !animation.pending && animation.playState !== "running");
+  })).toBe(true);
+  expect(await page.evaluate(() => [
+    [1, 1], [innerWidth - 1, 1], [innerWidth / 2, innerHeight / 2],
+    [1, innerHeight - 1], [innerWidth - 1, innerHeight - 1],
+  ].every(([x, y]) => !document.elementFromPoint(x, y)?.closest("#file-panel, .right-panel-overlay-backdrop")))).toBe(true);
   await expect(branch).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const narrowBranch = (await branch.boundingBox())!;
-  const narrowModel = (await controls.getByRole("button", { name: "Example model", exact: true }).boundingBox())!;
+  const model = controls.getByRole("button", { name: "Example model", exact: true });
+  const narrowModel = (await model.boundingBox())!;
   expect(narrowModel.x).toBeGreaterThanOrEqual(narrowBranch.x + narrowBranch.width);
+  for (const control of [branch, model]) {
+    await expect.poll(() => control.evaluate(el => {
+      const rect = el.getBoundingClientRect();
+      return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+    })).toBe(true);
+    await control.click({ trial: true });
+  }
   await page.screenshot({ path: testInfo.outputPath("composer-phone.png") });
   await openPanel(page);
+  await expect.poll(() => panel.evaluate(el => {
+    const rect = el.getBoundingClientRect();
+    return Math.abs(rect.x) < 1 && Math.abs(rect.y) < 1
+      && Math.abs(rect.width - innerWidth) < 1 && Math.abs(rect.height - innerHeight) < 1;
+  })).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("panel-phone.png") });
 });

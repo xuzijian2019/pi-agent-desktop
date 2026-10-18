@@ -106,7 +106,7 @@ test('recap: pending cancellation control and navigation must not retain stale c
  await expect.soft(page.getByRole('button',{name:/cancel recap/i})).toBeVisible({timeout:1500});
  await page.keyboard.press('Control+Alt+n'); await expect(page).toHaveURL(/cwd=/); finishHeld();
  await expect(page.getByText('WORKING_LOCAL FINISHED_LOCAL',{exact:true})).toHaveCount(0);
- const link=page.locator(`a[href="?session=${p.id}"]`); await link.click(); await expect(page).toHaveURL(new RegExp(p.id));
+ const link=page.locator(`.sidebar-project-tree-group a[href="?session=${p.id}"]`); await link.click(); await expect(page).toHaveURL(new RegExp(p.id));
  await expect.soft(page.getByText('WORKING_LOCAL FINISHED_LOCAL',{exact:true})).toHaveCount(0,{timeout:2000});
 });
 

@@ -51,6 +51,8 @@
     "preview-runtime": "node scripts/build-preview-runtime.mjs",
     "desktop:verify": "node scripts/verify-packaged-codemode.mjs",
     "test:release-tools": "node --test scripts/*.test.mjs",
+    "check:deps": "node scripts/check-installed-deps.mjs",
+    "pretest": "npm run check:deps",
     "test": "node --experimental-strip-types --test 'app/**/*.test.mjs' 'lib/**/*.test.mjs' 'scripts/**/*.test.mjs' 'components/**/*.test.mjs' 'hooks/**/*.test.mjs' 'public/**/*.test.mjs'",
     "lint": "eslint . && npm run check:branding",
     "check:branding": "node --test lib/branding.test.mjs",
@@ -123,7 +125,10 @@
     "typescript": "^5"
   },
   "overrides": {
-    "katex": "$katex"
+    "katex": "$katex",
+    "mammoth": {
+      "argparse": "^2.0.1"
+    }
   },
   "allowScripts": {
     "esbuild@0.28.2": true,

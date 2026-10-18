@@ -77,7 +77,6 @@ test("the structurally rewritten files are all classified high risk", () => {
   for (const path of [
     "components/SessionSidebar.tsx",
     "components/AppShell.tsx",
-    "components/FileViewer.tsx",
   ]) {
     assert.equal(manifest.driftedUpstreamFiles[path]?.risk, "high", `${path} must stay high risk`);
   }
@@ -161,6 +160,7 @@ test("the real v0.8.0 -> v0.8.1 changeset would have demanded review", () => {
   assert.equal(result.reviewRequired, true);
   assert.equal(result.highestRisk, "high");
   assert.equal(result.overlaps.length, 8);
+  assert.ok(result.overlaps.some(entry => entry.path === "components/FileViewer.tsx"), "this fork still uses FileViewerStatus, so FileViewer remains a review boundary");
   assert.equal(result.overlaps[0].risk, "high", "the riskiest overlap must be reported first");
   assert.match(formatReport(result), /silent semantic conflicts/);
 });

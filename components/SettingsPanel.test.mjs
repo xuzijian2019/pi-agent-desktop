@@ -6,11 +6,15 @@ const panelSource = await readFile(new URL("./SettingsPanel.tsx", import.meta.ur
 const cssSource = await readFile(new URL("../app/settings.css", import.meta.url), "utf8");
 const globalCssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const shellSource = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
+// The sidebar settings-entry menu is fork-owned; AppShell keeps the button and mounts it.
+const entryMenuSource = await readFile(new URL("./SettingsEntryMenu.tsx", import.meta.url), "utf8");
 const sidebarSource = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
 const themeSource = await readFile(new URL("../hooks/useTheme.ts", import.meta.url), "utf8");
 const themeOptionsSource = await readFile(new URL("../lib/theme.ts", import.meta.url), "utf8");
-const enSource = await readFile(new URL("../lib/i18n/messages/en.ts", import.meta.url), "utf8");
-const zhSource = await readFile(new URL("../lib/i18n/messages/zh-CN.ts", import.meta.url), "utf8");
+const { createJiti } = await import("jiti");
+const jiti = createJiti(import.meta.url);
+const { englishMessages: enMessages, forkLocalePlugins } = await jiti.import("../lib/i18n/locale-plugins.ts");
+const zhMessages = Object.fromEntries(forkLocalePlugins.map(({ id, messages }) => [id, messages]))["zh-CN"];
 const loginSource = await readFile(new URL("../app/login/page.tsx", import.meta.url), "utf8");
 const stackedDialogSource = await readFile(new URL("../lib/stacked-dialog.ts", import.meta.url), "utf8");
 
@@ -19,8 +23,9 @@ test("opens one settings panel from a single sidebar settings entry", () => {
   assert.match(shellSource, /initialSection=\{settingsSection\}/);
   assert.match(shellSource, /translate\("common\.settings"\)/);
   assert.match(shellSource, /aria-haspopup="menu"/);
-  assert.match(shellSource, /SETTINGS_SECTION_ITEMS\.map/);
-  assert.match(shellSource, /setSettingsSection\(item\.id\)/);
+  assert.match(entryMenuSource, /SETTINGS_SECTION_ITEMS\.map/);
+  assert.match(entryMenuSource, /onSelectSection\(item\.id\)/);
+  assert.match(shellSource, /<SettingsEntryMenu menu=\{settingsEntryMenu\} hasProject=\{Boolean\(projectTrustCwd\)\} onSelectSection=\{setSettingsSection\} \/>/);
   assert.doesNotMatch(shellSource, /\["models", translate\("common\.models"\)\]/);
   assert.doesNotMatch(shellSource, /\["plugins", translate\("common\.plugins"\)\]/);
   assert.doesNotMatch(shellSource, /setModelsConfigOpen|setSkillsConfigOpen|setAgentsConfigOpen|setPluginsConfigOpen/);
@@ -42,7 +47,7 @@ test("keeps one settings surface per concern — no desktop tab duplicating Gene
   assert.doesNotMatch(panelSource, /id: "desktop"/);
   assert.match(panelSource, /<AppUpdatesSection onBusyChange=/);
   assert.match(panelSource, /<DesktopAppSection \/>/);
-  assert.match(panelSource, /settings-general-intro/);
+  assert.match(panelSource, /settings-general-overview/);
   assert.match(panelSource, /PRODUCT_NAME/);
 });
 
@@ -66,11 +71,13 @@ test("Settings › MCP works without a project, and only project sections fall b
   // (which itself asks settingsSectionRequiresProject), instead of naming
   // sections by hand.
   assert.match(panelSource, /requiresProject: settingsSectionRequiresProject\(item\.id\)/);
-  assert.match(shellSource, /const disabled = item\.requiresProject && !projectTrustCwd;/);
+  assert.match(entryMenuSource, /const disabled = item\.requiresProject && !hasProject;/);
   assert.doesNotMatch(shellSource, /section !== "models"/);
   // Its own glyph, not the Plugins fallback.
   assert.match(panelSource, /if \(section === "mcp"\) return <svg \{\.\.\.common\}>/);
-  for (const source of [enSource, zhSource]) assert.match(source, /"settings\.mcp": "MCP"/);
+  for (const messages of [enMessages, zhMessages]) {
+    assert.equal(messages["settings.mcp"], "MCP");
+  }
 });
 
 test("restores the settings section and each list detail selection", async () => {
@@ -244,10 +251,10 @@ test("uses top navigation on desktop and one compact section picker on mobile", 
 });
 
 test("labels agent profiles as sub-agents", () => {
-  assert.match(enSource, /"common\.agents": "Sub-agents"/);
-  assert.match(enSource, /"agents\.new": "New sub-agent"/);
-  assert.match(zhSource, /"common\.agents": "子代理"/);
-  assert.match(zhSource, /"agents\.new": "新建子代理"/);
+  assert.equal(enMessages["common.agents"], "Sub-agents");
+  assert.equal(enMessages["agents.new"], "New sub-agent");
+  assert.equal(zhMessages["common.agents"], "子代理");
+  assert.equal(zhMessages["agents.new"], "新建子代理");
 });
 
 test("uses the child-session robot glyph for the sub-agents tab", () => {
@@ -271,4 +278,33 @@ test("keeps password authentication to one login field and one settings action",
   assert.match(panelSource, /t\("auth\.logOut"\)/);
   assert.match(loginSource, /className="web-login-composer"[\s\S]*?type="password"[\s\S]*?<button type="submit"/);
   assert.match(globalCssSource, /\.web-login-composer \{[\s\S]*?display: flex;[\s\S]*?border-radius: 14px/);
+});
+
+test("rendered General keeps the browser overview, fork switches and no completion audio", async () => {
+  const jsx = createJiti(import.meta.url, { jsx: { runtime: "automatic" }, tsconfigPaths: true });
+  // Import sequentially so jiti shares the provider instance used by the panel.
+  const { SettingsPanel } = await jsx.import("./SettingsPanel.tsx");
+  const { I18nProvider } = await jsx.import("../hooks/useI18n.tsx");
+  const { PRODUCT_NAME } = await jsx.import("../lib/branding.ts");
+  const React = await jsx.import("react");
+  const { renderToStaticMarkup } = await jsx.import("react-dom/server");
+  const html = renderToStaticMarkup(React.createElement(I18nProvider, null, React.createElement(SettingsPanel, {
+    cwd: null,
+    sessionId: null,
+    initialSection: "general",
+    onClose() {},
+    onSessionReloaded() {},
+    quoteSelectionEnabled: true,
+    onQuoteSelectionChange() {},
+  })));
+  const overview = html.match(/settings-general-overview[^]*?<\/section>/)?.[0];
+  assert.ok(overview, "General renders its relocated overview section");
+  assert.ok(overview.includes(enMessages["appSettings.taglineWeb"].replace("{product}", PRODUCT_NAME)));
+  assert.equal(html.split("settings-general-overview").length - 1, 1);
+  for (const key of ["appSettings.autoTitle", "appSettings.showMessageUsage", "settings.browserNotifications"]) {
+    assert.ok(html.includes(`aria-label="${enMessages[key]}"`), key);
+  }
+  assert.ok(html.includes(`aria-label="${enMessages["settings.sectionPicker"]}"`));
+  assert.doesNotMatch(html, /Completion sound|completionSound|soundEnabled/);
+  assert.doesNotMatch(panelSource, /useAudio|completionSound|soundEnabled/);
 });

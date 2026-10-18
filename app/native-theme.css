@@ -392,6 +392,113 @@
   color: var(--accent);
   animation: spin 0.8s linear infinite;
 }
+/* Worktree pages of the project menu: switch / remove rows, the confirm
+   strip, the new-worktree form and the fetch row. */
+.sidebar-project-context-menu--wide {
+  width: 240px;
+}
+.sidebar-project-context-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.sidebar-project-context-menu-row > button[role="menuitem"] {
+  flex: 1;
+  min-width: 0;
+}
+.sidebar-project-context-menu-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-project-context-menu .worktree-remove-button {
+  display: flex;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  margin-right: 0;
+  padding: 0;
+}
+.sidebar-project-context-menu .sidebar-project-context-menu-fetch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+.sidebar-project-context-menu .sidebar-project-context-menu-fetch:disabled {
+  cursor: default;
+}
+.sidebar-project-context-menu-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+  color: var(--text);
+  font-size: var(--fs-caption);
+}
+.sidebar-project-context-menu-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 6px 6px;
+}
+.sidebar-project-context-menu-form input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: var(--hairline) solid var(--accent);
+  border-radius: 5px;
+  outline: none;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+}
+.sidebar-project-context-menu-confirm-actions {
+  display: flex;
+  gap: 6px;
+}
+.sidebar-project-context-menu .sidebar-project-context-menu-confirm-actions button {
+  flex: 1;
+  padding: 4px 0;
+  border: var(--hairline) solid var(--border);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  text-align: center;
+}
+.sidebar-project-context-menu .sidebar-project-context-menu-confirm-actions .sidebar-project-context-menu-danger {
+  border-color: transparent;
+  background: var(--danger);
+  color: #fff;
+  font-weight: 600;
+}
+.sidebar-project-context-menu .sidebar-project-context-menu-confirm-actions .sidebar-project-context-menu-primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+}
+.sidebar-project-context-menu .sidebar-project-context-menu-confirm-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+/* .native-popover greys every hovered button (!important); keep the filled
+   Create / Remove buttons filled so they do not look switched off. */
+.sidebar-project-context-menu .sidebar-project-context-menu-confirm-actions .sidebar-project-context-menu-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 86%, var(--bg)) !important;
+  color: var(--accent-contrast) !important;
+}
+.sidebar-project-context-menu .sidebar-project-context-menu-confirm-actions .sidebar-project-context-menu-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 86%, var(--bg)) !important;
+  color: #fff !important;
+}
+.sidebar-project-context-menu-hint.sidebar-project-context-menu-error {
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
 .sidebar-project-tree-empty {
   padding: 24px 16px;
   color: var(--text-muted);
@@ -618,6 +725,14 @@
 
 .settings-general-tagline:first-child {
   color: var(--text);
+}
+
+/* A quiet overview card keeps the product summary from reading as an
+   unlabeled twin of the Version & Updates section below it. */
+.settings-general-overview {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-panel);
 }
 
 /* Version card: current and latest release side by side with the update
@@ -1788,6 +1903,38 @@ pre, code {
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
+}
+
+.sidebar-recent-section {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  padding-bottom: 6px;
+}
+
+.sidebar-recent-header {
+  border-bottom: var(--hairline) solid var(--separator);
+  margin-bottom: 2px;
+}
+
+.sidebar-recent-items {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-recent-items .session-item {
+  height: 32px !important;
+}
+
+.session-item-project {
+  max-width: 28%;
+  flex: 0 1 auto;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar-project-tree-header {
@@ -9160,6 +9307,30 @@ span.linenumber {
 }
 
 .scheduled-warning p { margin: 0; }
+
+.scheduled-owner-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.scheduled-owner-notice .scheduled-mono {
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+
+.scheduled-owner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scheduled-owner-actions .scheduled-button {
+  height: 30px;
+  padding: 0 10px;
+  font-size: var(--fs-small);
+}
 
 /* Buttons and inputs */
 .scheduled-button {

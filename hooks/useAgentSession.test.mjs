@@ -746,7 +746,7 @@ test("carries the last tool preset and effort level into new sessions", async ()
   assert.match(source, /setPref\(APP_PREF_KEYS.thinkingLevel, level\)/);
 });
 
-test("auto-compact slash command toggles session auto-compaction", () => {
+test("auto-compact slash command toggles session auto-compaction", async () => {
   const commandSource = source.slice(
     source.indexOf('case "auto-compact"'),
     source.indexOf('case "reload"'),
@@ -760,7 +760,9 @@ test("auto-compact slash command toggles session auto-compaction", () => {
   assert.match(commandSource, /setAutomation\(\(prev\) => \(\{ \.\.\.prev, autoCompactionEnabled: nextEnabled \}\)\)/);
   assert.doesNotMatch(commandSource, /!autoCompactionEnabled/);
   assert.doesNotMatch(source, /setAutoCompactionEnabled/, "a second auto-compaction state drifts from the gear");
-  assert.match(source, /autoCompactionEnabled: state\?\.autoCompactionEnabled \?\? prev\.autoCompactionEnabled/);
+  assert.match(source, /syncAutomation\(state\);/);
+  const automationSource = await jitiSource(new URL("./useSessionAutomation.ts", import.meta.url));
+  assert.match(automationSource, /autoCompactionEnabled: state\?\.autoCompactionEnabled \?\? prev\.autoCompactionEnabled/);
 });
 
 test("auto-compaction mid-turn is reported in the status line (the fork's composer has no compact control)", () => {
@@ -769,4 +771,206 @@ test("auto-compaction mid-turn is reported in the status line (the fork's compos
   assert.doesNotMatch(chatInputSource, /onClick=\{isCompacting \? onAbortCompaction : onCompact\}/);
   assert.match(chatWindowSource, /agentRunning && !hasStreamingContent && \(agentPhase \|\| isCompacting\)/);
   assert.match(phaseLabelSource, /if \(isCompacting\) return t\("chat\.compacting"\);/);
+});
+
+// Execute the extracted hooks with a small deterministic hook host. These tests
+// exercise asynchronous completion and render-time session resets, rather than
+// only checking that a guard's spelling survives a future extraction.
+async function extractedHookHarness(file, exportName, props, overrides = {}) {
+  const ts = (await import("typescript")).default;
+  const { Script } = await import("node:vm");
+  const slots = [];
+  let cursor = 0;
+  let dirty = false;
+  const react = {
+    useState(initial) {
+      const index = cursor++;
+      if (!(index in slots)) {
+        slots[index] = { value: typeof initial === "function" ? initial() : initial };
+        slots[index].set = (update) => {
+          const next = typeof update === "function" ? update(slots[index].value) : update;
+          if (!Object.is(slots[index].value, next)) dirty = true;
+          slots[index].value = next;
+        };
+      }
+      return [slots[index].value, slots[index].set];
+    },
+    useRef(initial) {
+      const index = cursor++;
+      if (!(index in slots)) slots[index] = { current: initial };
+      return slots[index];
+    },
+    useCallback: (callback) => callback,
+    useMemo: (factory) => factory(),
+  };
+  const text = await jitiSource(new URL(file, import.meta.url));
+  const compiled = ts.transpileModule(text, {
+    compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  const loadedModule = { exports: {} };
+  new Script(compiled, { filename: file }).runInNewContext({
+    module: loadedModule,
+    exports: loadedModule.exports,
+    console: { error() {} },
+    Date,
+    ...overrides.globals,
+    require(name) {
+      if (name === "react") return react;
+      if (name === "@/lib/agent-client") return { sendAgentCommand: overrides.sendAgentCommand };
+      if (name === "@/lib/model-scope-warnings") return { modelScopeWarningKey: JSON.stringify };
+      throw new Error(`Unexpected extracted-hook import: ${name}`);
+    },
+  });
+  const render = (next = props) => {
+    props = next;
+    let result;
+    let iterations = 0;
+    do {
+      dirty = false;
+      cursor = 0;
+      result = loadedModule.exports[exportName](props);
+      assert.ok(++iterations < 10, "extracted hook did not settle after a reset");
+    } while (dirty);
+    return result;
+  };
+  return { render, current: render() };
+}
+
+function pendingResult() {
+  let resolve;
+  let reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+test("extracted scope-warning dismissal still resets on a true session switch", async () => {
+  const warnings = [{ kind: "unmatched-pattern", pattern: "provider/model" }];
+  const harness = await extractedHookHarness("./useScopeWarningDismissal.ts", "useScopeWarningDismissal", warnings);
+  harness.current.dismissModelScopeWarnings();
+  assert.equal(harness.render().visibleModelScopeWarnings.length, 0);
+  harness.render().resetModelScopeWarnings();
+  assert.equal(harness.render().visibleModelScopeWarnings.length, 1);
+  const reset = source.slice(source.indexOf("if (!isPromotion)"), source.indexOf("const setToolPresetState"));
+  assert.match(reset, /resetModelScopeWarnings\(\)/);
+  assert.match(reset, /setAutomation\(\{ autoCompactionEnabled: null, autoRetryEnabled: null, steeringMode: null, followUpMode: null \}\)/);
+  assert.match(reset, /setSummarizationRetry\(null\)/);
+});
+
+test("an old extracted branch-summary request cannot unlock or reload the next session", async () => {
+  const requests = [];
+  const loads = [];
+  const notices = [];
+  const sessionIdRef = { current: "a" };
+  const sessionGenerationRef = { current: 0 };
+  const props = { sessionId: "a", sessionIdRef, sessionGenerationRef, loadSession: async (id) => loads.push(id), addNotice: (notice) => notices.push(notice), t: (key) => key };
+  const harness = await extractedHookHarness("./useBranchSummary.ts", "useBranchSummary", props, {
+    sendAgentCommand(id, command) {
+      const result = pendingResult();
+      requests.push({ id, command, ...result });
+      return result.promise;
+    },
+  });
+  const first = harness.current.summarizeAndNavigate("a-leaf");
+  assert.equal(harness.render().branchSummaryPending, true);
+  sessionIdRef.current = "b";
+  sessionGenerationRef.current += 1;
+  let current = harness.render({ ...props, sessionId: "b" });
+  assert.equal(current.branchSummaryPending, false);
+  assert.equal(current.branchSummarySessionIdRef.current, null);
+  const second = current.summarizeAndNavigate("b-leaf");
+  assert.deepEqual(requests.map(({ id }) => id), ["a", "b"]);
+  requests[0].resolve({});
+  await first;
+  current = harness.render();
+  assert.equal(current.branchSummaryPending, true);
+  assert.equal(current.branchSummarySessionIdRef.current, "b");
+  assert.deepEqual(loads, []);
+  assert.deepEqual(notices, []);
+  requests[1].resolve({});
+  await second;
+  assert.deepEqual(loads, ["b"]);
+  assert.equal(harness.render().branchSummaryPending, false);
+});
+
+test("returning to the same session does not revive a retired branch-summary reply", async () => {
+  const response = pendingResult();
+  const loads = [];
+  const notices = [];
+  const sessionIdRef = { current: "a" };
+  const sessionGenerationRef = { current: 0 };
+  const props = { sessionId: "a", sessionIdRef, sessionGenerationRef, loadSession: async (id) => loads.push(id), addNotice: (notice) => notices.push(notice), t: (key) => key };
+  const harness = await extractedHookHarness("./useBranchSummary.ts", "useBranchSummary", props, { sendAgentCommand: () => response.promise });
+  const request = harness.current.summarizeAndNavigate("a-leaf");
+  sessionIdRef.current = "b";
+  sessionGenerationRef.current += 1;
+  harness.render({ ...props, sessionId: "b" });
+  sessionIdRef.current = "a";
+  sessionGenerationRef.current += 1;
+  harness.render(props);
+  response.reject(new Error("old summary failed"));
+  await request;
+  assert.deepEqual(loads, []);
+  assert.deepEqual(notices, []);
+  assert.equal(harness.render().branchSummaryPending, false);
+});
+
+test("an extracted automation resync cannot overwrite a switched or newer session view", async () => {
+  const refetch = pendingResult();
+  const sessionIdRef = { current: "a" };
+  const sessionGenerationRef = { current: 0 };
+  const resynced = [];
+  const fetching = pendingResult();
+  const props = { sessionIdRef, sessionGenerationRef, setAutomation() {}, addNotice() {}, resync: (state) => resynced.push(state) };
+  const harness = await extractedHookHarness("./useSessionAutomation.ts", "useSessionAutomationActions", props, {
+    sendAgentCommand: async () => { throw new Error("setting rejected"); },
+    globals: { fetch: async () => { fetching.resolve(); return { json: () => refetch.promise }; } },
+  });
+  const setting = harness.current.handleSetAutomation({ autoRetry: false });
+  await fetching.promise;
+  // A -> B -> A has the same id again but a different generation.
+  sessionGenerationRef.current += 2;
+  refetch.resolve({ state: { autoRetryEnabled: true } });
+  await setting;
+  assert.deepEqual(resynced, []);
+});
+
+test("extracted idle-append throttling is scoped to the active session generation", async () => {
+  const loads = [];
+  const sessionIdRef = { current: "a" };
+  const sessionGenerationRef = { current: 0 };
+  const harness = await extractedHookHarness("./useForkAgentEvents.ts", "useForkAgentEvents", {
+    sessionIdRef, sessionGenerationRef, agentRunningRef: { current: false }, bashRunningRef: { current: false },
+    setPendingBash() {}, setSummarizationRetry() {}, loadSession: (id) => loads.push(id),
+  }, { globals: { Date: { now: () => 1000 } } });
+  const event = { type: "entry_appended" };
+  harness.current.handleForkAgentEvent(event);
+  harness.current.handleForkAgentEvent(event);
+  sessionIdRef.current = "b";
+  sessionGenerationRef.current += 1;
+  harness.current.handleForkAgentEvent(event);
+  sessionIdRef.current = "a";
+  sessionGenerationRef.current += 1;
+  harness.current.handleForkAgentEvent(event);
+  assert.deepEqual(loads, ["a", "b", "a"]);
+  assert.match(source, /case "session_info_changed": \{[\s\S]*?onSessionRenamed\?\.\(sid, name\)/);
+});
+
+test("a newer automation change retires an older failure resync for the same session", async () => {
+  const refetch = pendingResult();
+  const fetching = pendingResult();
+  const resynced = [];
+  let commandCount = 0;
+  const harness = await extractedHookHarness("./useSessionAutomation.ts", "useSessionAutomationActions", {
+    sessionIdRef: { current: "a" }, sessionGenerationRef: { current: 0 }, setAutomation() {}, addNotice() {}, resync: (state) => resynced.push(state),
+  }, {
+    sendAgentCommand: async () => { if (++commandCount === 1) throw new Error("old change rejected"); },
+    globals: { fetch: async () => { fetching.resolve(); return { json: () => refetch.promise }; } },
+  });
+  const older = harness.current.handleSetAutomation({ autoRetry: false });
+  await fetching.promise;
+  await harness.current.handleSetAutomation({ autoRetry: true });
+  refetch.resolve({ state: { autoRetryEnabled: false } });
+  await older;
+  assert.equal(commandCount, 2);
+  assert.deepEqual(resynced, []);
 });

@@ -44,7 +44,92 @@ test("server supports the automation command set end to end", () => {
   }
   assert.match(rpc, /steeringMode: this\.inner\.steeringMode/);
   assert.match(rpc, /followUpMode: this\.inner\.followUpMode/);
-  const hook = readFileSync(new URL("../hooks/useAgentSession.ts", import.meta.url), "utf8");
+  const hook = readFileSync(new URL("../hooks/useSessionAutomation.ts", import.meta.url), "utf8");
   assert.match(hook, /type: "set_auto_compaction", enabled: change\.autoCompaction/);
   assert.match(hook, /type: "set_steering_mode", mode: change\.steeringMode/);
+});
+
+test("known automation never restores the removed gear, compaction or steering buttons", () => {
+  const html = render({
+    automation: { autoCompactionEnabled: true, autoRetryEnabled: true, steeringMode: "all", followUpMode: "one-at-a-time" },
+    onCompact() {}, onAbortCompaction() {}, onSteer() {}, onFollowUp() {},
+    isCompacting: true, isStreaming: true,
+  });
+  assert.doesNotMatch(html, /aria-label="(?:Session automation|Compact context|Stop compaction)"/);
+  assert.doesNotMatch(source, /<SessionAutomationMenu\b|onAudioUnlock|<SelectorRow\b/);
+  assert.match(html, /composer-stop-button/);
+});
+
+test("extracted mention and project menus preserve the fork's classes and project disambiguation", async () => {
+  const { SessionMentionMenu } = await jiti.import("./SessionMentionMenu.tsx");
+  const { ComposerProjectChip, getProjectLabel } = await jiti.import("./ComposerProjectChip.tsx");
+  const projectOptions = ["/work/company/app", "/work/personal/app"];
+  const label = getProjectLabel(projectOptions[0], projectOptions);
+  assert.notEqual(label, getProjectLabel(projectOptions[1], projectOptions));
+  const html = renderToStaticMarkup(React.createElement(I18nProvider, null,
+    React.createElement(ComposerProjectChip, {
+      menuRef: { current: null }, open: true, onOpenChange() {}, label,
+      projectPath: projectOptions[0], isCompact: true, projectOptions, onProjectChange() {},
+    }),
+    React.createElement(SessionMentionMenu, {
+      loaded: true, matches: [{ id: "one", name: "Session one", firstMessage: "First message" }],
+      activeIndex: 0, itemRefs: { current: [] }, onPick() {}, onHover() {}, showHints: false,
+    }),
+  ));
+  assert.match(html, /class="chat-project-context is-compact"/);
+  assert.match(html, /class="native-popover composer-project-menu"/);
+  assert.match(html, /class="composer-project-option is-current"/);
+  assert.match(html, /class="native-popover composer-completion-popover is-front"/);
+  assert.match(html, /class="composer-completion-item is-session is-active"/);
+  assert.doesNotMatch(html, /composer-completion-hint/);
+  const palette = readFileSync(new URL("../hooks/useSessionMentionPalette.ts", import.meta.url), "utf8");
+  assert.match(palette, /el\.style\.height = `\$\{el\.scrollHeight\}px`/);
+  assert.doesNotMatch(palette, /Math\.min\(el\.scrollHeight, 200\)/);
+  assert.match(source, /sessionMentionTargetsRef\.current = new Map\(Object\.entries\(draft\?\.references/);
+  assert.match(source, /if \(preparingRef\.current\) return;[\s\S]*?onSend\(prepared\.text,/);
+  assert.doesNotMatch(source, /onSend\(resolvedMessage/);
+});
+
+test("prepared composer sends remain single-shot and never clear a newer draft", async () => {
+  const ts = (await import("typescript")).default;
+  const { Script } = await import("node:vm");
+  const ast = ts.createSourceFile("ChatInput.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  function findSend(node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(ast) === "handleSend") return node.initializer.arguments[0];
+    return ts.forEachChild(node, findSend);
+  }
+  const callback = findSend(ast);
+  assert.ok(callback, "actual composer send callback is present");
+  const script = new Script(ts.transpileModule(callback.getText(ast), { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText);
+  for (const scenario of ["unchanged", "edited", "switched"]) {
+    let resolve;
+    const preparation = new Promise((done) => { resolve = done; });
+    let started;
+    const preparing = new Promise((done) => { started = done; });
+    const calls = [];
+    let clearCount = 0;
+    let prepareCount = 0;
+    let draft = { value: "original" };
+    const draftKeyRef = { current: "a" };
+    const handler = script.runInNewContext({
+      invalidDraftImages: false, orphanedPaste: false, draftKey: "a", hydratedDraftKey: "a", persistenceStatus: "saved",
+      value: "original", pastedTexts: [], attachedImages: [], isStreaming: false, workspaceUnavailable: false,
+      splicePastedTexts: (text) => text, dispatchBuiltin: async () => false, onBuiltinCommand: undefined,
+      draftKeyRef, preparingRef: { current: false }, snapshotRef: { current: () => draft },
+      setPreparationError(message) { assert.equal(message, ""); },
+      prepare() { prepareCount += 1; started(); return preparation; },
+      onSend(...args) { calls.push(args); }, clearInput() { clearCount += 1; },
+    });
+    const first = handler();
+    const duplicate = handler();
+    await preparing;
+    assert.equal(prepareCount, 1, scenario);
+    if (scenario === "edited") draft = { value: "newer input" };
+    if (scenario === "switched") draftKeyRef.current = "b";
+    resolve({ text: "resolved session reference", images: [] });
+    await Promise.all([first, duplicate]);
+    assert.equal(calls.length, scenario === "switched" ? 0 : 1, scenario);
+    if (calls.length) assert.equal(calls[0][0], "resolved session reference");
+    assert.equal(clearCount, scenario === "unchanged" ? 1 : 0, scenario);
+  }
 });

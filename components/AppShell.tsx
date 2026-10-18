@@ -1,7 +1,5 @@
 "use client";
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, type MouseEvent as ReactMouseEvent } from "react";
-import { createPortal } from "react-dom";
-import type { UnavailableWorkspace, WorkspaceAvailability } from "@/lib/workspace-availability";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -26,26 +24,31 @@ const FileExplorer = dynamic(() => import("./FileExplorer").then((m) => m.FileEx
 const TerminalPanel = dynamic(() => import("./TerminalPanel").then((m) => m.TerminalPanel), { ssr: false });
 const ScheduledView = dynamic(() => import("./scheduled/ScheduledView").then((m) => m.ScheduledView), { ssr: false });
 import { openFileTab, saveFileViewerState } from "./file-tab-state";
-import { SETTINGS_SECTION_ITEMS, SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
+import { SettingsPanel } from "./SettingsPanel";
+import { SettingsEntryMenu, useSettingsEntryMenu } from "./SettingsEntryMenu";
 import { ProjectTrustDialog, type ProjectTrustFailure } from "./ProjectTrustDialog";
 import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { UpdateReminder } from "./UpdateReminder";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import { APP_PREF_KEYS, getPrefBool, getPrefJson, setPref, setPrefJson } from "@/lib/app-prefs";
+import { APP_PREF_KEYS, getPrefBool, getPrefJson, setPref } from "@/lib/app-prefs";
 import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useDesktopConnection } from "@/lib/desktop-connection";
 import { isTauriDesktop, setCloseQuitsNative } from "@/lib/desktop-native";
 import { useNativeContextMenu } from "@/hooks/useNativeContextMenu";
-import { canUseNativeMenu, menuPointBelow, showNativeMenu } from "@/lib/desktop-menu";
 import { DomContextMenuHost } from "./DomContextMenuHost";
 import { getFileName } from "@/lib/file-paths";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
 import { PRODUCT_NAME } from "@/lib/branding";
 import { hasForks } from "@/lib/session-forks";
-import { resolveInitialNavigation, workspaceFileTabsMatchContext, type PersistedWorkspace } from "@/lib/workspace-state";
+import {
+  resolveInitialNavigation,
+  type PersistedWorkspace,
+} from "@/lib/workspace-state";
+import { useDesktopWorkspaceTabs } from "@/hooks/useDesktopWorkspaceTabs";
+import { useWorkspaceAvailability } from "@/hooks/useWorkspaceAvailability";
 import { WindowControls, useDesktopChrome, useWindowDrag } from "./desktop";
 import { isImeComposing } from "@/lib/ime";
 import { AgentSessionPanel } from "./AgentSessionPanel";
@@ -99,7 +102,6 @@ export function AppShell() {
     getPrefJson<PersistedWorkspace>(APP_PREF_KEYS.workspace)
   ));
   const [initialNavigation, setInitialNavigation] = useState(() => resolveInitialNavigation(searchParams, desktopMode ? persistedWorkspace : null));
-  const [workspaceHydrated, setWorkspaceHydrated] = useState(() => !desktopMode);
   // Subscribed for its side effects only: this hook installs the shared theme
   // store's listener for the app's lifetime, so an "auto" preference keeps
   // following OS scheme changes and the resolved palette keeps being mirrored
@@ -133,9 +135,10 @@ export function AppShell() {
   const fileActionsMenuRef = useRef<HTMLDivElement>(null);
   // The Scheduled page covers the chat area without unmounting it, so the open session keeps its state.
   const [scheduledOpen, setScheduledOpen] = useState(() => searchParams?.get("view") === "scheduled");
-  // Read by handleSelectSession, whose identity must not change when the page opens.
+  // Read by restoreWorkspaceContext and handleSelectSession; those identities
+  // must not change when the page opens.
   const scheduledOpenRef = useRef(scheduledOpen);
-  useEffect(() => { scheduledOpenRef.current = scheduledOpen; }, [scheduledOpen]);
+  scheduledOpenRef.current = scheduledOpen;
   const [explorerUploadBusy, setExplorerUploadBusy] = useState(false);
   const fileExplorerRef = useRef<FileExplorerHandle>(null);
   // The panel is a preview surface; keep the file index hidden until asked for.
@@ -212,40 +215,11 @@ export function AppShell() {
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
   useNativeContextMenu();
-  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
-  const [settingsMenuPos, setSettingsMenuPos] = useState<{ top: number; left: number } | null>(null);
-  const settingsMenuRef = useRef<HTMLDivElement>(null);
-  const settingsMenuButtonRef = useRef<HTMLButtonElement>(null);
-  const closeSettingsMenu = useCallback(() => {
-    setSettingsMenuOpen(false);
-    setSettingsMenuPos(null);
-  }, []);
-  useEffect(() => {
-    if (!settingsMenuOpen) return;
-    const handleMouseDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (settingsMenuRef.current?.contains(target)) return;
-      // Clicks on the toggle button fall through to its onClick, which closes.
-      if (settingsMenuButtonRef.current?.contains(target)) return;
-      closeSettingsMenu();
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.defaultPrevented && !isImeComposing(event)) closeSettingsMenu();
-    };
-    document.addEventListener("mousedown", handleMouseDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handleMouseDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [settingsMenuOpen, closeSettingsMenu]);
+  const settingsEntryMenu = useSettingsEntryMenu(setSettingsSection);
+  const { settingsMenuOpen, settingsMenuButtonRef, closeSettingsMenu, toggleSettingsMenu } = settingsEntryMenu;
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
 
   const [projectTrust, setProjectTrust] = useState<ProjectTrustStatus | null>(null);
-  // "unknown": the probe itself failed, so nothing is blocked on its account.
-  const [workspaceStatus, setWorkspaceStatus] = useState<{ cwd: string; availability: WorkspaceAvailability | "unknown" } | null>(null);
-  const workspaceStatusRef = useRef(workspaceStatus);
-  const [workspaceStatusCheck, setWorkspaceStatusCheck] = useState(0);
   const [projectTrustDialogOpen, setProjectTrustDialogOpen] = useState(false);
   const [projectTrustBusy, setProjectTrustBusy] = useState(false);
   const [projectTrustError, setProjectTrustError] = useState<ProjectTrustFailure | null>(null);
@@ -371,19 +345,16 @@ export function AppShell() {
   useEffect(() => {
     setSidebarOpen(isMobile ? false : desktopSidebarOpenRef.current);
   }, [isMobile]);
-  // Close right panel when viewport is too narrow for split-panel layout.
-  // Uses matchMedia's change event (not just the rightPanelOpen dependency)
-  // so it also fires when an already-open panel's viewport is resized narrow,
-  // not only when the panel itself is opened.
+  // Preserve a restored terminal on the initial compact load. Only crossing
+  // into the compact layout closes an open panel so the chat stays reachable.
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;
-    const mql = window.matchMedia(`(max-width: ${SPLIT_PANEL_MIN_WIDTH - 1}px)`);
+    const compactQuery = window.matchMedia(`(max-width: ${SPLIT_PANEL_MIN_WIDTH - 1}px)`);
     const checkWidth = () => {
-      if (mql.matches) setRightPanelOpen(false);
+      if (compactQuery.matches) setRightPanelOpen(false);
     };
-    checkWidth();
-    mql.addEventListener("change", checkWidth);
-    return () => mql.removeEventListener("change", checkWidth);
+    compactQuery.addEventListener("change", checkWidth);
+    return () => compactQuery.removeEventListener("change", checkWidth);
   }, []);
   useEffect(() => {
     setMobileSidebarReady(true);
@@ -508,17 +479,6 @@ export function AppShell() {
     if (sidebarPeekExitTimerRef.current) clearTimeout(sidebarPeekExitTimerRef.current);
   }, [holdSidebarPeek]);
 
-  const handleRightPanelToggle = useCallback(() => {
-    if (isMobile) {
-      if (isMobile) setSidebarOpen(false);
-      setActiveTopPanel(null);
-    }
-    setRightPanelOpen((open) => {
-      if (open) setRightPanelExpanded(false);
-      return !open;
-    });
-  }, [isMobile]);
-
   // The panel is a preview layer; the composer remains the home base. The
   // overlay and backslash shortcut both use this same exit.
   // Also leaves full width, like the toggle: reopening into full width would
@@ -587,15 +547,29 @@ export function AppShell() {
   const [terminalsRestored, setTerminalsRestored] = useState(false);
   const [artifactTabs, setArtifactTabs] = useState<ArtifactTab[]>([]);
   // artifactPanelTab reads each tab's newest title; this re-renders when one changes.
-  useArtifactTitles(artifactTabs);
-  const panelTabs: Tab[] = [...fileTabs, ...terminalTabs.map((tab) => ({
+  const artifactTitleKey = useArtifactTitles(artifactTabs);
+  const panelTabs: Tab[] = useMemo(() => [...fileTabs, ...terminalTabs.map((tab) => ({
     id: tab.id,
     label: getFileName(tab.cwd) || tab.cwd,
     filePath: tab.cwd,
     kind: "terminal" as const,
     closing: Boolean(tab.closing),
-  })), ...artifactTabs.map(artifactPanelTab)];
+  })), ...artifactTabs.map(artifactPanelTab)],
+  // Artifact labels read the external store, whose title key must invalidate this memo.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [fileTabs, terminalTabs, artifactTabs, artifactTitleKey]);
   const activeArtifactTab = artifactTabs.find((tab) => tab.id === activeFileTabId) ?? null;
+  const handleRightPanelToggle = useCallback(() => {
+    if (isMobile) setSidebarOpen(false);
+    if (isMobile) setActiveTopPanel(null);
+    setRightPanelOpen((open) => {
+      // A manual open with no tab lands on the project file tree, not a mostly
+      // empty "No file open" state.
+      if (!open && panelTabs.length === 0) setFileTreeOpen(true);
+      if (open) setRightPanelExpanded(false);
+      return !open;
+    });
+  }, [isMobile, panelTabs]);
 
   useEffect(() => {
     try {
@@ -789,8 +763,12 @@ export function AppShell() {
       // the restored session's messages.
       setSelectedSession(s);
       setSessionKey((k) => k + 1);
-      if (new URLSearchParams(window.location.search).get("session") !== s.id) {
-        router.replace(`?session=${encodeURIComponent(s.id)}`, { scroll: false });
+      // A direct Scheduled URL can restore its hidden workspace while sessions
+      // load. That fills the chat but must not switch the visible page.
+      if (!scheduledOpenRef.current) {
+        if (new URLSearchParams(window.location.search).get("session") !== s.id) {
+          router.replace(`?session=${encodeURIComponent(s.id)}`, { scroll: false });
+        }
       }
     };
     // Fast path: the sidebar already delivered the catalogue — restore
@@ -886,7 +864,12 @@ export function AppShell() {
       // the default welcome page when none is remembered.
       restoreWorkspaceContext(newProject, cwd);
     }
-    router.replace(typeof window !== "undefined" ? window.location.pathname : "/", { scroll: false });
+    // This callback also runs when the sidebar picks its default project on a
+    // direct Scheduled URL. There is no explicit navigation away from that
+    // page yet, so retain the URL that made it visible.
+    if (!scheduledOpenRef.current) {
+      router.replace(typeof window !== "undefined" ? window.location.pathname : "/", { scroll: false });
+    }
   }, [activeCwd, activeFileTabId, invalidateWorkspaceRestore, newSessionCwd, router, selectedSession, restoreWorkspaceContext]);
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false, entryId?: string, blockIndex?: number) => {
@@ -920,6 +903,11 @@ export function AppShell() {
       const sameProject =
         workspaceKeyOf(selectedSession) === workspaceKeyOf(session);
       if (selectedSession.id === session.id && sameProject) {
+        // A workspace restored behind Scheduled is already selected. Leaving
+        // that page still needs the session URL, without resetting its chat.
+        if (scheduledOpenRef.current) {
+          window.history.pushState({ ...window.history.state, piSession: session }, "", `?session=${encodeURIComponent(session.id)}`);
+        }
         if (isMobile) setSidebarOpen(false);
         return;
       }
@@ -1423,39 +1411,6 @@ export function AppShell() {
   // give way to one calm state. The session list already knows; a new-session
   // cwd falls back to the trust probe, which reports it as a status not an error.
   const activeCwdMissing = selectedSession ? selectedSession.cwdMissing === true : projectTrust?.cwdMissing === true;
-  const toggleSettingsMenu = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
-    if (settingsMenuOpen) {
-      closeSettingsMenu();
-      return;
-    }
-    const rect = event.currentTarget.getBoundingClientRect();
-    const openDomMenu = () => {
-      const menuWidth = 184;
-      const menuHeight = 236;
-      const left = Math.max(8, Math.min(rect.left, window.innerWidth - menuWidth - 8));
-      const below = rect.bottom + 6;
-      const top = below + menuHeight > window.innerHeight - 8
-        ? Math.max(8, rect.top - menuHeight - 6)
-        : below;
-      setSettingsMenuPos({ top, left });
-      setSettingsMenuOpen(true);
-    };
-    // Desktop shell with native popups on: the same section list as a native
-    // menu, shown by the shell (`show_popup_menu`). The DOM menu is the
-    // fallback when it cannot be shown, and the menu in regular builds.
-    if (canUseNativeMenu()) {
-      void showNativeMenu(
-        SETTINGS_SECTION_ITEMS.map((item) => ({
-          label: translate(item.labelKey),
-          disabled: item.requiresProject && !projectTrustCwd,
-          onSelect: () => setSettingsSection(item.id),
-        })),
-        menuPointBelow(event.currentTarget),
-      ).then((shown) => { if (!shown) openDomMenu(); });
-      return;
-    }
-    openDomMenu();
-  }, [settingsMenuOpen, closeSettingsMenu, translate, projectTrustCwd]);
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showChat;
 
@@ -1465,116 +1420,22 @@ export function AppShell() {
     window.addEventListener("pi-git-changed", refresh); return () => window.removeEventListener("pi-git-changed", refresh);
   }, []);
 
-  // Reopen the last file tabs after the cold-start session/cwd restore settles.
-  useEffect(() => {
-    if (!initialSessionRestored || workspaceHydrated) return;
-
-    const cwd = selectedSession?.cwd ?? newSessionCwd ?? activeCwd;
-    const canMatch = workspaceFileTabsMatchContext(
-      persistedWorkspace,
-      selectedSession?.id ?? null,
-      cwd,
-    );
-    const hasSavedTabs = Boolean(persistedWorkspace?.fileTabs?.length);
-
-    // Wait for sidebar auto-select before giving up on tab restore.
-    if (hasSavedTabs && !canMatch && !cwd && !showPlaceholder) return;
-
-    if (canMatch && persistedWorkspace) {
-      const tabs: Tab[] = persistedWorkspace.fileTabs.map((tab) => ({
-        id: `file:${tab.filePath}`,
-        label: tab.label,
-        filePath: tab.filePath,
-        sourceSessionId: tab.sourceSessionId,
-        initialDisplayMode: tab.initialDisplayMode,
-      }));
-      setFileTabs(tabs);
-      const activeId = persistedWorkspace.activeFileTabId;
-      setActiveFileTabId((prev) => {
-        if (activeId && tabs.some((tab) => tab.id === activeId)) return activeId;
-        // Keep a workspace terminal restored from sessionStorage selected.
-        if (prev && !prev.startsWith("file:")) return prev;
-        return tabs[0]?.id ?? null;
-      });
-      setRightPanelOpen(Boolean(persistedWorkspace.rightPanelOpen));
-    }
-    setWorkspaceHydrated(true);
-  }, [
+  useDesktopWorkspaceTabs({
+    desktopMode,
     initialSessionRestored,
-    desktopMode,
-    workspaceHydrated,
     persistedWorkspace,
-    selectedSession?.id,
-    selectedSession?.cwd,
-    newSessionCwd,
-    activeCwd,
+    sessionId: selectedSession?.id ?? null,
+    cwd: selectedSession?.cwd ?? newSessionCwd ?? activeCwd,
     showPlaceholder,
-  ]);
-
-  // Persist workspace so the next desktop cold start can restore chat + files.
-  useEffect(() => {
-    if (!workspaceHydrated) return;
-    setPrefJson(APP_PREF_KEYS.workspace, {
-      sessionId: selectedSession?.id ?? null,
-      cwd: selectedSession?.cwd ?? newSessionCwd ?? activeCwd,
-      fileTabs: fileTabs.map((tab) => ({
-        filePath: tab.filePath,
-        label: tab.label,
-        sourceSessionId: tab.sourceSessionId,
-        initialDisplayMode: tab.initialDisplayMode,
-      })),
-      activeFileTabId,
-      rightPanelOpen,
-    } satisfies PersistedWorkspace);
-  }, [
-    workspaceHydrated,
-    desktopMode,
-    selectedSession?.id,
-    selectedSession?.cwd,
-    newSessionCwd,
-    activeCwd,
     fileTabs,
     activeFileTabId,
     rightPanelOpen,
-  ]);
+    setFileTabs,
+    setActiveFileTabId,
+    setRightPanelOpen,
+  });
 
-  // A workspace deleted outside the app keeps its history, but every cwd-scoped
-  // request then fails and the composer reported it as a model error (#1061).
-  // Probe the folder itself so the chat can say what happened and hold new runs.
-  useEffect(() => {
-    if (!projectTrustCwd) return;
-    const cwd = projectTrustCwd;
-    const controller = new AbortController();
-    fetch(`/api/cwd/status?cwd=${encodeURIComponent(cwd)}`, { signal: controller.signal })
-      .then(async (response) => {
-        const data = await response.json() as { availability?: WorkspaceAvailability };
-        return response.ok && data.availability ? data.availability : "unknown" as const;
-      })
-      .catch((error) => (error instanceof DOMException && error.name === "AbortError" ? null : "unknown" as const))
-      .then((availability) => {
-        if (!availability || controller.signal.aborted) return;
-        const previous = workspaceStatusRef.current;
-        const recovered = availability === "available"
-          && previous?.cwd === cwd
-          && previous.availability !== "available"
-          && previous.availability !== "unknown";
-        workspaceStatusRef.current = { cwd, availability };
-        setWorkspaceStatus({ cwd, availability });
-        // The model list loaded while the folder was gone only holds its error.
-        if (recovered) setModelsRefreshKey((key) => key + 1);
-      });
-    return () => controller.abort();
-  }, [projectTrustCwd, workspaceStatusCheck]);
-
-  const workspaceAvailability = projectTrustCwd && workspaceStatus?.cwd === projectTrustCwd
-    ? workspaceStatus.availability
-    : null;
-  const unavailableWorkspace = useMemo<UnavailableWorkspace | null>(() => (
-    projectTrustCwd && workspaceAvailability && workspaceAvailability !== "available" && workspaceAvailability !== "unknown"
-      ? { cwd: projectTrustCwd, availability: workspaceAvailability }
-      : null
-  ), [projectTrustCwd, workspaceAvailability]);
-  const recheckWorkspace = useCallback(() => setWorkspaceStatusCheck((check) => check + 1), []);
+  const { workspaceAvailability, unavailableWorkspace, recheckWorkspace } = useWorkspaceAvailability(projectTrustCwd, setModelsRefreshKey);
 
   useEffect(() => {
     setProjectTrust(null);
@@ -1721,7 +1582,7 @@ export function AppShell() {
       <button
         ref={settingsMenuButtonRef}
         className="sidebar-chrome-button"
-        onClick={toggleSettingsMenu}
+        onClick={(event) => toggleSettingsMenu(event, Boolean(projectTrustCwd))}
         title={translate("common.settings")}
         aria-label={translate("common.settings")}
         aria-haspopup="menu"
@@ -1811,9 +1672,8 @@ export function AppShell() {
     );
   };
 
-  // The file panel shows a project's files, which the Scheduled page has none of, so its
-  // toggle is hidden there. An already open panel keeps it: on desktop it is the only way to close it.
-  const showFilePanelToggle = !scheduledOpen || rightPanelOpen;
+  // Scheduled keeps the mobile workspace toggle reachable; an open panel always has an exit.
+  const showFilePanelToggle = isMobile || !scheduledOpen || rightPanelOpen;
 
   return (
     <>
@@ -2182,7 +2042,7 @@ export function AppShell() {
         </div>
       </div>
 
-      {/* Hidden on the Scheduled page, which has no project files; an open panel keeps it so it can close. */}
+      {/* One floating toggle serves both layouts; Scheduled keeps the mobile overlay reachable. */}
       {showFilePanelToggle && (
         <button
           type="button"
@@ -2190,8 +2050,8 @@ export function AppShell() {
           onClick={handleRightPanelToggle}
           aria-controls="file-panel"
           aria-expanded={rightPanelOpen}
-          title={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
-          aria-label={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
+          title={rightPanelOpen ? translate("workspace.hidePanel") : translate("workspace.showPanel")}
+          aria-label={rightPanelOpen ? translate("workspace.hidePanel") : translate("workspace.showPanel")}
           aria-pressed={rightPanelOpen}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -2276,8 +2136,8 @@ export function AppShell() {
               onClick={handleRightPanelClose}
               aria-controls="file-panel"
               aria-expanded={rightPanelOpen}
-              title={translate("files.hidePanel")}
-              aria-label={translate("files.hidePanel")}
+              title={translate("workspace.hidePanel")}
+              aria-label={translate("workspace.hidePanel")}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" /></svg>
             </button>
@@ -2492,6 +2352,7 @@ export function AppShell() {
                   onClick={() => fileExplorerRef.current?.openUploadPicker()}
                   disabled={explorerUploadBusy}
                   title={translate("sidebar.uploadFilesTitle")}
+                  aria-label={translate("sidebar.uploadFilesTitle")}
                   style={{
                     display: "flex", alignItems: "center", justifyContent: "center",
                     width: 26, height: 26, padding: 0,
@@ -2512,7 +2373,6 @@ export function AppShell() {
                   ref={fileExplorerRef}
                   cwd={activeCwd}
                   onOpenFile={handleOpenFile}
-                  selectedFilePath={activeFileTab?.filePath ?? null}
                   refreshKey={explorerRefreshKey}
                   searchQuery={fileExplorerQuery}
                   onAtMention={handleAtMention}
@@ -2546,37 +2406,7 @@ export function AppShell() {
         onProjectTrustChanged={handleProjectTrustChanged}
       />
     )}
-    {settingsMenuOpen && settingsMenuPos && createPortal(
-      <div
-        ref={settingsMenuRef}
-        className="sidebar-project-context-menu settings-entry-menu native-popover"
-        style={{ top: settingsMenuPos.top, left: settingsMenuPos.left }}
-        role="menu"
-        aria-label={translate("common.settings")}
-      >
-        {SETTINGS_SECTION_ITEMS.map((item) => {
-          const label = translate(item.labelKey);
-          const disabled = item.requiresProject && !projectTrustCwd;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              role="menuitem"
-              disabled={disabled}
-              title={disabled ? translate("settings.projectRequired") : label}
-              onClick={() => {
-                closeSettingsMenu();
-                setSettingsSection(item.id);
-              }}
-            >
-              <SettingsSectionIcon section={item.id} size={14} strokeWidth={2} />
-              <span>{label}</span>
-            </button>
-          );
-        })}
-      </div>,
-      document.body,
-    )}
+    <SettingsEntryMenu menu={settingsEntryMenu} hasProject={Boolean(projectTrustCwd)} onSelectSection={setSettingsSection} />
     {/* After Settings, so it opens above it (z-index 1100 over 1000) when Settings › MCP asks for it. */}
     {projectTrustDialogOpen && projectTrustCwd && (
       <ProjectTrustDialog

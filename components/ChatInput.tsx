@@ -3,8 +3,6 @@
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useMemo, useImperativeHandle, forwardRef, KeyboardEvent, useId } from "react";
 import { isImeComposing } from "@/lib/ime";
 import { WEB_SLASH_COMMANDS, parseWebSlashCommand, type ViewSlashCommand } from "@/lib/web-slash-commands";
-import { createPortal } from "react-dom";
-import { canUseNativeMenu, menuPointBelow, showNativeMenu } from "@/lib/desktop-menu";
 import type { BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
 import type { SkillsResponse } from "@/lib/api-types";
 import type { ModelScopeWarning } from "@/lib/model-scope-warnings";
@@ -13,14 +11,14 @@ import type { TextContent, UserMessage } from "@/lib/types";
 import { mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft as rekeyStoredDraft, clearDraft, getDraft, setDraft, loadDraft, subscribeDrafts, getDraftStatus, retryDraft, type ChatDraftImage } from "@/lib/draft-store";
 import { buildPasteToken, normalizePastedText, shouldChipPastedText, splicePastedTexts, type ChatDraftText, type PastedTextChip } from "@/lib/pasted-text";
 import { MAX_ATTACHED_IMAGE_BYTES, MAX_ATTACHED_IMAGES, isBase64ImageWithinLimits } from "@/lib/image-attachments";
-import { buildEntriesFromFiles, buildAtInsertText, buildSessionMentionText, extractAtQuery, extractHashQuery, filterFileEntries, filterSessionEntries, type AtQueryMatch, type FileIndexEntry, type HashQueryMatch, type SessionMentionEntry } from "@/lib/file-fuzzy";
+import { buildEntriesFromFiles, buildAtInsertText, extractAtQuery, extractHashQuery, filterFileEntries, type AtQueryMatch, type FileIndexEntry } from "@/lib/file-fuzzy";
 import { prepareOutgoingMessage, type PreparedOutgoing, type ReferenceSelection } from "@/lib/prepare-outgoing";
 import type { ChatDraft } from "@/lib/draft-store";
 import type { TaskSetup } from "@/lib/task-types";
 import { BranchControl } from "./workbench/BranchControl";
 import { selectableThinkingLevels } from "@/lib/thinking-level-options";
 import { ImageLightbox } from "./ImageLightbox";
-import type { RoutedModelInfo, SessionInfo } from "@/lib/types";
+import type { RoutedModelInfo } from "@/lib/types";
 import { getMarkdownListContinuation } from "@/lib/markdown-list-continuation";
 import { isBareMcpCommand, isBuiltinMcpCommand } from "@/lib/mcp-command";
 import { FolderIcon, getFileIcon } from "./FileIcons";
@@ -35,7 +33,9 @@ import type { ContextUsage, SessionStatsInfo } from "@/lib/pi-types";
 import { ContextUsageRing } from "./ContextUsageRing";
 import { useChatAppearance } from "@/hooks/useChatAppearance";
 import type { ToolPreset } from "@/lib/tool-presets";
-
+import { SessionMentionMenu } from "./SessionMentionMenu";
+import { ComposerProjectChip, getProjectLabel } from "./ComposerProjectChip";
+import { useSessionMentionPalette } from "@/hooks/useSessionMentionPalette";
 
 
 export interface AttachedImage {
@@ -315,12 +315,6 @@ const THINKING_LEVEL_DESC_KEYS: Record<typeof THINKING_LEVELS[number], string> =
   auto: "chat.thinkingUseDefault", off: "chat.thinkingOff", minimal: "chat.thinkingMinimal", low: "chat.thinkingLow",
   medium: "chat.thinkingMedium", high: "chat.thinkingHigh", xhigh: "chat.thinkingXhigh", max: "chat.thinkingMax",
 };
-
-function getProjectLabel(projectPath: string | null | undefined): string | null {
-  const normalized = projectPath?.replace(/[\\/]+$/, "");
-  if (!normalized) return null;
-  return normalized.split(/[\\/]/).pop() ?? normalized;
-}
 
 function formatTokenCount(tokens: number): string {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
@@ -885,8 +879,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
   const [controlsMenuOpen, setControlsMenuOpen] = useState(false);
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
-  // Full-path flyout shown right of a hovered project row (replaces the native title tooltip).
-  const [projectPathTip, setProjectPathTip] = useState<{ path: string; top: number; left: number } | null>(null);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
 
     draftKey ? draftImagesToAttachedImages(getDraft(draftKey)?.images) : []
@@ -894,7 +886,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [pastedTexts, setPastedTexts] = useState<PastedTextChip[]>(() => (
     draftKey ? draftTextsToPastedTexts(getDraft(draftKey)?.texts) : []
   ));
-  const projectLabel = getProjectLabel(projectPath);
+  const projectLabel = getProjectLabel(projectPath, projectOptions);
   const trimmedValue = value.trimStart();
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const bashMode = attachedImages.length === 0 && trimmedValue.startsWith("!");
@@ -905,9 +897,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [atMenuOpen, setAtMenuOpen] = useState(false);
   const [atMenuMaxHeight, setAtMenuMaxHeight] = useState<number | null>(null);
   const [atActiveIndex, setAtActiveIndex] = useState(0);
-  const [hashQuery, setHashQuery] = useState<HashQueryMatch | null>(null);
-  const [hashMenuOpen, setHashMenuOpen] = useState(false);
-  const [hashActiveIndex, setHashActiveIndex] = useState(0);
   const [imageWarningDismissed, setImageWarningDismissed] = useState(false);
   const [historyMenuOpen, setHistoryMenuOpen] = useState(false);
   const [historyActiveIndex, setHistoryActiveIndex] = useState(0);
@@ -916,7 +905,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [fileIndex, setFileIndex] = useState<{ cwd: string; entries: FileIndexEntry[]; truncated: boolean } | null>(null);
   const [fileIndexLoading, setFileIndexLoading] = useState(false);
   const [atServerResult, setAtServerResult] = useState<{ cwd: string; query: string; matches: FileIndexEntry[] } | null>(null);
-  const [sessionIndex, setSessionIndex] = useState<{ entries: SessionMentionEntry[]; fetchedAt: number } | null>(null);
   const [skillDormancyState, setSkillDormancyState] = useState<{
     cwd: string;
     values: Record<string, boolean>;
@@ -941,17 +929,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const slashItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const atMenuRef = useRef<HTMLDivElement>(null);
   const atItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const hashItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const historyItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const fileIndexMetaRef = useRef<{ cwd: string; fetchedAt: number } | null>(null);
   const fileIndexFetchingRef = useRef<string | null>(null);
-  const sessionIndexFetchingRef = useRef(false);
-  const sessionMentionTargetsRef = useRef(new Map<string, string>());
   const draftKeyRef = useRef(draftKey);
   const valueRef = useRef(value);
   const attachedImagesRef = useRef(attachedImages);
   const pastedTextsRef = useRef(pastedTexts);
   const pendingImageCountRef = useRef(0);
+  const {
+    hashQuery, setHashQuery, hashMenuOpen, setHashMenuOpen, hashActiveIndex, setHashActiveIndex,
+    hashMatches, hashItemRefs, sessionIndex, sessionMentionTargetsRef, updateHashQuery, applyHashCompletion,
+  } = useSessionMentionPalette({ cwd, value, setValue, setAtQuery, textareaRef });
   valueRef.current = value;
   attachedImagesRef.current = attachedImages;
   pastedTextsRef.current = pastedTexts;
@@ -962,7 +951,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const preparingRef = useRef(false);
   const preparationRef = useRef<{ key: string; result: PreparedOutgoing } | null>(null);
   const preparationController = useRef<AbortController | null>(null);
-  const snapshot = useCallback((): ChatDraft => ({ value: valueRef.current, images: attachedImagesRef.current.map(imageToDraftImage), texts: pastedTextsToDraftTexts(pastedTextsRef.current), setup: draftSetup, references: { ...Object.fromEntries([...sessionMentionTargetsRef.current].map(([label, id]) => [label, { id }])), ...referenceSelections } }), [draftSetup, referenceSelections]);
+  const snapshot = useCallback((): ChatDraft => ({ value: valueRef.current, images: attachedImagesRef.current.map(imageToDraftImage), texts: pastedTextsToDraftTexts(pastedTextsRef.current), setup: draftSetup, references: { ...Object.fromEntries([...sessionMentionTargetsRef.current].map(([label, id]) => [label, { id }])), ...referenceSelections } }), [draftSetup, referenceSelections, sessionMentionTargetsRef]);
   const snapshotRef = useRef(snapshot); snapshotRef.current = snapshot;
   const prepare = useCallback(async () => {
     const draft = snapshotRef.current(); const owner = draftKeyRef.current;
@@ -1278,7 +1267,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [clearImages, draftKey]);
+  }, [clearImages, draftKey, setHashQuery, sessionMentionTargetsRef]);
 
   // Chips whose token was deleted from the composer by hand are dropped so
   // state, draft persistence and the chip row all follow the visible text.
@@ -1314,7 +1303,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       setHydratedDraftKey(draftKey);
     });
     return () => { cancelled = true; };
-  }, [draftKey, onSetupChange]);
+  }, [draftKey, onSetupChange, setHashQuery, sessionMentionTargetsRef]);
   useEffect(() => {
     if (!draftKey || hydratedDraftKey !== draftKey) return;
     setDraft(draftKey, snapshot());
@@ -1333,7 +1322,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     setDraftSetup(draft?.setup);
     onSetupChange?.(draft?.setup);
     setHydratedDraftKey(draftKey);
-  }, [draftKey, clearImages, onSetupChange]);
+  }, [draftKey, clearImages, onSetupChange, sessionMentionTargetsRef]);
   const persistenceStatus = draftKey ? getDraftStatus(draftKey) : "saved";
   const invalidDraftImages = attachedImages.length > MAX_ATTACHED_IMAGES || attachedImages.some((image) => !isBase64ImageWithinLimits(image));
   const orphanedPaste = (value.match(/\[Pasted text \d+ · \d+ lines\]/g) ?? []).some((token) => !pastedTexts.some((paste) => paste.token === token));
@@ -1506,28 +1495,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     setAtQuery(extractAtQuery(text.slice(0, pos)));
   }, [cwd]);
 
-  const updateHashQuery = useCallback((text: string, cursor: number | null) => {
-    if (!cwd) {
-      setHashQuery(null);
-      return;
-    }
-    const pos = cursor ?? text.length;
-    setHashQuery(extractHashQuery(text.slice(0, pos)));
-  }, [cwd]);
-
   const atQueryText = atQuery?.query ?? null;
   const atLocalFileMatches: FileIndexEntry[] = React.useMemo(() => (
     atQueryText !== null && fileIndex && fileIndex.cwd === cwd
       ? filterFileEntries(fileIndex.entries, atQueryText, 12)
       : []
   ), [atQueryText, fileIndex, cwd]);
-
-  const hashQueryText = hashQuery?.query ?? null;
-  const hashMatches: SessionMentionEntry[] = React.useMemo(() => (
-    hashQueryText !== null && sessionIndex
-      ? filterSessionEntries(sessionIndex.entries, hashQueryText)
-      : []
-  ), [hashQueryText, sessionIndex]);
 
   // When the client index is truncated (repo larger than the index cap),
   // local filtering cannot see deep files, so queries are also ranked
@@ -1572,17 +1545,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     setAtActiveIndex(0);
   }, [atTokenKey]);
 
-  const hashTokenKey = hashQuery === null ? null : `${hashQuery.start}:${hashQuery.quoted ? 1 : 0}:${hashQuery.query}`;
-  useEffect(() => {
-    if (hashTokenKey === null) {
-      setHashMenuOpen(false);
-      setHashActiveIndex(0);
-      return;
-    }
-    setHashMenuOpen(true);
-    setHashActiveIndex(0);
-  }, [hashTokenKey]);
-
   // Fetch the file index when the menu opens. The server caches per cwd for
   // ~10s, so re-opening refreshes cheaply; while typing nothing refetches.
   const atTokenActive = atQuery !== null;
@@ -1613,36 +1575,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       });
   }, [atTokenActive, cwd]);
 
-  // Sessions use the # palette. Keep this list lightweight by
-  // using the existing session summary endpoint; full content is fetched only
-  // when a selected session mention is sent.
-  useEffect(() => {
-    if (!hashQuery || !cwd) return;
-    if (sessionIndex && Date.now() - sessionIndex.fetchedAt < 10_000) return;
-    if (sessionIndexFetchingRef.current) return;
-    sessionIndexFetchingRef.current = true;
-    fetch("/api/sessions")
-      .then((res) => {
-        if (!res.ok) throw new Error(`session index failed: ${res.status}`);
-        return res.json() as Promise<{ sessions?: SessionInfo[] }>;
-      })
-      .then((data) => {
-        const entries = (data.sessions ?? []).map((session): SessionMentionEntry => ({
-          kind: "session",
-          id: session.id,
-          name: session.name,
-          firstMessage: session.firstMessage,
-          modified: session.modified,
-          messageCount: session.messageCount,
-        }));
-        setSessionIndex({ entries, fetchedAt: Date.now() });
-      })
-      .catch(() => {})
-      .finally(() => {
-        sessionIndexFetchingRef.current = false;
-      });
-  }, [hashQuery, cwd, sessionIndex]);
-
   const applyAtCompletion = useCallback((entry: FileIndexEntry) => {
     if (!atQuery) return;
     const ta = textareaRef.current;
@@ -1672,33 +1604,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       el.style.height = "auto";
       el.style.height = `${el.scrollHeight}px`;
     });
-  }, [atQuery, value]);
-
-  const applyHashCompletion = useCallback((entry: SessionMentionEntry) => {
-    if (!hashQuery) return;
-    const ta = textareaRef.current;
-    const cursor = ta?.selectionStart ?? value.length;
-    const before = value.slice(0, hashQuery.start);
-    let after = value.slice(cursor);
-    if (hashQuery.quoted && after.startsWith('"')) after = after.slice(1);
-    const sessionDisplayName = entry.name?.trim() || entry.firstMessage.trim() || "Untitled session";
-    const visibleSessionName = sessionDisplayName.replace(/"/g, "'").replace(/\n/g, " ");
-    sessionMentionTargetsRef.current.set(visibleSessionName, entry.id);
-    const text = buildSessionMentionText(visibleSessionName);
-    const newValue = before + text + after;
-    const newPos = before.length + text.length;
-    setValue(newValue);
-    setHashQuery(extractHashQuery(newValue.slice(0, newPos)));
-    setAtQuery(extractAtQuery(newValue.slice(0, newPos)));
-    requestAnimationFrame(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(newPos, newPos);
-      el.style.height = "auto";
-      el.style.height = `${el.scrollHeight}px`;
-    });
-  }, [hashQuery, value]);
+  }, [atQuery, value, setHashQuery]);
 
   useEffect(() => {
     if (atActiveIndex >= atMatches.length) {
@@ -1714,21 +1620,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (!atMenuOpen) return;
     atItemRefs.current[atActiveIndex]?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [atActiveIndex, atMenuOpen]);
-
-  useEffect(() => {
-    hashItemRefs.current.length = hashMatches.length;
-  }, [hashMatches.length]);
-
-  useEffect(() => {
-    if (!hashMenuOpen) return;
-    hashItemRefs.current[hashActiveIndex]?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [hashActiveIndex, hashMenuOpen]);
-
-  useEffect(() => {
-    if (hashActiveIndex >= hashMatches.length) {
-      setHashActiveIndex(Math.max(0, hashMatches.length - 1));
-    }
-  }, [hashMatches.length, hashActiveIndex]);
 
   useEffect(() => {
     if (historyActiveIndex >= inputHistory.length) {
@@ -1759,7 +1650,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       ta.style.height = "auto";
       ta.style.height = `${ta.scrollHeight}px`;
     });
-  }, []);
+  }, [setHashQuery]);
 
   const applySlashCommand = useCallback((command: SlashCommandPaletteItem, execute = false) => {
     if (execute && command.source === "builtin" && !["name", "compact", "side", "btw"].includes(command.name)) {
@@ -1967,7 +1858,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         }
       }
     },
-    [isMobile, enterSendMode, isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, displayedSlashCommands, slashActiveIndex, applySlashCommand, sendQueued, handleSend, hashMenuOpen, hashQuery, hashMatches, hashActiveIndex, applyHashCompletion, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value]
+    [isMobile, enterSendMode, isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, displayedSlashCommands, slashActiveIndex, applySlashCommand, sendQueued, handleSend, hashMenuOpen, hashQuery, hashMatches, hashActiveIndex, applyHashCompletion, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, setHashActiveIndex, setHashMenuOpen]
   );
 
   const handleInput = useCallback(() => {
@@ -2183,7 +2074,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       }
       if (projectDropdownRef.current && !projectDropdownRef.current.contains(e.target as Node)) {
         setProjectDropdownOpen(false);
-        setProjectPathTip(null);
       }
       if (historyMenuRef.current && !historyMenuRef.current.contains(e.target as Node) && !textareaRef.current?.contains(e.target as Node)) {
         setHistoryMenuOpen(false);
@@ -2420,52 +2310,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </div>
             </div>
           )}
-          {hashMenuOpen && hashQuery !== null && (() => {
-            const matchCountLabel = hashMatches.length === 1 ? t("chat.match") : t("chat.matches", { count: hashMatches.length });
-            return (
-              <div
-                className="native-popover composer-completion-popover is-front"
-              >
-                <div className="composer-completion-header">
-                  <span>{sessionIndex ? t("chat.sessions", { label: matchCountLabel }) : t("chat.loadingSessions")}</span>
-                  {showHints && <span className="composer-completion-hint">{t("chat.tabEnter")}</span>}
-                </div>
-                <div className="composer-completion-body">
-                  {!sessionIndex ? (
-                    <div className="composer-completion-empty">{t("chat.loadingSessions")}</div>
-                  ) : hashMatches.length === 0 ? (
-                    <div className="composer-completion-empty">{t("chat.noMatchingSessions")}</div>
-                  ) : hashMatches.map((entry, index) => {
-                    const active = index === hashActiveIndex;
-                    const name = entry.name?.trim() || entry.firstMessage.trim() || t("chat.untitledSession");
-                    return (
-                      <button
-                        key={`session:${entry.id}`}
-                        ref={(node) => {
-                          hashItemRefs.current[index] = node;
-                        }}
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          applyHashCompletion(entry);
-                        }}
-                        onMouseEnter={() => setHashActiveIndex(index)}
-                        className={`composer-completion-item is-session${active ? " is-active" : ""}`}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                          <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
-                        </svg>
-                        <span className="composer-ellipsis">
-                          <span className="composer-session-name">{name}</span>
-                          <span className="composer-session-sub">{entry.firstMessage}</span>
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })()}
+          {hashMenuOpen && hashQuery !== null && (
+            <SessionMentionMenu
+              loaded={sessionIndex !== null}
+              showHints={showHints}
+              matches={hashMatches}
+              activeIndex={hashActiveIndex}
+              itemRefs={hashItemRefs}
+              onPick={applyHashCompletion}
+              onHover={setHashActiveIndex}
+            />
+          )}
           {atMenuOpen && atQuery !== null && (() => {
             const indexLoading = fileIndexLoading && (!fileIndex || fileIndex.cwd !== cwd);
              const matchCountLabel = atMatches.length === 1 ? t("chat.match") : t("chat.matches", { count: atMatches.length });
@@ -2735,102 +2590,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </button>
             )}
             {showHints && projectLabel && (
-              <div ref={projectDropdownRef} className="composer-anchor is-static">
-                <button
-                  type="button"
-                  className={`chat-project-context${isCompact ? " is-compact" : ""}`}
-                  title={`${t("chat.switchProject")} · ${t("chat.currentProject", { path: projectPath ?? projectLabel })}`}
-                  aria-label={t("chat.currentProject", { path: projectPath ?? projectLabel })}
-                  aria-haspopup={projectOptions.length > 0 && onProjectChange ? "menu" : undefined}
-                  aria-expanded={projectOptions.length > 0 && onProjectChange ? projectDropdownOpen : undefined}
-                  onClick={(event) => {
-                    if (projectOptions.length > 0 && onProjectChange) {
-                      setProjectPathTip(null);
-                      // Desktop shell: the project list as a native popup.
-                      if (canUseNativeMenu()) {
-                        void showNativeMenu(
-                          projectOptions.map((projectRoot) => ({
-                            label: getProjectLabel(projectRoot) ?? projectRoot,
-                            checked: projectRoot === projectPath,
-                            onSelect: () => {
-                              if (projectRoot !== projectPath) onProjectChange(projectRoot);
-                            },
-                          })),
-                          menuPointBelow(event.currentTarget),
-                        ).then((shown) => { if (!shown) setProjectDropdownOpen(true); });
-                        return;
-                      }
-                      setProjectDropdownOpen((open) => !open);
-                    } else onSelectProject?.();
-                  }}
-                  disabled={!onSelectProject && !(projectOptions.length > 0 && onProjectChange)}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
-                  </svg>
-                  <span>{projectLabel}</span>
-                </button>
-                {projectDropdownOpen && projectOptions.length > 0 && onProjectChange && (
-                  <div
-                    className="native-popover composer-project-menu"
-                    role="menu"
-                    onMouseLeave={() => setProjectPathTip(null)}
-                    onScroll={() => setProjectPathTip(null)}
-                  >
-                    {projectOptions.map((projectRoot) => {
-                      const label = getProjectLabel(projectRoot) ?? projectRoot;
-                      const isCurrent = projectRoot === projectPath;
-                      return (
-                        <button
-                          key={projectRoot}
-                          type="button"
-                          role="menuitem"
-                          onClick={() => {
-                            setProjectDropdownOpen(false);
-                            setProjectPathTip(null);
-                            if (!isCurrent) onProjectChange(projectRoot);
-                          }}
-                          className={`composer-project-option${isCurrent ? " is-current" : ""}`}
-                          onMouseEnter={(e) => {
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            setProjectPathTip({ path: projectRoot, top: rect.top, left: rect.right + 8 });
-                          }}
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
-                          </svg>
-                          <span className="composer-ellipsis">{label}</span>
-                          {isCurrent && <span className="composer-check">✓</span>}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                {projectPathTip && projectDropdownOpen && createPortal(
-                  (() => {
-                    const vh = window.visualViewport?.height ?? window.innerHeight;
-                    const top = Math.max(8, Math.min(projectPathTip.top, vh - 40));
-                    return (
-                      <div
-                        role="tooltip"
-                        className="composer-path-tooltip"
-                        style={{
-                          top,
-                          left: projectPathTip.left,
-                          maxWidth: `calc(100vw - ${projectPathTip.left + 8}px)`,
-                          maxHeight: `calc(${vh}px - ${top + 8}px)`,
-                        }}
-                      >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="composer-icon">
-                          <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
-                        </svg>
-                        <span className="composer-wrap-anywhere">{projectPathTip.path}</span>
-                      </div>
-                    );
-                  })(),
-                  document.body,
-                )}
-              </div>
+              <ComposerProjectChip
+                menuRef={projectDropdownRef}
+                open={projectDropdownOpen}
+                onOpenChange={setProjectDropdownOpen}
+                label={projectLabel}
+                projectPath={projectPath}
+                isCompact={isCompact}
+                projectOptions={projectOptions}
+                onProjectChange={onProjectChange}
+                onSelectProject={onSelectProject}
+              />
             )}
             {cwd && onBranchNavigate && <BranchControl key={draftKey} cwd={cwd} onNavigate={onBranchNavigate} />}
             {/* Model selector — visible always, disabled during streaming */}

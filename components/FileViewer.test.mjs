@@ -71,3 +71,27 @@ test("markdown preview links carry PDF page fragments", () => {
   assert.match(source, /parsePdfPageFragment/);
   assert.match(source, /onOpenFile\(linkedFile, parsePdfPageFragment\(href\) \?\? undefined\)/);
 });
+
+test("fork loading, error and empty file states retain their live status component", () => {
+  const file = ts.createSourceFile("FileViewer.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const status = file.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "FileViewerStatus");
+  assert.ok(status, "the fork renders FileViewerStatus even though desktop upstream no longer does");
+  const { outputText } = ts.transpileModule(`${status.getText(file)}\nreturn FileViewerStatus;`, {
+    compilerOptions: { jsx: ts.JsxEmit.React },
+  });
+  const render = new Function("React", outputText)(React);
+  const loading = render({ kind: "loading" });
+  assert.equal(loading.props.role, "status");
+  assert.equal(loading.props.children[1].props.children, "Opening file");
+  const empty = render({ kind: "empty" });
+  assert.equal(empty.props.children[1].props.children, "Nothing to preview");
+  let retried = 0;
+  const error = render({ kind: "error", message: "File unavailable", onRetry: () => { retried += 1; } });
+  assert.equal(error.props.role, "alert");
+  assert.equal(error.props.children[2].props.children, "File unavailable");
+  error.props.children[3].props.onClick();
+  assert.equal(retried, 1);
+  assert.match(source, /<FileViewerStatus kind="loading"/);
+  assert.match(source, /<FileViewerStatus kind="error" message=\{error\} onRetry=/);
+  assert.match(source, /<FileViewerStatus kind="empty"/);
+});

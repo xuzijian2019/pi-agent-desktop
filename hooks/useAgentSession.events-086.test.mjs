@@ -4,36 +4,45 @@ import test from "node:test";
 import { Script } from "node:vm";
 import ts from "typescript";
 
-const source = ts.createSourceFile(
-  "useAgentSession.ts",
-  readFileSync(new URL("./useAgentSession.ts", import.meta.url), "utf8"),
-  ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX,
-);
-
-function findHandler(node, name) {
-  if (ts.isVariableDeclaration(node) && node.name.getText(source) === name) {
-    return node.initializer.arguments[0];
-  }
-  return ts.forEachChild(node, (child) => findHandler(child, name));
+function parse(file) {
+  return ts.createSourceFile(
+    file,
+    readFileSync(new URL(`./${file}`, import.meta.url), "utf8"),
+    ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX,
+  );
 }
 
-function compileHandler(name) {
-  const handler = findHandler(source, name);
+// handleAgentEvent is upstream's; the fork's extra events and the compaction
+// notice live in fork-owned hooks it delegates to.
+const source = parse("useAgentSession.ts");
+const forkEventsSource = parse("useForkAgentEvents.ts");
+const compactNoticeSource = parse("useCompactNotice.ts");
+
+function findHandler(sourceFile, node, name) {
+  if (ts.isVariableDeclaration(node) && node.name.getText(sourceFile) === name) {
+    return node.initializer.arguments[0];
+  }
+  return ts.forEachChild(node, (child) => findHandler(sourceFile, child, name));
+}
+
+function compileHandler(name, sourceFile = source) {
+  const handler = findHandler(sourceFile, sourceFile, name);
   assert.ok(handler, `handler ${name} not found`);
-  return new Script(ts.transpileModule(handler.getText(source), {
+  return new Script(ts.transpileModule(handler.getText(sourceFile), {
     compilerOptions: { target: ts.ScriptTarget.ES2020 },
   }).outputText);
 }
 
 const handleAgentEvent = compileHandler("handleAgentEvent");
-const reportCompactFailure = compileHandler("reportCompactFailure");
+const handleForkAgentEvent = compileHandler("handleForkAgentEvent", forkEventsSource);
+const reportCompactFailure = compileHandler("reportCompactFailure", compactNoticeSource);
 
-function findFunction(node, name) {
-  if (ts.isFunctionDeclaration(node) && node.name?.getText(source) === name) return node;
-  return ts.forEachChild(node, (child) => findFunction(child, name));
+function findFunction(sourceFile, node, name) {
+  if (ts.isFunctionDeclaration(node) && node.name?.getText(sourceFile) === name) return node;
+  return ts.forEachChild(node, (child) => findFunction(sourceFile, child, name));
 }
 const compactNoopMessage = new Script(`(${ts.transpileModule(
-  findFunction(source, "compactNoopMessage").getText(source).replace(/^export /, ""),
+  findFunction(compactNoticeSource, compactNoticeSource, "compactNoopMessage").getText(compactNoticeSource).replace(/^export /, ""),
   { compilerOptions: { target: ts.ScriptTarget.ES2020 } },
 ).outputText})`).runInNewContext({});
 
@@ -52,14 +61,32 @@ function harness() {
   const bashRunningRef = { current: true };
   const agentRunningRef = { current: false };
   let compactFailure;
+  const sessionIdRef = { current: "s1" };
+  const sessionGenerationRef = { current: 0 };
+  const setSummarizationRetry = (v) => { state.summarizationRetry = v; };
+  const setPendingBash = (updater) => { state.pendingBash = updater(state.pendingBash); };
+  const loadSession = (sid) => { state.loadedSessions.push(sid); };
+  const forkHandler = handleForkAgentEvent.runInNewContext({
+    sessionIdRef,
+    sessionGenerationRef,
+    agentRunningRef,
+    bashRunningRef,
+    externalAppendRefreshAtRef: { current: null },
+    setSummarizationRetry,
+    setPendingBash,
+    loadSession,
+    onSessionForked() {},
+    PENDING_BASH_OUTPUT_CAP: 100,
+    Date,
+  });
   const handler = handleAgentEvent.runInNewContext({
+    handleForkAgentEvent: forkHandler,
     dispatch() {},
     cancelEventStreamGrace() {},
     sdkAgentActiveRef: { current: false },
     bashRunningRef,
     agentRunningRef,
-    sessionIdRef: { current: "s1" },
-    externalAppendRefreshAtRef: { current: 0 },
+    sessionIdRef,
     setAgentRunning() {}, setAgentPhase() {}, setRetryInfo() {},
     setIsCompacting(v) { state.isCompacting = v; },
     setCompactError(v) { state.compactError = v; },
@@ -71,8 +98,7 @@ function harness() {
     setActiveToolResults() {},
     setLiveModel() {},
     setLiveThinkingLevel(v) { state.liveThinkingLevel = v; },
-    setSummarizationRetry(v) { state.summarizationRetry = v; },
-    setPendingBash(updater) { state.pendingBash = updater(state.pendingBash); },
+    setSummarizationRetry,
     setContextUsage() {}, setSystemPrompt() {}, setExtensionStatuses() {}, setExtensionWidgets() {},
     scrollToBottom() {},
     notifyPromptStage() {},
@@ -81,12 +107,11 @@ function harness() {
     syncLiveModel() {},
     onAgentEnd() {},
     addNotice() {},
-    loadSession(sid) { state.loadedSessions.push(sid); },
+    loadSession,
     handleExtensionUiRequest() {},
     normalizeQueuedMessages: (v) => v,
     readCompactResult: (result, reason) => ({ reason, result }),
     asConcreteThinkingLevel: (v) => v,
-    PENDING_BASH_OUTPUT_CAP: 100,
     Date,
     console,
     window: undefined, document: undefined,
@@ -97,7 +122,7 @@ function harness() {
     setCompactNotice(v) { state.compactNotice = v; },
     setCompactResult(v) { state.compactResult = v; },
   });
-  return { handler, state, bashRunningRef, agentRunningRef };
+  return { handler, state, bashRunningRef, agentRunningRef, sessionIdRef, sessionGenerationRef };
 }
 
 test("bash_execution_update accumulates live output into the pending bash bubble", () => {
@@ -167,7 +192,7 @@ test("thinking_level_changed updates the live level immediately", () => {
 });
 
 test("entry_appended refreshes the transcript only when idle and throttled", () => {
-  const { handler, state, agentRunningRef, bashRunningRef } = harness();
+  const { handler, state, agentRunningRef, bashRunningRef, sessionIdRef, sessionGenerationRef } = harness();
   bashRunningRef.current = false;
   agentRunningRef.current = true;
   handler({ type: "entry_appended", entry: {} });
@@ -181,6 +206,16 @@ test("entry_appended refreshes the transcript only when idle and throttled", () 
   // Second append within the throttle window is dropped.
   handler({ type: "entry_appended", entry: {} });
   assert.equal(state.loadedSessions.length, 1);
+
+  // A different conversation gets its first refresh immediately, even inside
+  // the previous conversation's throttle window. Returning to s1 is new too.
+  sessionIdRef.current = "s2";
+  sessionGenerationRef.current += 1;
+  handler({ type: "entry_appended", entry: {} });
+  sessionIdRef.current = "s1";
+  sessionGenerationRef.current += 1;
+  handler({ type: "entry_appended", entry: {} });
+  assert.deepEqual(state.loadedSessions, ["s1", "s2", "s1"]);
 });
 
 test("legacy auto_compaction_* events are no longer handled", () => {

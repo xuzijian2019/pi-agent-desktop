@@ -25,7 +25,8 @@ test("keeps the project-tree sidebar without an inline explorer section", () => 
 });
 
 test("keeps session search and the project tree mounted after an upstream sidebar merge", () => {
-  assert.match(source, /sessionSearchOpen && \(/);
+  assert.match(source, /<SessionSearch\s+open=\{contentSearch\}/);
+  assert.match(source, /query=\{sessionQuery\}/);
   assert.match(source, /id="session-search-input"/);
   assert.match(source, /className="sidebar-project-tree"/);
   assert.doesNotMatch(source, /virtualIndices|getSessionListIndices/);
@@ -48,7 +49,8 @@ test("re-adding a removed project clears only its sidebar marker", () => {
   assert.match(source, /const activateProject = useCallback\(\(cwd: string\) =>/);
   assert.match(source, /if \(!previous\.has\(projectRoot\)\) return previous;/);
   assert.match(source, /next\.delete\(projectRoot\);/);
-  assert.match(source, /onSelectCwd=\{activateProject\}/);
+  // The add-project dialog is the only picker left in the sidebar.
+  assert.match(source, /onSelectCwd=\{\(cwd, source\) => \{\s+activateProject\(cwd\);/);
 });
 
 test("exposes the polled running-session set to the shell", () => {
@@ -132,7 +134,7 @@ test("hides subagent rows and aggregates their state into the main session row",
   assert.doesNotMatch(source, /function SessionTreeItem/);
 });
 
-test("the project context menu reveals the project in the OS file manager", () => {
+test("the project context menu reveals the project in the OS file manager", async () => {
   // Upstream's open-in-file-manager (#907) reaches the fork through the
   // project context menu: the desktop shell reveals natively and the browser
   // goes through /api/open-in-explorer, which the menu only offers after the
@@ -142,7 +144,9 @@ test("the project context menu reveals the project in the OS file manager", () =
   assert.match(source, /revealItemInDirNative\(root\)/);
   assert.match(source, /fetch\("\/api\/open-in-explorer", \{\s*method: "POST"/);
   assert.match(source, /FILE_MANAGER_ERROR_KEYS\[data\.error \?\? ""\]/);
-  assert.match(source, /\{projectRevealError && \(/);
+  // The menu itself is fork-owned (components/ProjectContextMenu.tsx).
+  const menuSource = await readFile(new URL("./ProjectContextMenu.tsx", import.meta.url), "utf8");
+  assert.match(menuSource, /\{projectRevealError && \(/);
   // The platform-adaptive label (Finder / Explorer / generic).
   assert.match(source, /"sidebar\.openInFinder"/);
   assert.match(source, /"sidebar\.openInExplorer"/);
@@ -186,9 +190,59 @@ test("folded projects persist across reloads", () => {
   assert.match(source, /allProjects\.some\(\(g\) => !collapsedProjects\.has\(g\.projectRoot\)\)/);
 });
 
+test("expanded session previews persist and reveal how many rows are hidden", () => {
+  assert.match(source, /getPrefJson<unknown>\(APP_PREF_KEYS\.expandedProjects\)/);
+  assert.match(source, /setPrefJson\(APP_PREF_KEYS\.expandedProjects, \[\.\.\.expandedProjectSessions\]\)/);
+  assert.match(
+    source,
+    /t\("sidebar\.showMoreSessions", \{ count: groupTree\.length - visibleGroupTree\.length \}\)/,
+  );
+});
+
+test("shows a cross-project recent section above the project tree", () => {
+  assert.match(source, /import \{ getRecallSessions, hasRecallSessionsToday \} from "@\/lib\/recent-sessions"/);
+  assert.match(source, /const recentSessions = !trimmedSessionQuery/);
+  assert.match(source, /<section className="sidebar-recent-section" aria-label=\{t\(hasTodaySessions \? "sidebar\.today" : "sidebar\.recent"\)\}>/);
+  assert.match(source, /t\(hasTodaySessions \? "sidebar\.today" : "sidebar\.recent"\)/);
+  assert.match(source, /subtitle=\{projectName\}/);
+});
+
 test("the row menu shows the compaction count only when the session was compacted", () => {
   assert.match(
     sessionItemSource,
     /\{\(session\.compactionCount \?\? 0\) > 0 && \(\s*<div>\{t\("sidebar\.compactionCount", \{ count: session\.compactionCount \?\? 0 \}\)\}<\/div>/,
   );
+});
+
+test("project worktree actions keep canonical identity and the fork navigation fallback", () => {
+  assert.match(source, /const menuSelectedCwd = worktreeState\?\.forCwd === selectedCwd\s*\? currentWorktreePath \?\? selectedCwd\s*: selectedCwd/);
+  assert.match(source, /selectedCwd=\{menuSelectedCwd\}/);
+  assert.match(source, /setWorktreeState\(\(previous\) => selectedProjectWorktreeState\(previous, project, path, loaded, created\)\);\s*setSelectedCwd\(path\)/);
+  assert.match(source, /if \(!shown\) openDomProjectMenu\(projectRoot, at, "worktrees"\)/);
+  assert.match(source, /if \(!shown\) openDomMenu\(\)/);
+  assert.match(sessionItemSource, /href=\{`\?session=\$\{encodeURIComponent\(session\.id\)\}`\}/);
+  assert.match(sessionItemSource, /event\.metaKey \|\| event\.ctrlKey \|\| event\.shiftKey \|\| event\.altKey/);
+});
+
+test("a late menu load cannot overwrite the newer project's worktree list", () => {
+  assert.match(source, /const loadId = \+\+projectMenuLoadIdRef\.current/);
+  assert.match(source, /if \(loadId !== projectMenuLoadIdRef\.current\) return/);
+  assert.match(source, /if \(loadId === projectMenuLoadIdRef\.current\) setProjectBranchLoading\(false\)/);
+});
+
+test("recent rows respect archived projects and route rename/delete back to the shell", () => {
+  assert.match(source, /const recallSessions = treeSessions\.filter\(\(session\) => !archivedProjectRoots\.has\(session\.projectRoot \?\? session\.cwd\)\)/);
+  assert.match(source, /getRecallSessions\(recallSessions\)/);
+  const recent = source.slice(source.indexOf('{recentSessions.length > 0'), source.indexOf('<div className="sidebar-project-tree-header">', source.indexOf('{recentSessions.length > 0')));
+  assert.match(recent, /onRenamed=\{loadSessions\}/);
+  assert.match(recent, /onDeleted=\{\(id\) => \{\s*onSessionDeleted\?\.\(id\);\s*void loadSessions\(\);/);
+});
+
+test("project menus leave branch switching exclusively to the composer while retaining Worktrees", () => {
+  assert.doesNotMatch(source, /onShowBranches=|onSwitchBranch=|showNativeBranchMenu|showNativeProjectBranchMenu|sidebar\.switchBranch/);
+  assert.doesNotMatch(source, /handleSwitchProjectBranch|wtSwitchingBranch/);
+  assert.match(source, /onShowWorktrees=\{\(\) => showProjectMenuView\(projectMenu\.root, "worktrees"\)\}/);
+  assert.match(source, /label: t\("sidebar\.worktrees"\), onSelect: \(\) => void showNativeWorktreeMenu\(projectRoot, at\)/);
+  assert.match(source, /await fetchRemoteBranches\(root\);\s*await showWorktrees\(root, at\)/);
+  assert.match(source, /onFetch=\{\(\) => void worktreeActions\.fetchBranches\(projectMenu\.root\)\}/);
 });

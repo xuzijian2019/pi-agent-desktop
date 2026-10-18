@@ -38,6 +38,9 @@ test("session restore remains desktop-only while panel state supports browsers",
   const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
   assert.match(source, /resolveInitialNavigation\(searchParams, desktopMode \? persistedWorkspace : null\)/);
   assert.match(source, /useDesktopConnection\(\)/);
-  assert.match(source, /activeFileTabId,\n      rightPanelOpen,\n    \} satisfies PersistedWorkspace/);
-  assert.match(source, /if \(!workspaceHydrated\) return/);
+  assert.match(source, /useDesktopWorkspaceTabs\(\{\s*desktopMode,/);
+  const workspaceTabsSource = await readFile(new URL("../hooks/useDesktopWorkspaceTabs.ts", import.meta.url), "utf8");
+  assert.match(workspaceTabsSource, /activeFileTabId,\n      rightPanelOpen,\n    \} satisfies PersistedWorkspace/);
+  assert.match(workspaceTabsSource, /if \(!workspaceHydrated\) return/);
+  assert.doesNotMatch(workspaceTabsSource, /if \(!desktopMode \|\| !workspaceHydrated\) return/);
 });

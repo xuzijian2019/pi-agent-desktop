@@ -49,6 +49,7 @@ test("ctx.ui.setStatus reaches one status component in the fork composer", () =>
   assert.doesNotMatch(chatWindowSource, /<ExtensionStatus(?:Bar|Line)\b/);
 });
 
-test("follows a session an extension command moved to", () => {
-  assert.match(hookSource, /case "session_replaced":[\s\S]*?onSessionForked\?\.\(event\.sessionId\)/);
+test("follows a session an extension command moved to", async () => {
+  const forkEventsSource = await readFile(new URL("../hooks/useForkAgentEvents.ts", import.meta.url), "utf8");
+  assert.match(forkEventsSource, /case "session_replaced":[\s\S]*?onSessionForked\?\.\(event\.sessionId\)/);
 });
