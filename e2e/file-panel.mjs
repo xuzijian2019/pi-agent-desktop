@@ -18,12 +18,12 @@ export async function checkFilePanel(page, filePath) {
     await hideSidebar.click();
   }
   const panel = page.locator("#file-panel");
-  const showPanel = page.locator('.right-panel-toggle-button[aria-label="Show file panel"]');
-  const hidePanel = page.locator('#file-panel [aria-label="Hide file panel"]');
+  const showPanel = page.locator('.right-panel-toggle-button[aria-label="Show workspace"]');
+  const hidePanel = page.locator('#file-panel [aria-label="Hide workspace"]');
   const hidePanelInStrip = hidePanel;
   await showPanel.click();
   await panel.waitFor({ state: "visible" });
-  // The panel opens as a preview surface; the file list starts hidden.
+  // A manual open of an empty workspace shows its files immediately.
   const showFileList = panel.locator('.file-tree-toggle[aria-label="Show file list"]');
   if (await showFileList.isVisible()) await showFileList.click();
   await panel.locator(`[role="button"][title="${filePath}"]`).click();

@@ -114,49 +114,53 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
-            ## Pi Agent Desktop 0.7.2
+            ## Pi Agent Desktop 0.7.3
 
             ### New
 
-            - Settings follows each platform's preferences-window style: a centered toolbar on macOS, a navigation pane on Windows and Linux. ⌘, / Ctrl+, opens Settings.
-            - Retains the fork's simplified composer, separate reasoning and tool controls, project tree, Side Chat/Recap, and persistent drafts.
-            - Settings › Models shows a provider's `modelOverrides` with an **Override** badge on affected models. Empty limit fields read "Not set" instead of placeholder numbers.
-            - Models settings explains how to enable the xhigh/max thinking levels.
+            - The sidebar gains a cross-project **Recent** section, remembers expanded project lists, and disambiguates projects that share a folder name.
+            - The composer project chip and project menus use the same disambiguated project names.
+            - Fetch, create, switch, and remove Git worktrees from a project's **…** menu; branch switching stays in the composer git control.
+            - Scheduled Tasks shows which process owns the scheduler lease and lets a stale or exited owner be taken over safely.
 
             ### Fixed
 
-            - The macOS traffic lights line up with the top bar again and use the macOS 26 style.
-            - On Windows and Linux, the sidebar buttons and the panel toggle line up with the top bar.
-            - The conversation navigator jumps to a turn again. Clicking its preview card also jumps.
+            - Direct Scheduled URLs no longer lose their workspace selection while restoring a hidden chat.
+            - Mobile and narrow desktop layouts keep a visible way to close the workspace overlay.
+            - Opening the workspace panel with no file selected now shows the project file tree.
+            - Skills installation rejects option-like package names, and LAN/terminal authorization is stricter.
 
             ### Other
 
-            - The bundled pi SDK is upgraded to 1.3.0.
-            - The README explains how to open the app when macOS Gatekeeper blocks the first launch.
+            - `npm test` checks installed dependencies against the lockfile before running.
+            - Route coverage expands for worktrees, skills, API keys, desktop dialogs, and terminals.
+            - A vulnerable transitive `sprintf-js` dependency is removed.
 
             Bundled components: pi 1.3.0, pi-web 0.10.0.
 
             ---
 
-            ## Pi Agent Desktop 0.7.2
+            ## Pi Agent Desktop 0.7.3
 
             ### 新增
 
-            - 设置窗口跟随各平台的偏好设置风格：macOS 为居中工具栏，Windows 和 Linux 为左侧导航栏。⌘, / Ctrl+, 可打开设置。
-            - 保留 fork 的简化输入框、独立推理强度与工具选择、项目树、Side Chat/Recap 和持久化草稿。
-            - 设置 › 模型会显示服务商的 `modelOverrides`，受影响的模型带**覆盖**标记。未填写的上限字段显示“未设置”，不再用占位数字冒充上限。
-            - 模型设置中说明了如何启用 xhigh/max 思考级别。
+            - 侧边栏新增跨项目**最近**区域，会记住项目列表的展开状态，并为同名项目补充父目录以作区分。
+            - 输入框的项目标签与项目菜单使用相同的去重命名规则。
+            - 可在项目 **…** 菜单中拉取、创建、切换和移除 Git worktree；分支切换仍统一在输入框的 Git 控件中操作。
+            - 定时任务页会显示调度租约的负责进程；租约过期或进程退出后可安全接管。
 
             ### 修复
 
-            - macOS 红绿灯按钮重新与顶栏对齐，并使用 macOS 26 新样式。
-            - Windows 和 Linux 上，侧边栏按钮和面板开关与顶栏对齐。
-            - 对话导航器可以重新跳转到对应轮次，点击预览卡片也会跳转。
+            - 直接打开定时任务页时，后台恢复的工作区选择不再丢失。
+            - 移动端和窄桌面布局始终有可见入口关闭工作区浮层。
+            - 没有选中文件时打开工作区面板，会显示项目文件树。
+            - Skills 安装会拒绝形似命令参数的包名；LAN 与终端授权也更严格。
 
             ### 其他
 
-            - 内置 pi SDK 升级到 1.3.0。
-            - README 说明了 macOS Gatekeeper 拦截首次启动时如何打开应用。
+            - `npm test` 会先按锁文件检查已安装依赖再运行测试。
+            - 增加 worktree、Skills、API key、桌面对话框和终端路由测试。
+            - 移除存在漏洞的间接依赖 `sprintf-js`。
 
             内置组件版本：pi 1.3.0、pi-web 0.10.0。
           releaseDraft: true

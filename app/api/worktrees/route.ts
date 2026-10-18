@@ -90,6 +90,9 @@ export async function POST(req: Request) {
     if (!body.branch || typeof body.branch !== "string") {
       return NextResponse.json({ error: "branch is required" }, { status: 400 });
     }
+    if (body.branch.startsWith("-")) {
+      return NextResponse.json({ error: "Invalid branch name" }, { status: 400 });
+    }
     const denied = await checkCwdAllowed(body.cwd);
     if (denied) return denied;
     if (!existsSync(body.cwd)) {
@@ -118,6 +121,9 @@ export async function PUT(req: Request) {
     }
     if (!body.branch || typeof body.branch !== "string") {
       return NextResponse.json({ error: "branch is required" }, { status: 400 });
+    }
+    if (body.branch.startsWith("-")) {
+      return NextResponse.json({ error: "Invalid branch name" }, { status: 400 });
     }
     const denied = await checkCwdAllowed(body.cwd);
     if (denied) return denied;

@@ -36,9 +36,10 @@ test("only the per-message line is gated; ring, /session and codemode cost stay"
 
 test("Settings › General exposes the switch in every locale", async () => {
   assert.match(await read("../components/SettingsPanel.tsx"), /useShowMessageUsage\(\)/);
-  for (const locale of ["en", "zh-CN", "zh-TW"]) {
-    const messages = await read(`../lib/i18n/messages/${locale}.ts`);
-    assert.match(messages, /"appSettings\.showMessageUsage":/, locale);
-    assert.match(messages, /"appSettings\.showMessageUsageHint":/, locale);
+  const { forkLocalePlugins } = await jiti.import("@/lib/i18n/locale-plugins.ts");
+  assert.deepEqual(forkLocalePlugins.map(({ id }) => id), ["en", "zh-CN", "zh-TW"]);
+  for (const { id, messages } of forkLocalePlugins) {
+    assert.equal(typeof messages["appSettings.showMessageUsage"], "string", id);
+    assert.equal(typeof messages["appSettings.showMessageUsageHint"], "string", id);
   }
 });

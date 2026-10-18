@@ -162,7 +162,7 @@ test("composer metadata and rounded panel remain uncluttered at desktop and phon
   await expect(panel.locator(".right-panel-tab-strip")).toHaveCount(1);
   await expect(panel.getByRole("combobox")).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("panel-desktop.png") });
-  await page.getByRole("button", { name: "Hide file panel", exact: true }).click();
+  await page.getByRole("button", { name: "Hide workspace", exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(branch).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

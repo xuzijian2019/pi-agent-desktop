@@ -44,7 +44,7 @@ test("artifact cards open in the fork panel with isolated previews and local fil
   await expect(panel.locator(".file-viewer-shell")).toContainText("LOCAL_FILE_TAB");
   await panel.getByRole("tab", { name: "Merge artifact", exact: true }).click();
   await expect(page.frameLocator(".artifact-panel iframe").locator("#fixture")).toHaveText("ARTIFACT_PREVIEW_OK");
-  await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
+  await panel.getByRole("button", { name: "Hide workspace", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Message", exact: true })).toBeFocused();
   await page.screenshot({ path: test.info().outputPath("artifact-and-file-tabs.png") });
   expect(errors).toEqual([]);
