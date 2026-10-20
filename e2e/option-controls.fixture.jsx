@@ -20,8 +20,8 @@ function ProjectMenuFixture({kind}){
   onCreateWorktree={()=>{window.__createdBranch=branch;}} onClose={()=>setOpen(false)}/>;
 }
 function Gallery(){
- const [value,setValue]=useState('medium'),[path,setPath]=useState('D:/project-a'),[panel,setPanel]=useState('form'),[exposure,setExposure]=useState('codemode'),[defaultThinking,setDefaultThinking]=useState('high'),[thinking,setThinking]=useState('high');
- window.__values=()=>({value,path,exposure});
+ const [value,setValue]=useState('medium'),[path,setPath]=useState('D:/project-a'),[panel,setPanel]=useState('form'),[exposure,setExposure]=useState('codemode'),[defaultThinking,setDefaultThinking]=useState('high'),[thinking,setThinking]=useState('high'),[tools,setTools]=useState('configured'),[model,setModel]=useState({provider:'fixture',modelId:'first'}),[defaultModel,setDefaultModel]=useState(null);
+ window.__values=()=>({value,path,exposure,thinking,defaultThinking,tools,model,defaultModel});
  const server={name:'github',scope:'global',sourcePath:'D:/test/.pi/agent/mcp.json',configKey:'key',enabled:true,validated:true,envNames:[],headerNames:[],usesOAuth:false,commandFields:[],variableReferences:[],masked:false,transport:'http',exposure,url:'https://example.com/mcp'};
  const overview={mcp:{available:true},codemode:{sandbox:{state:'available'},builtinDisabled:false,preference:'automatic'},files:[{scope:'global',path:server.sourcePath,exists:true,problems:[]}],servers:[server]};
  return <I18nProvider><div style={{padding:20,maxWidth:1000,margin:'auto'}}>
@@ -29,10 +29,10 @@ function Gallery(){
  {panel==='settings'&&<SettingsPanel cwd={null} sessionId={null} initialSection="general" onClose={()=>setPanel('form')} onSessionReloaded={()=>{}} quoteSelectionEnabled onQuoteSelectionChange={()=>{}} soundEnabled={false} onSoundToggle={()=>{}}/>}
  {panel.startsWith('project-')?<ProjectMenuFixture key={panel} kind={panel.slice(8)}/>:panel==='menus'?<>
   <div style={{height:380}} />
-  <ChatInput isStreaming={false} onSend={()=>{}} onAbort={()=>{}} onToolPresetChange={()=>{}}
+  <ChatInput isStreaming={false} onSend={()=>{}} onAbort={()=>{}} toolPreset={tools} onToolPresetChange={setTools}
    thinkingLevel={thinking} onThinkingLevelChange={setThinking} savedDefaultThinkingLevel={defaultThinking} onSetDefaultThinkingLevel={level=>{setDefaultThinking(level);setThinking(level);}}
-   model={{provider:'fixture',modelId:'first'}} modelList={[{id:'first',name:'First model',provider:'fixture'},{id:'second',name:'Second model',provider:'fixture'}]}
-   onModelChange={()=>{}} onSetDefaultModel={()=>{}} inputHistory={['First prompt','Second prompt']}
+   model={model} defaultModel={defaultModel} modelList={[{id:'first',name:'First model',provider:'fixture'},{id:'second',name:'Second model',provider:'fixture'}]}
+   onModelChange={(provider,modelId)=>setModel({provider,modelId})} onSetDefaultModel={(provider,modelId)=>{setDefaultModel({provider,modelId});setModel({provider,modelId});}} inputHistory={['First prompt','Second prompt']}
    slashCommands={[{name:'help',source:'builtin',description:'First command'},{name:'status',source:'builtin',description:'Second command'},{name:'clear',source:'builtin',description:'Third command'}]}/>
   <div id="action-samples" style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:16,marginTop:20}}>
    {['app-topbar-more-menu','dom-context-menu'].map(kind=><div key={kind} data-menu-sample={kind} className={'native-popover app-menu '+kind} role="menu" style={{position:'static',width:'auto'}}>

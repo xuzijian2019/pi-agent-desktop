@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 export async function checkComposerGeometry(page) {
-  const input = page.locator(".chat-input-textarea");
+  const input = page.locator(".chat-composer textarea");
   const previousDraft = await input.inputValue();
   const heights = [];
   try {

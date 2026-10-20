@@ -1,18 +1,18 @@
 import { readFile, mkdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import ts from "typescript";
+import { build } from "esbuild";
 import { test, expect, type Page } from "@playwright/test";
 import { WORK_ROOT } from "./sandbox";
 import type * as DraftStore from "../../lib/draft-store";
 declare global { interface Window { drafts: typeof DraftStore } }
 // Execute the production store with real IndexedDB in isolated browser contexts.
 async function installStore(page: Page) {
-  const imageSource = (await readFile("lib/image-attachments.ts", "utf8")).replace(/^export /gm, "");
-  const source = imageSource + "\n" + (await readFile("lib/draft-store.ts", "utf8"))
-    .replace('import { APP_PREF_KEYS } from "./app-prefs";', 'const APP_PREF_KEYS = { chatDrafts: "pi-chat-drafts-v1" };')
-    .replace('import { MAX_ATTACHED_IMAGES, isBase64ImageWithinLimits } from "./image-attachments";', "");
-  const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  await page.evaluate((js) => { const exports = {}; new Function("exports", js)(exports); window.drafts = exports as typeof DraftStore; }, js);
+  const bundle = await build({ entryPoints: ["lib/draft-store.ts"], bundle: true,
+    platform: "browser", format: "iife", globalName: "__e2eDraftStore", write: false });
+  // Bundle the actual dependency graph, including chat attachment parsing, rather
+  // than manually stripping imports and leaving browser-incompatible require().
+  await page.addScriptTag({ content: bundle.outputFiles[0].text + "\nwindow.drafts = __e2eDraftStore;" });
 }
 async function saved(page: Page, key: string) { await expect.poll(() => page.evaluate((key) => window.drafts.getDraftStatus(key), key)).toBe("saved"); }
 
@@ -67,6 +67,7 @@ test("composer reload, orphan blocking, browser shortcut and server feedback", a
   await page.getByRole("button", { name: "Reconnect", exact: true }).click();
   await expect(page.getByRole("alert").filter({ hasText: /connection|server|offline/i })).toHaveCount(0, { timeout: 20_000 });
   await expect(composer).toHaveValue("keep while offline");
+  await page.locator(".sidebar-project-tree-header").filter({ has: page.getByRole("button", { name: "Add project", exact: true }) }).hover();
   await page.getByRole("button", { name: "Add project", exact: true }).click();
   const dialog = page.getByRole("dialog"); await expect(dialog).toBeVisible();
   await page.keyboard.press("Escape");
@@ -101,7 +102,7 @@ test("latest selection, history, native links and project search", async ({ page
   await expect(page).toHaveTitle(/beta.*navigation-/);
   // Timeline and the project tree are distinct routes to the same session. Both
   // must reflect selection and restore the same draft after either is clicked.
-  await page.locator(".sidebar-project-tree-header").hover();
+  await page.locator(".sidebar-project-tree-header").filter({ has: page.getByRole("button", { name: "Projects menu", exact: true }) }).hover();
   await page.getByRole("button", { name: "Projects menu", exact: true }).click();
   await page.getByRole("menuitemradio", { name: "Session timeline", exact: true }).click();
   const recentA = page.locator(`.sidebar-project-timeline a[href="?session=${ids[0]}"]`);
@@ -113,7 +114,7 @@ test("latest selection, history, native links and project search", async ({ page
   await recentB.click(); await expect(page).toHaveURL(new RegExp(ids[1]));
   await expect(composer).toHaveValue("draft beta");
   await expect(recentB).toHaveAttribute("aria-current", "page");
-  await page.locator(".sidebar-project-tree-header").hover();
+  await page.locator(".sidebar-project-tree-header").filter({ has: page.getByRole("button", { name: "Projects menu", exact: true }) }).hover();
   await page.getByRole("button", { name: "Projects menu", exact: true }).click();
   await page.getByRole("menuitemradio", { name: "Group by project", exact: true }).click();
   await expect(linkB).toHaveAttribute("aria-current", "page");

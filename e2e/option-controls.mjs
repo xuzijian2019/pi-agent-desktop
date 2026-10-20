@@ -22,10 +22,27 @@ async function assertRowGaps(rows,label){
  assert.ok(gaps.every(gap=>Math.abs(gap-4)<0.5),JSON.stringify({label,gaps}));
  return gaps;
 }
-async function assertSelectionPill(row){
- const pill=await row.evaluate(el=>{const s=getComputedStyle(el,'::before');return {content:s.content,width:s.width,height:s.height,color:s.backgroundColor};});
- assert.equal(pill.content,'""');assert.equal(pill.width,'3px');assert.equal(pill.height,'16px');
- assert.notEqual(pill.color,'rgba(0, 0, 0, 0)');
+// The fork uses contiguous native button rows, not upstream SelectorRow's
+// 4px-spaced options/pills. Assert its own exact spacing plus unclipped hit areas.
+async function assertForkRows(surface, rows, label, inset=8) {
+ const box=await surface.boundingBox();
+ const rects=await rows.evaluateAll(items=>items.map(el=>{const r=el.getBoundingClientRect(),s=getComputedStyle(el);return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height,radius:parseFloat(s.borderTopLeftRadius)};}));
+ assert.ok(rects.length>=2,label+' exercises multiple rows');
+ for(const row of rects){
+  assert.ok(row.height>=26&&row.width>80,JSON.stringify({label,row}));
+  assert.ok(Math.abs(row.left-box.x-inset)<=1&&Math.abs(box.x+box.width-row.right-inset)<=1,JSON.stringify({label,row,box,inset}));
+  assert.equal(row.radius,5,label+' native row radius');
+ }
+ const gaps=rects.slice(1).map((r,i)=>r.top-rects[i].bottom);
+ assert.ok(gaps.every(g=>Math.abs(g)<=0.5),JSON.stringify({label,gaps}));
+ return gaps;
+}
+async function assertNativeKeyboardActivation(page, button) {
+ await button.focus();
+ assert.equal(await button.evaluate(el=>document.activeElement===el),true,'native button accepts keyboard focus');
+ // These fork buttons retain Enter activation; arrow navigation is covered by
+ // AppSelect above, not claimed for the fork's role-less composer menus.
+ await page.keyboard.press('Enter');
 }
 async function assertChoiceGeometry(surface,rows,label){
  const box=await surface.evaluate(el=>{const r=el.getBoundingClientRect(),s=getComputedStyle(el);return {left:r.left+parseFloat(s.borderLeftWidth),right:r.right-parseFloat(s.borderRightWidth)};});
@@ -88,50 +105,55 @@ try{
   await checkComposerGeometry(page);
   const tool=page.getByRole('button',{name:'更改工具预设',exact:true});
   if(!await tool.isVisible())await page.getByRole('button',{name:'更多控件',exact:true}).click();
-  await tool.click();const tools=page.locator('.composer-tool-menu');await tools.waitFor();
-  const toolRows=tools.locator('.app-option-row');const toolGaps=await assertRowGaps(toolRows,'actual Config');
-  await assertChoiceGeometry(tools,toolRows,'actual Config');
-  await assertSelectionPill(tools.locator('.app-option-row[data-selected]'));
+  await tool.click();const tools=page.locator('.composer-dropdown-panel.is-tools');await tools.waitFor();
+  const toolRows=tools.locator('button.composer-option-row');const toolGaps=await assertForkRows(tools,toolRows,'fork tools');
+  assert.equal(await toolRows.count(),5);
+  assert.equal(await toolRows.first().locator('.composer-icon').count(),1,'active tool has checkmark');
   await toolRows.nth(1).hover();
-  await page.waitForFunction(()=>getComputedStyle(document.querySelectorAll('.composer-tool-menu .app-option-row')[1]).backgroundColor!=='rgba(0, 0, 0, 0)');
-  const states=await toolRows.evaluateAll(rows=>rows.slice(0,2).map(row=>({selected:row.hasAttribute('data-selected'),color:getComputedStyle(row).backgroundColor,hovered:row.matches(':hover')})));
+  const states=await toolRows.evaluateAll(rows=>rows.slice(0,2).map(row=>({selected:row.classList.contains('is-active'),color:getComputedStyle(row).backgroundColor,hovered:row.matches(':hover')})));
   assert.equal(states[0].selected,true);assert.equal(states[1].hovered,true);assert.ok(states.every(state=>state.color!=='rgba(0, 0, 0, 0)'));
   await tools.screenshot({path:`test-results/ui-send/menu-gap-config-${theme}-${width}.png`});
-  await page.keyboard.press('ArrowDown');await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-selected')==='false'&&document.activeElement.matches(':focus-visible'));
-  assert.ok(await page.locator(':focus').evaluate(el=>parseFloat(getComputedStyle(el).outlineWidth)>=2),'keyboard focus must remain visible');
-  await page.keyboard.press('Escape');await tools.waitFor({state:'hidden'});
+  await assertNativeKeyboardActivation(page,toolRows.nth(1));await tools.waitFor({state:'hidden'});
+  assert.equal(await page.evaluate(()=>window.__values().tools),'none');
+  await tool.click();await tools.waitFor();assert.equal(await toolRows.nth(1).evaluate(el=>el.classList.contains('is-active')),true);
+  await toolRows.first().click();await tools.waitFor({state:'hidden'});
   const reasoning=page.getByRole('button',{name:'更改推理级别',exact:true});await reasoning.click();
-  const reasoningRows=page.getByRole('listbox').locator('.app-option-row');await assertRowGaps(reasoningRows,'actual reasoning');
-  await assertChoiceGeometry(page.getByRole('listbox'),reasoningRows,'actual reasoning');
-  await assertSelectionPill(page.getByRole('listbox').locator('.app-option-row[data-selected]'));
-  const saveDefault=page.getByRole('listbox').locator('.app-option-row > button:not([role])').first();
-  if(await saveDefault.count())assert.equal(await saveDefault.evaluate(el=>parseFloat(getComputedStyle(el).marginTop)),0,'default star must not get row spacing');
-  const low=reasoningRows.filter({has:page.getByRole('option',{name:/^low\b/})});
-  const star=low.locator('button.app-default-star');await star.hover();
-  const starStyle=await star.evaluate(el=>{const s=getComputedStyle(el);return {border:s.borderTopWidth,bg:s.backgroundColor,shadow:s.boxShadow};});
-  assert.equal(starStyle.border,'0px');assert.equal(starStyle.bg,'rgba(0, 0, 0, 0)');assert.equal(starStyle.shadow,'none');
-  await star.click();await low.locator('.app-default-star.is-default').waitFor();
-  assert.equal(await low.locator('[role="option"]').getAttribute('aria-selected'),'true','saved reasoning is applied through the existing callback');
-  // The star is reachable and usable from the keyboard: Right from a row, Enter to save, Left back.
-  const medium=reasoningRows.filter({has:page.getByRole('option',{name:/^medium\b/})});
-  await medium.getByRole('option').focus();await page.keyboard.press('ArrowRight');
-  await page.waitForFunction(()=>document.activeElement?.classList.contains('app-default-star'));
-  await page.keyboard.press('ArrowLeft');await page.waitForFunction(()=>document.activeElement?.getAttribute('role')==='option');
-  await page.keyboard.press('ArrowRight');await page.keyboard.press('Enter');
-  await medium.locator('.app-default-star.is-default').waitFor();
-  await page.waitForFunction(()=>document.activeElement?.getAttribute('role')==='option','keyboard focus stays in the menu after saving');
-  await page.getByRole('listbox').screenshot({path:`test-results/ui-send/selection-reasoning-${theme}-${width}.png`});
-  await page.keyboard.press('Escape');
-  await page.locator('textarea').click();
-  await page.getByRole('button',{name:'Change model',exact:true}).click();await assertRowGaps(page.getByRole('listbox').locator('.app-option-row'),'actual model choices');
-  await assertChoiceGeometry(page.getByRole('listbox'),page.getByRole('listbox').locator('.app-option-row'),'actual models');await page.keyboard.press('Escape');
+  const reasoningMenu=page.locator('.composer-dropdown-panel.is-thinking');
+  const reasoningRows=reasoningMenu.locator('button.composer-option-row');await assertForkRows(reasoningMenu,reasoningRows,'fork reasoning');
+  assert.equal(await reasoningMenu.locator('.composer-option-row.is-active .composer-icon').count(),1);
+  const low=reasoningMenu.locator('.composer-option-star-row').filter({has:page.locator('.composer-option-label',{hasText:/^low$/})});
+  const star=low.locator('button.composer-option-star');await low.hover();await star.waitFor({state:'visible'});
+  const starBox=await star.boundingBox(),lowBox=await low.boundingBox();
+  assert.ok(starBox.x>=lowBox.x&&starBox.x+starBox.width<=lowBox.x+lowBox.width&&starBox.y>=lowBox.y&&starBox.y+starBox.height<=lowBox.y+lowBox.height,'default star stays inside its row');
+  await star.click();await reasoningMenu.waitFor({state:'hidden'});
+  assert.equal(await page.evaluate(()=>window.__values().defaultThinking),'low');assert.equal(await page.evaluate(()=>window.__values().thinking),'low');
+  await reasoning.click();await low.locator('.composer-option-star.is-default').waitFor();
+  assert.equal(await low.locator('.composer-option-row').evaluate(el=>el.classList.contains('is-active')),true);
+  const medium=reasoningMenu.locator('.composer-option-star-row').filter({has:page.locator('.composer-option-label',{hasText:/^medium$/})});
+  await assertNativeKeyboardActivation(page,medium.locator('button.composer-option-star'));await reasoningMenu.waitFor({state:'hidden'});
+  assert.equal(await page.evaluate(()=>window.__values().defaultThinking),'medium');assert.equal(await page.evaluate(()=>window.__values().thinking),'medium');
+  await reasoning.click();await medium.locator('.composer-option-star.is-default').waitFor();
+  await reasoningMenu.screenshot({path:`test-results/ui-send/selection-reasoning-${theme}-${width}.png`});
+  await reasoning.click();await reasoningMenu.waitFor({state:'hidden'});
+  await page.getByRole('button',{name:'Change model',exact:true}).click();
+  const models=page.locator('.composer-model-panel');const modelRows=models.locator('button.composer-option-row');
+  await assertForkRows(models,modelRows,'fork models');
+  await assertNativeKeyboardActivation(page,modelRows.nth(1));await models.waitFor({state:'hidden'});
+  assert.equal(await page.evaluate(()=>window.__values().model.modelId),'second');
+  await page.getByRole('button',{name:'Change model',exact:true}).click();
+  await models.locator('.composer-option-star-row').first().hover();await models.locator('button.composer-option-star').first().click();await models.waitFor({state:'hidden'});
+  assert.equal(await page.evaluate(()=>window.__values().defaultModel.modelId),'first');
   const input=page.locator('textarea');await input.fill('');await input.press('ArrowUp');
-  const history=page.locator('.app-suggestion-menu');await history.waitFor();await assertRowGaps(history.locator('button'),'actual input history');await input.press('Escape');
-  await input.fill('/');const commands=page.locator('.app-suggestion-menu .app-menu-items');await commands.waitFor();
-  const grid=await commands.evaluate(el=>{const s=getComputedStyle(el);return {row:s.rowGap,column:s.columnGap,rows:[...el.children].map(row=>{const r=row.getBoundingClientRect();return {top:r.top,bottom:r.bottom,margin:getComputedStyle(row).marginTop};})};});
-  assert.equal(grid.row,'4px');assert.equal(grid.column,'4px');assert.ok(grid.rows.every(row=>row.margin==='0px'));
-  if(width===1280)assert.equal(grid.rows[0].top,grid.rows[1].top,'grid columns must stay aligned');
-  else await assertRowGaps(commands.locator('button'),'single-column commands');
+  const history=page.locator('.composer-completion-popover.is-history');await history.waitFor();
+  await assertForkRows(history,history.locator('.composer-history-item'),'fork input history',12);
+  await input.press('Enter');await history.waitFor({state:'hidden'});assert.equal(await input.inputValue(),'Second prompt');
+  await input.fill('/');const commands=page.locator('.composer-completion-body.is-slash');await commands.waitFor();
+  const commandRows=commands.locator('.composer-slash-item');assert.ok(await commandRows.count()>=3);
+  const commandRects=await commandRows.evaluateAll(rows=>rows.map(el=>{const r=el.getBoundingClientRect();return {top:r.top,bottom:r.bottom,width:r.width,scroll:el.scrollWidth,client:el.clientWidth};}));
+  assert.ok(commandRects.every(r=>r.width>100&&r.scroll<=r.client+1),'command text must not overflow the narrow menu');
+  assert.ok(commandRects.slice(1).every((r,i)=>r.top>=commandRects[i].bottom),'fork commands are single-column non-overlapping rows');
+  await input.press('ArrowDown');const selected=await commands.locator('[aria-selected="true"] .composer-slash-name').textContent();
+  await input.press('Tab');assert.ok((await input.inputValue()).startsWith(selected),'keyboard completion inserts the selected command');
   await input.press('Escape');await input.fill('');
   for(const sample of await page.locator('[data-menu-sample]').all()){
    const kind=await sample.getAttribute('data-menu-sample');
@@ -169,5 +191,5 @@ try{
   assert.deepEqual(errors,[]);results.push({theme,width,options:5,mcpOptions:labels.length,geometry,colors,ratios,toolGaps,states});await page.close();
  }
  await writeFile('test-results/ui-send/consistency-controls.json',JSON.stringify(results,null,2));
- console.log('PASS: both themes at 1280/390/320; select interaction, MCP, actual Config/reasoning/model/history and action menus; 4px row separation, checked + hovered states and keyboard focus.');
+ console.log('PASS: both themes at 1280/390/320; select interaction, MCP, actual Config/reasoning/model/history and action menus; shared-menu 4px spacing and arrow focus; fork native-row geometry, checked/hovered states, Enter activation and default persistence.');
 }finally{await browser.close();await new Promise(r=>server.close(r));}
