@@ -33,11 +33,11 @@ export function ChatCommandDialog({ kind, choices, stats, sessionId, onFork, onC
     ? stats.costBreakdown ?? [] : [];
   const warming = liveCacheWarming ?? stats?.cacheWarming;
   return <div className="chat-command-backdrop" onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
-    <section ref={ref} role="dialog" aria-modal="true" aria-label={t(kind === "fork" ? "chat.commandFork" : kind === "session" ? "chat.commandSession" : "chat.commandHotkeys")} className="native-popover chat-command-dialog">
+    <section ref={ref} role="dialog" aria-modal="true" aria-label={t(kind === "fork" ? "chat.commandFork" : kind === "session" ? "chat.commandSession" : "chat.commandHotkeys")} className="native-popover app-menu chat-command-dialog">
       <header><strong>{t(kind === "fork" ? "chat.commandFork" : kind === "session" ? "chat.commandSession" : "chat.commandHotkeys")}</strong><button onClick={onClose} aria-label={t("chat.close")}>×</button></header>
       {kind === "fork" ? <>
         <p>{t("chat.forkChoose")}</p>
-        <div className="chat-command-choices">{choices.map((choice, index) => <button key={choice.id} onClick={() => onFork(choice.id)}><span>{index + 1}.</span> {choice.text}</button>)}</div>
+        <div className="chat-command-choices">{choices.map((choice, index) => <button className="app-menu-option" key={choice.id} onClick={() => onFork(choice.id)}><span>{index + 1}.</span> {choice.text}</button>)}</div>
       </> : kind === "session" ? <dl className="chat-command-hotkeys">
         {[["chat.statsMessages", stats?.totalMessages], ["chat.statsTools", stats?.toolCalls], ["chat.statsTokens", stats?.tokens.total], ["chat.statsCost", stats ? `$${stats.cost.toFixed(4)}` : undefined]].map(([key, value]) => <div key={key}><dt>{t(String(key))}</dt><dd>{value ?? "—"}</dd></div>)}
         {costBreakdown.length > 0 && <div><dt>{t("session.costByModel")}</dt><dd /></div>}

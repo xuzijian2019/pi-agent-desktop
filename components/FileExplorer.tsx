@@ -270,6 +270,7 @@ export function TreeNode({
   const [allowedLinkTarget, setAllowedLinkTarget] = useState<string | null>(null);
   const [allowingLink, setAllowingLink] = useState(false);
   const [allowLinkError, setAllowLinkError] = useState<string | null>(null);
+  const [confirmEnclosingLink, setConfirmEnclosingLink] = useState(false);
   // A link leading outside the project is refused until the operator allows
   // its target, so it asks for that instead of listing (#748).
   const pendingLinkTarget = node.outsideLinkTarget && node.outsideLinkTarget !== allowedLinkTarget
@@ -281,6 +282,7 @@ export function TreeNode({
   useEffect(() => {
     setAllowedLinkTarget(null);
     setAllowLinkError(null);
+    setConfirmEnclosingLink(false);
   }, [node.outsideLinkTarget]);
 
   const loadChildren = useCallback(async (force = false) => {
@@ -321,9 +323,11 @@ export function TreeNode({
     if (!pendingLinkTarget) return;
     // A link to `/`, `~` or a parent of the project opens far more than a
     // sibling folder, and a cloned repository can contain one.
-    if (node.outsideLinkEncloses && !window.confirm(t("files.allowEnclosingLinkConfirm", { target: pendingLinkTarget }))) {
+    if (node.outsideLinkEncloses && !confirmEnclosingLink) {
+      setConfirmEnclosingLink(true);
       return;
     }
+    setConfirmEnclosingLink(false);
     setAllowingLink(true);
     setAllowLinkError(null);
     try {
@@ -335,7 +339,7 @@ export function TreeNode({
     } finally {
       setAllowingLink(false);
     }
-  }, [node.fullPath, node.outsideLinkEncloses, pendingLinkTarget, loadChildren, t]);
+  }, [node.fullPath, node.outsideLinkEncloses, confirmEnclosingLink, pendingLinkTarget, loadChildren]);
 
   return (
     <div>
@@ -518,13 +522,27 @@ export function TreeNode({
         >
           <span style={{ wordBreak: "break-all" }}>{t("files.outsideLink", { target: pendingLinkTarget })}</span>
           {node.outsideLinkEncloses && (
-            <span style={{ color: "#f59e0b" }}>{t("files.outsideLinkEncloses")}</span>
+            <span
+              style={{
+                color: "#f59e0b",
+                display: "flex",
+                flexDirection: "column",
+                gap: 3,
+                wordBreak: "break-word",
+              }}
+            >
+              {t("files.outsideLinkEncloses")}
+              {confirmEnclosingLink && (
+                <span>{t("files.allowEnclosingLinkConfirm", { target: pendingLinkTarget })}</span>
+              )}
+            </span>
           )}
           <button
             type="button"
             onClick={handleAllowLink}
             disabled={allowingLink}
             title={t("files.allowOutsideLinkTitle", { target: pendingLinkTarget })}
+            aria-live="polite"
             style={{
               height: 20,
               padding: "0 8px",
@@ -539,7 +557,9 @@ export function TreeNode({
               whiteSpace: "nowrap",
             }}
           >
-            {t("files.allowOutsideLink")}
+            {node.outsideLinkEncloses && confirmEnclosingLink
+              ? t("common.confirmDelete")
+              : t("files.allowOutsideLink")}
           </button>
           {allowLinkError && (
             <span role="alert" style={{ color: "#f87171", wordBreak: "break-word" }}>{allowLinkError}</span>

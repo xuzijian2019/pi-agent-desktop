@@ -16,6 +16,7 @@ import { resolveProject, type ProjectInfo } from "./worktree";
 import { readSubagentRun, SUBAGENT_META_TYPE } from "./subagents";
 import { listSessionsIncremental, type ScannedSessionInfo } from "./session-list-scanner";
 import { agentSummaryMessage, applyThinkingDurations, collectThinkingDurations } from "./cc-extension-entries";
+import { isChatWorkspacePath } from "./chat-workspace";
 
 export { getAgentDir };
 
@@ -158,6 +159,7 @@ export async function attachSessionProjectInfo(sessions: SessionInfo[]): Promise
   const uniqueCwds = [...new Set(sessions.map((s) => s.cwd).filter(Boolean))];
   const projectByCwd = new Map<string, ProjectInfo>();
   await Promise.all(uniqueCwds.map(async (cwd) => {
+    if (isChatWorkspacePath(cwd)) return;
     projectByCwd.set(cwd, await resolveProject(cwd));
   }));
   // existsSync per unique cwd (not per session) so the sidebar can flag
@@ -165,10 +167,21 @@ export async function attachSessionProjectInfo(sessions: SessionInfo[]): Promise
   const cwdMissingByCwd = new Map(uniqueCwds.map((cwd) => [cwd, !existsSync(cwd)]));
 
   return sessions.map((session) => {
+    if (isChatWorkspacePath(session.cwd)) {
+      return {
+        ...session,
+        workspaceKind: "chat" as const,
+        projectRoot: undefined,
+        projectKey: undefined,
+        branch: undefined,
+        isWorktree: undefined,
+      };
+    }
     const project = session.cwd ? projectByCwd.get(session.cwd) : undefined;
     const projectRoot = project?.projectRoot ?? session.cwd;
     return {
       ...session,
+      workspaceKind: "project" as const,
       projectRoot,
       projectKey: projectIdentityKey(projectRoot),
       ...(project?.branch ? { worktreeBranch: project.branch } : {}),

@@ -75,7 +75,13 @@ test("cross-project worktree actions keep project identity and honor cancel and 
   await expect(page.getByRole("textbox", { name: "Message", exact: true })).toBeEditable();
   await expect(projectGroup(page, first).locator(".sidebar-project-tree-name")).toContainText("alpha");
   await expect(projectGroup(page, second).locator(".sidebar-project-tree-name")).toContainText("beta");
-  await expect(page.locator(".sidebar-recent-section")).toContainText("Beta merge review");
+  await page.locator(".sidebar-project-tree-header").filter({ has: page.getByRole("button", { name: "Projects menu", exact: true }) }).hover();
+  await page.getByRole("button", { name: "Projects menu", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Session timeline", exact: true }).click();
+  await expect(page.locator(".sidebar-project-timeline")).toContainText("Beta merge review");
+  await page.locator(".sidebar-project-tree-header").filter({ has: page.getByRole("button", { name: "Projects menu", exact: true }) }).hover();
+  await page.getByRole("button", { name: "Projects menu", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Group by project", exact: true }).click();
   await page.screenshot({ path: testInfo.outputPath("073-project-tree.png") });
 
   let createRequests = 0;

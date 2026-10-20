@@ -2,6 +2,7 @@
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, type MouseEvent as ReactMouseEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
+import { createPortal } from "react-dom";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useNativeAppMenu } from "@/hooks/useNativeAppMenu";
 import { SessionSidebar } from "./SessionSidebar";
@@ -10,6 +11,7 @@ import { ChatWindow } from "./ChatWindow";
 import { selectProjectDirectoryNative } from "./ProjectPicker";
 import { MissingFolderNotice } from "./MissingFolderNotice";
 import type { SidebarProjectActions } from "@/lib/missing-folder";
+import { AppNoticeShelf } from "./AppNoticeShelf";
 import { useScheduledRunNotifications } from "@/hooks/useScheduledRunNotifications";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
 
@@ -25,13 +27,14 @@ const TerminalPanel = dynamic(() => import("./TerminalPanel").then((m) => m.Term
 const ScheduledView = dynamic(() => import("./scheduled/ScheduledView").then((m) => m.ScheduledView), { ssr: false });
 import { openFileTab, saveFileViewerState } from "./file-tab-state";
 import { SettingsPanel } from "./SettingsPanel";
-import { SettingsEntryMenu, useSettingsEntryMenu } from "./SettingsEntryMenu";
+import { keepDocumentTitle } from "@/lib/document-title";
 import { ProjectTrustDialog, type ProjectTrustFailure } from "./ProjectTrustDialog";
 import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { UpdateReminder } from "./UpdateReminder";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useMenuNavigation } from "@/hooks/useMenuNavigation";
 import { APP_PREF_KEYS, getPrefBool, getPrefJson, setPref } from "@/lib/app-prefs";
 import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
@@ -49,7 +52,7 @@ import {
 } from "@/lib/workspace-state";
 import { useDesktopWorkspaceTabs } from "@/hooks/useDesktopWorkspaceTabs";
 import { useWorkspaceAvailability } from "@/hooks/useWorkspaceAvailability";
-import { WindowControls, useDesktopChrome, useWindowDrag } from "./desktop";
+import { WindowControls, useDesktopChrome, useReportDesktopReady, useWindowDrag } from "./desktop";
 import { isImeComposing } from "@/lib/ime";
 import { AgentSessionPanel } from "./AgentSessionPanel";
 import { newTerminalTab, restoreTerminalTabs, TERMINAL_TABS_KEY, type TerminalTab } from "./terminal-tab-state";
@@ -65,7 +68,7 @@ import { mergeCatalogRow } from "./session-catalog-helpers";
 import { rekeyDraft } from "@/lib/draft-store";
 import { clearLastOpen, getLastOpenSession, setLastOpenSession, workspaceKeyOf } from "@/lib/workspace-memory";
 import { getDefaultRightPanelWidth, getRightPanelMaxWidth, getSidebarMaxWidth, MOBILE_MAX_WIDTH, RIGHT_PANEL_FALLBACK_WIDTH, RIGHT_PANEL_MAX_WIDTH, RIGHT_PANEL_MIN_WIDTH, SIDEBAR_DEFAULT_WIDTH, SPLIT_PANEL_MIN_WIDTH, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from "@/lib/panel-layout";
-import type { BlockingExtensionUiRequest, LeafChangeOptions, SessionInfo, SessionTreeNode } from "@/lib/types";
+import type { BlockingExtensionUiRequest, LeafChangeOptions, SessionInfo, SessionTreeNode, SessionWorkspaceKind } from "@/lib/types";
 import type { McpErrorResponse, ProjectTrustStatus } from "@/lib/api-types";
 import type { ChatInputHandle } from "./ChatInput";
 import type { FileExplorerHandle } from "./FileExplorer";
@@ -133,6 +136,23 @@ export function AppShell() {
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
   const [fileActionsMenuOpen, setFileActionsMenuOpen] = useState(false);
   const fileActionsMenuRef = useRef<HTMLDivElement>(null);
+  useMenuNavigation(fileActionsMenuOpen, fileActionsMenuRef, () => setFileActionsMenuOpen(false));
+  const [chatWorkspaceCwd, setChatWorkspaceCwd] = useState<string | null>(null);
+  const [newSessionWorkspaceKind, setNewSessionWorkspaceKind] = useState<SessionWorkspaceKind>("project");
+  // Resolve the hidden chat cwd independently of the sidebar's session poll so
+  // a chat URL or restored blank composer is classified on the first render.
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/chat-workspace", { cache: "no-store", signal: controller.signal })
+      .then((response) => response.ok ? response.json() as Promise<{ cwd?: string }> : null)
+      .then((data) => {
+        if (data?.cwd) setChatWorkspaceCwd(data.cwd);
+      })
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+      });
+    return () => controller.abort();
+  }, []);
   // The Scheduled page covers the chat area without unmounting it, so the open session keeps its state.
   const [scheduledOpen, setScheduledOpen] = useState(() => searchParams?.get("view") === "scheduled");
   // Read by restoreWorkspaceContext and handleSelectSession; those identities
@@ -215,10 +235,9 @@ export function AppShell() {
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
   useNativeContextMenu();
-  const settingsEntryMenu = useSettingsEntryMenu(setSettingsSection);
-  const { settingsMenuOpen, settingsMenuButtonRef, closeSettingsMenu, toggleSettingsMenu } = settingsEntryMenu;
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
-
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const shortcutHelpDialogRef = useRef<HTMLDivElement | null>(null);
   const [projectTrust, setProjectTrust] = useState<ProjectTrustStatus | null>(null);
   const [projectTrustDialogOpen, setProjectTrustDialogOpen] = useState(false);
   const [projectTrustBusy, setProjectTrustBusy] = useState(false);
@@ -646,6 +665,38 @@ export function AppShell() {
   const initialSessionId = initialNavigation.sessionId;
   const [activeCwd, setActiveCwd] = useState<string | null>(null);
   const activeProjectKeyRef = useRef<string | null>(null);
+  const activeWorkspaceKind: SessionWorkspaceKind = (() => {
+    if (selectedSession) {
+      return selectedSession.workspaceKind
+        ?? (chatWorkspaceCwd && selectedSession.cwd === chatWorkspaceCwd ? "chat" : "project");
+    }
+    const cwd = newSessionCwd ?? activeCwd;
+    if (cwd && chatWorkspaceCwd && cwd === chatWorkspaceCwd) return "chat";
+    return newSessionWorkspaceKind;
+  })();
+  const isChatWorkspaceActive = activeWorkspaceKind === "chat";
+  // Project-scoped chrome (trust, pickers, file tree, window title) must never
+  // receive the hidden chat workspace path.
+  const visibleProjectCwd = isChatWorkspaceActive ? null : activeCwd;
+  const projectPickerStartCwd = isChatWorkspaceActive
+    ? null
+    : selectedSession?.cwd ?? newSessionCwd ?? activeCwd;
+  // Until the server tells us the hidden chat cwd, an invalid URL cwd cannot
+  // be classified. Keep it out of the error card rather than risk showing the
+  // internal Chat workspace path during the first paint.
+  const showInitialRequestedCwd = Boolean(
+    chatWorkspaceCwd
+      && initialNavigation.requestedCwd
+      && initialNavigation.requestedCwd !== chatWorkspaceCwd,
+  );
+  useEffect(() => {
+    if (!isChatWorkspaceActive) return;
+    setRightPanelOpen(false);
+    setRightPanelExpanded(false);
+    setFileTreeOpen(false);
+    setFileTabs([]);
+    setActiveFileTabId(null);
+  }, [isChatWorkspaceActive]);
   // True once the initial ?session= URL param has been resolved (or confirmed absent)
   const [initialSessionRestored, setInitialSessionRestored] = useState<boolean>(() => !initialSessionId);
   // sessionStorage is empty during SSR. Applying the tab's remembered session
@@ -701,7 +752,11 @@ export function AppShell() {
       signal: controller.signal,
     })
       .then(async (response) => {
-        const data = await response.json().catch(() => ({})) as { cwd?: string; error?: string };
+        const data = await response.json().catch(() => ({})) as {
+          cwd?: string;
+          error?: string;
+          workspaceKind?: SessionWorkspaceKind;
+        };
         if (!response.ok || !data.cwd) {
           throw new Error(data.error ?? `HTTP ${response.status}`);
         }
@@ -713,6 +768,10 @@ export function AppShell() {
         setNewSessionDraftId(draftId);
         activeNewSessionDraftKeyRef.current = `new:${data.cwd}`;
         setNewSessionCwd(data.cwd);
+        if (data.workspaceKind === "chat") {
+          setChatWorkspaceCwd(data.cwd);
+          setNewSessionWorkspaceKind("chat");
+        }
         setInitialCwdStatus("ready");
         if (!new URLSearchParams(window.location.search).get("cwd")) {
           router.replace(`?cwd=${encodeURIComponent(data.cwd)}`, { scroll: false });
@@ -789,14 +848,16 @@ export function AppShell() {
     cwd: string | null,
     projectRoot?: string | null,
     projectKey?: string | null,
+    workspaceKind?: SessionWorkspaceKind,
   ) => {
     navigationGeneration.current += 1;
     invalidateWorkspaceRestore();
     const currentFreshCwd = newSessionCwd ?? activeCwd;
     setActiveCwd(cwd);
+    setNewSessionWorkspaceKind(workspaceKind ?? (chatWorkspaceCwd && cwd === chatWorkspaceCwd ? "chat" : "project"));
     // Skip if cwd is null (initial mount).
     if (!cwd) return;
-    const newProject = projectKey ?? projectRoot ?? cwd;
+    const newProject = workspaceKind === "chat" ? cwd : projectKey ?? projectRoot ?? cwd;
     const currentProject = activeProjectKeyRef.current
       ?? (selectedSession ? workspaceKeyOf(selectedSession) : null);
     activeProjectKeyRef.current = newProject;
@@ -870,12 +931,16 @@ export function AppShell() {
     if (!scheduledOpenRef.current) {
       router.replace(typeof window !== "undefined" ? window.location.pathname : "/", { scroll: false });
     }
-  }, [activeCwd, activeFileTabId, invalidateWorkspaceRestore, newSessionCwd, router, selectedSession, restoreWorkspaceContext]);
+  }, [chatWorkspaceCwd, activeCwd, activeFileTabId, invalidateWorkspaceRestore, newSessionCwd, router, selectedSession, restoreWorkspaceContext]);
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false, entryId?: string, blockIndex?: number) => {
     navigationGeneration.current += 1;
     // Picking a session means leaving Scheduled; a cold-start restore must not.
     if (!isRestore) setScheduledOpen(false);
+    setNewSessionWorkspaceKind(
+      session.workspaceKind
+      ?? (chatWorkspaceCwd && session.cwd === chatWorkspaceCwd ? "chat" : "project"),
+    );
     setSearchTarget(entryId ? { sessionId: session.id, entryId, blockIndex } : null);
     invalidateWorkspaceRestore();
     const activeDraftKey = activeNewSessionDraftKeyRef.current;
@@ -940,13 +1005,20 @@ export function AppShell() {
     } else if (new URLSearchParams(window.location.search).get("session") !== session.id) {
       window.history.replaceState({ ...window.history.state, piSession: session }, "", `?session=${encodeURIComponent(session.id)}`);
     }
-  }, [activeCwd, activeFileTabId, invalidateWorkspaceRestore, isMobile, newSessionCwd, selectedSession]);
+  }, [activeCwd, activeFileTabId, chatWorkspaceCwd, invalidateWorkspaceRestore, isMobile, newSessionCwd, selectedSession]);
 
-  const handleNewSession = useCallback((sessionId: string, cwd: string) => {
+  const handleNewSession = useCallback((
+    sessionId: string,
+    cwd: string,
+    workspaceKind?: SessionWorkspaceKind,
+  ) => {
+    const resolvedWorkspaceKind = workspaceKind
+      ?? (chatWorkspaceCwd && cwd === chatWorkspaceCwd ? "chat" : "project");
     setScheduledOpen(false);
     invalidateWorkspaceRestore();
     navigationGeneration.current += 1;
     activeNewSessionDraftKeyRef.current = `new:${cwd}`;
+    setNewSessionWorkspaceKind(resolvedWorkspaceKind);
     setNewSessionDraftId(sessionId);
     setSelectedSession(null);
     setNewSessionCwd(cwd);
@@ -958,9 +1030,16 @@ export function AppShell() {
     branchLeafChangeFnRef.current = null;
     setBranchSwitchLocked(false);
     setActiveTopPanel(null);
+    if (resolvedWorkspaceKind === "chat") {
+      setFileTabs([]);
+      setActiveFileTabId(null);
+      setFileTreeOpen(false);
+      setRightPanelOpen(false);
+      setRightPanelExpanded(false);
+    }
     if (isMobile) setSidebarOpen(false);
     window.history.pushState({ ...window.history.state, piSession: null, piCwd: cwd }, "", `?cwd=${encodeURIComponent(cwd)}`);
-  }, [invalidateWorkspaceRestore, isMobile]);
+  }, [chatWorkspaceCwd, invalidateWorkspaceRestore, isMobile]);
 
   useEffect(() => {
     const restore = async () => {
@@ -969,8 +1048,10 @@ export function AppShell() {
       const id = params.get("session");
       if (!id) {
         setSelectedSession(null);
-        setNewSessionCwd(params.get("cwd"));
-        setActiveCwd(params.get("cwd"));
+        const cwd = params.get("cwd");
+        setNewSessionCwd(cwd);
+        setActiveCwd(cwd);
+        setNewSessionWorkspaceKind(chatWorkspaceCwd && cwd === chatWorkspaceCwd ? "chat" : "project");
         return;
       }
       const saved = window.history.state?.piSession as SessionInfo | undefined;
@@ -985,7 +1066,7 @@ export function AppShell() {
     };
     window.addEventListener("popstate", restore);
     return () => { navigationGeneration.current += 1; window.removeEventListener("popstate", restore); };
-  }, [handleSelectSession]);
+  }, [chatWorkspaceCwd, handleSelectSession]);
 
   const handleProjectsChange = useCallback((projectRoots: string[]) => {
     setAvailableProjectRoots((previous) => (
@@ -996,43 +1077,57 @@ export function AppShell() {
   }, []);
 
   const handleProjectChangeFromComposer = useCallback((projectRoot: string) => {
-    if (selectedSession) return;
-    handleNewSession(`project-${Date.now()}`, projectRoot);
-  }, [handleNewSession, selectedSession]);
+    if (selectedSession || isChatWorkspaceActive) return;
+    handleNewSession(`project-${Date.now()}`, projectRoot, "project");
+  }, [handleNewSession, isChatWorkspaceActive, selectedSession]);
 
   const handleSelectProjectFromComposer = useCallback(async () => {
-    if (!desktopMode) return;
+    if (!desktopMode || isChatWorkspaceActive) return;
     const generation = ++navigationGeneration.current;
     try {
       const cwd = await selectProjectDirectoryNative(
-        selectedSession?.cwd ?? newSessionCwd ?? activeCwd,
+        projectPickerStartCwd,
         "",
       );
-      if (cwd && generation === navigationGeneration.current) handleNewSession(`project-${Date.now()}`, cwd);
+      if (cwd && generation === navigationGeneration.current) handleNewSession(`project-${Date.now()}`, cwd, "project");
     } catch (error) {
       console.error("Failed to switch project:", error);
     }
-  }, [desktopMode, selectedSession?.cwd, newSessionCwd, activeCwd, handleNewSession]);
+  }, [desktopMode, handleNewSession, isChatWorkspaceActive, projectPickerStartCwd]);
 
   const handleNativeMenuAction = useCallback((payload: string) => {
     if (payload === "new-session") {
-      // Via the sidebar, like the keyboard shortcut, so a missing folder is redirected.
-      if (activeCwd) sidebarActionsRef.current?.newSession(activeCwd);
+      if (isChatWorkspaceActive && chatWorkspaceCwd) {
+        handleNewSession(`native-menu-${Date.now()}`, chatWorkspaceCwd, "chat");
+      } else if (activeCwd) {
+        // The sidebar redirects a project whose folder has disappeared.
+        sidebarActionsRef.current?.newSession(activeCwd);
+      }
       return;
     }
     if (payload === "settings-general" || payload === "settings-models") {
-      closeSettingsMenu();
+      setShortcutHelpOpen(false);
       setActiveTopPanel(null);
       setSettingsSection(payload === "settings-general" ? "general" : "models");
     }
-  }, [activeCwd, closeSettingsMenu]);
+  }, [activeCwd, chatWorkspaceCwd, handleNewSession, isChatWorkspaceActive]);
 
   const openSettingsAtLastSection = useCallback(() => {
-    closeSettingsMenu();
     setActiveTopPanel(null);
     // A project-only section without a project falls back to General (SettingsPanel re-checks).
-    setSettingsSection(getLastSettingsSection(selectedSession?.cwd ?? newSessionCwd ?? activeCwd));
-  }, [activeCwd, closeSettingsMenu, newSessionCwd, selectedSession]);
+    setSettingsSection(getLastSettingsSection(
+      isChatWorkspaceActive ? null : selectedSession?.cwd ?? newSessionCwd ?? activeCwd,
+    ));
+  }, [activeCwd, isChatWorkspaceActive, newSessionCwd, selectedSession]);
+
+  const toggleShortcutHelp = useCallback(() => {
+    setShortcutHelpOpen((open) => {
+      if (!open) {
+        setActiveTopPanel(null);
+      }
+      return !open;
+    });
+  }, []);
 
   // The native macOS menu is the only reliable route when the webview has no
   // focused element. Route its custom items back through the same app state.
@@ -1040,14 +1135,49 @@ export function AppShell() {
 
   // Global keyboard shortcuts (handles Esc, Ctrl+Alt+N etc.)
   useGlobalKeyboardShortcuts({
-    // Via the sidebar, so a cwd whose folder is gone is redirected to one that exists.
-    onNewSession: (cwd: string) => sidebarActionsRef.current?.newSession(cwd),
-    activeCwd,
+    onNewSession: settingsSection || shortcutHelpOpen ? undefined : (cwd: string) => {
+      if (isChatWorkspaceActive) handleNewSession(`kb-${Date.now()}`, cwd, "chat");
+      else sidebarActionsRef.current?.newSession(cwd);
+    },
+    activeCwd: isChatWorkspaceActive ? chatWorkspaceCwd : activeCwd,
     // Only while open: a closed panel must leave \ and focus alone.
-    onCloseRightPanel: rightPanelOpen ? handleRightPanelClose : undefined,
+    onCloseRightPanel: rightPanelOpen && !settingsSection && !shortcutHelpOpen ? handleRightPanelClose : undefined,
     // Already open: leave it where it is.
-    onOpenSettings: settingsSection ? undefined : openSettingsAtLastSection,
+    onOpenSettings: settingsSection || shortcutHelpOpen ? undefined : openSettingsAtLastSection,
+    onShortcutHelp: settingsSection ? undefined : toggleShortcutHelp,
+    onToggleSidebar: settingsSection || shortcutHelpOpen ? undefined : handleSidebarToggle,
+    onFocusComposer: settingsSection || shortcutHelpOpen ? undefined : () => chatInputRef.current?.focus(),
   });
+
+  useEffect(() => {
+    if (!shortcutHelpOpen) return;
+    const dialog = shortcutHelpDialogRef.current;
+    const opener = document.activeElement;
+    dialog?.focus({ preventScroll: true });
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) {
+        event.preventDefault();
+        setShortcutHelpOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = dialog?.querySelectorAll<HTMLElement>(`
+        button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])
+      `);
+      if (!focusable?.length) return;
+      event.preventDefault();
+      const next = event.shiftKey ? focusable[focusable.length - 1] : focusable[0];
+      next.focus({ preventScroll: true });
+    };
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown, true);
+      const focusable = opener as (Element & Partial<HTMLElement>) | null;
+      if (focusable?.isConnected && typeof focusable.focus === "function") {
+        focusable.focus({ preventScroll: true });
+      }
+    };
+  }, [shortcutHelpOpen]);
 
   // Client-built transient SessionInfo (new session / fork) lacks the
   // server-computed projectKey, which the same-project check in
@@ -1097,8 +1227,8 @@ export function AppShell() {
 
   // Validated and allow-listed like any project pick, which /api/models needs for the new folder.
   const handleBrowseScheduledFolder = useCallback(
-    () => selectProjectDirectoryNative(selectedSession?.cwd ?? newSessionCwd ?? activeCwd, ""),
-    [selectedSession?.cwd, newSessionCwd, activeCwd],
+    () => selectProjectDirectoryNative(projectPickerStartCwd, ""),
+    [projectPickerStartCwd],
   );
 
   // Called by ChatWindow when a new session gets its real id from pi
@@ -1249,6 +1379,7 @@ export function AppShell() {
     if (selectedSession?.id === sessionId) {
       clearTabOpenSession(sessionId);
       const cwd = selectedSession.cwd;
+      const wasChat = isChatWorkspaceActive || selectedSession.workspaceKind === "chat";
       const draftId = typeof crypto.randomUUID === "function"
         ? crypto.randomUUID()
         : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -1256,19 +1387,28 @@ export function AppShell() {
       activeNewSessionDraftKeyRef.current = cwd ? `new:${cwd}` : null;
       setSelectedSession(null);
       setNewSessionCwd(cwd ?? null);
+      if (wasChat) {
+        setNewSessionWorkspaceKind("chat");
+        setFileTabs([]);
+        setActiveFileTabId(null);
+        setFileTreeOpen(false);
+        setRightPanelOpen(false);
+        setRightPanelExpanded(false);
+      }
       setBranchTree([]);
       setBranchActiveLeafId(null);
       setBranchSwitchLocked(false);
       setActiveTopPanel(null);
       router.replace(cwd ? `?cwd=${encodeURIComponent(cwd)}` : (typeof window !== "undefined" ? window.location.pathname : "/"), { scroll: false });
     }
-  }, [invalidateWorkspaceRestore, selectedSession, router]);
+  }, [invalidateWorkspaceRestore, isChatWorkspaceActive, selectedSession, router]);
 
   const handleOpenFile = useCallback((
     filePath: string,
     fileName: string,
     options?: { sourceSessionId?: string | null; modeHint?: "diff"; page?: number },
   ) => {
+    if (isChatWorkspaceActive) return;
     const sourceSessionId = options?.sourceSessionId;
     const modeHint = options?.modeHint;
     const page = options?.page;
@@ -1285,27 +1425,33 @@ export function AppShell() {
     setRightPanelOpen(true);
     // On mobile the file panel is full-screen; close the drawer so it shows.
     if (isMobile) setSidebarOpen(false);
-  }, [isMobile]);
+  }, [isChatWorkspaceActive, isMobile]);
 
+  const handleOpenLinkedFile = useCallback((filePath: string, page?: number) => {
+    if (isChatWorkspaceActive) return;
+    handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id ?? null, page });
+  }, [handleOpenFile, isChatWorkspaceActive, selectedSession?.id]);
 
   const handleOpenTerminal = useCallback((cwd: string) => {
+    if (isChatWorkspaceActive) return;
     const existing = terminalTabs.find((tab) => tab.cwd === cwd);
     const tab = existing ?? newTerminalTab(cwd);
     if (!existing) setTerminalTabs((tabs) => [...tabs, tab]);
     setActiveFileTabId(tab.id);
     setRightPanelOpen(true);
     if (isMobile) setSidebarOpen(false);
-  }, [terminalTabs, isMobile]);
+  }, [isChatWorkspaceActive, terminalTabs, isMobile]);
 
   // Message cards open artifacts through lib/artifact-store. An automatic open
   // (a streamed artifact just finished) is skipped on mobile, where the panel
   // would cover the reply that is still being read.
   useEffect(() => setArtifactOpener((request) => {
+    if (isChatWorkspaceActive) return;
     if (request.auto && isMobile) return;
     setArtifactTabs((tabs) => upsertArtifactTab(tabs, request, Date.now()));
     setActiveFileTabId(artifactTabId(request.sessionId, request.identifier));
     if (request.reveal !== false) setRightPanelOpen(true);
-  }), [isMobile]);
+  }), [isChatWorkspaceActive, isMobile]);
 
   const selectedSessionId = selectedSession?.id ?? null;
   // Read by the effect below without re-running it on every tab change.
@@ -1406,13 +1552,18 @@ export function AppShell() {
     activeNewSessionDraftKeyRef.current = newSessionDraftKey;
   }, [newSessionDraftKey]);
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
-  const projectTrustCwd = selectedSession?.cwd ?? effectiveNewSessionCwd;
+  const projectTrustCwd = isChatWorkspaceActive
+    ? null
+    : selectedSession?.cwd ?? effectiveNewSessionCwd;
   // A deleted folder 403s every cwd-scoped call, so the composer and file tree
   // give way to one calm state. The session list already knows; a new-session
   // cwd falls back to the trust probe, which reports it as a status not an error.
-  const activeCwdMissing = selectedSession ? selectedSession.cwdMissing === true : projectTrust?.cwdMissing === true;
+  const activeCwdMissing = !isChatWorkspaceActive && (selectedSession ? selectedSession.cwdMissing === true : projectTrust?.cwdMissing === true);
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showChat;
+  // No chat to wait for: the placeholder is the final first screen. (A restored
+  // chat reports from ChatWindow once its history has loaded.)
+  useReportDesktopReady(showPlaceholder, "placeholder");
 
   const branchNavigate = useCallback((cwd: string) => { handleNewSession("", cwd); }, [handleNewSession]);
   useEffect(() => {
@@ -1425,7 +1576,7 @@ export function AppShell() {
     initialSessionRestored,
     persistedWorkspace,
     sessionId: selectedSession?.id ?? null,
-    cwd: selectedSession?.cwd ?? newSessionCwd ?? activeCwd,
+    cwd: isChatWorkspaceActive ? null : selectedSession?.cwd ?? newSessionCwd ?? activeCwd,
     showPlaceholder,
     fileTabs,
     activeFileTabId,
@@ -1535,16 +1686,20 @@ export function AppShell() {
       if (fileTreeAutoCollapsed) setFileTreeNarrowOverride(true);
     }
   };
-  const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
-  const windowTitle = [selectedSession ? (selectedSession.name || selectedSession.firstMessage || "Untitled task").slice(0, 70) : "New task", activeCwdName, PRODUCT_NAME].filter(Boolean).join(" - ");
+  const activeCwdName = visibleProjectCwd ? getFileName(visibleProjectCwd) || visibleProjectCwd : null;
   const topBarTitle = scheduledOpen
     ? translate("scheduled.title")
     : selectedSession
       ? selectedSession.name || selectedSession.firstMessage || translate("appshell.untitledTask")
       : showChat
-        ? translate("appshell.newTask")
+        ? translate(isChatWorkspaceActive ? "sidebar.newChatTitle" : "appshell.newTask")
         : PRODUCT_NAME;
-  const topBarSubtitle = scheduledOpen ? "" : activeCwdName ?? translate("appshell.subtitle");
+  const topBarSubtitle = scheduledOpen
+    ? ""
+    : isChatWorkspaceActive
+      ? translate("workspace.chatTitle")
+      : activeCwdName ?? translate("appshell.subtitle");
+  const windowTitle = [topBarTitle.slice(0, 70), activeCwdName, PRODUCT_NAME].filter(Boolean).join(" - ");
 
   useEffect(() => {
     const feedback = (event: Event) => setRunFeedback((event as CustomEvent<{ running: number; unread: number }>).detail);
@@ -1557,7 +1712,7 @@ export function AppShell() {
     const prefix = runFeedback.running ? "◉ " : runFeedback.unread ? "● " : "";
     const title = extensionWindowTitle?.sessionId === selectedSession?.id && extensionWindowTitle
       ? `${extensionWindowTitle.title.slice(0, 70)} - ${activeCwdName ?? PRODUCT_NAME}` : windowTitle;
-    document.title = `${prefix}${title}`;
+    return keepDocumentTitle(document, `${prefix}${title}`);
   }, [windowTitle, runFeedback, extensionWindowTitle, selectedSession?.id, activeCwdName]);
 
   // Collapse + settings controls in the sidebar's own header row (Claude Desktop
@@ -1580,13 +1735,12 @@ export function AppShell() {
         </svg>
       </button>
       <button
-        ref={settingsMenuButtonRef}
+        type="button"
         className="sidebar-chrome-button"
-        onClick={(event) => toggleSettingsMenu(event, Boolean(projectTrustCwd))}
+        onClick={openSettingsAtLastSection}
         title={translate("common.settings")}
         aria-label={translate("common.settings")}
-        aria-haspopup="menu"
-        aria-expanded={settingsMenuOpen}
+        aria-haspopup="dialog"
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="3" />
@@ -1617,12 +1771,13 @@ export function AppShell() {
         onSessionsChange={handleSessionsChange}
         onOpenScheduled={handleOpenScheduled}
         scheduledOpen={scheduledOpen}
+        onChatWorkspaceCwdChange={setChatWorkspaceCwd}
       />
     </>
   );
 
   const renderProjectTrustWarning = (mobileBanner: boolean) => {
-    if (!showChat || !projectTrust?.requiresTrust || projectTrust.trusted) return null;
+    if (isChatWorkspaceActive || !showChat || !projectTrust?.requiresTrust || projectTrust.trusted) return null;
     return (
       <button
         type="button"
@@ -1673,7 +1828,7 @@ export function AppShell() {
   };
 
   // Scheduled keeps the mobile workspace toggle reachable; an open panel always has an exit.
-  const showFilePanelToggle = isMobile || !scheduledOpen || rightPanelOpen;
+  const showFilePanelToggle = !isChatWorkspaceActive && (isMobile || !scheduledOpen || rightPanelOpen);
 
   return (
     <>
@@ -1865,7 +2020,7 @@ export function AppShell() {
           {showChat && !scheduledOpen && (
             <div inert={sideModeOpen} className="app-topbar-actions" style={{ opacity: sideModeOpen ? 0.45 : undefined, display: "flex", alignItems: "stretch", height: "100%" }}>
               {hasSubagentSessions && <button className="native-toolbar-button" onClick={() => toggleTopPanel("agents")}>{translate("agentSwitcher.title")}</button>}
-              {(hasForks(branchTree) || activeTopPanel === "branches") && (
+              {!isChatWorkspaceActive && (hasForks(branchTree) || activeTopPanel === "branches") && (
                 <BranchNavigator
                   tree={branchTree}
                   activeLeafId={branchActiveLeafId}
@@ -1882,7 +2037,7 @@ export function AppShell() {
             </div>
           )}
           {!isMobile && renderProjectTrustWarning(false)}
-          {isMobile && sessionHasBranches && (
+          {isMobile && !isChatWorkspaceActive && sessionHasBranches && (
             <BranchNavigator
               tree={branchTree}
               activeLeafId={branchActiveLeafId}
@@ -1947,6 +2102,7 @@ export function AppShell() {
               key={sessionKey}
               onBranchNavigate={branchNavigate}
               session={selectedSession}
+              workspaceKind={activeWorkspaceKind}
               searchTarget={searchTarget?.sessionId === selectedSession?.id ? searchTarget : null}
               onSearchTargetHandled={handleSearchTargetHandled}
               initialScrollPosition={selectedSession ? sessionScrollPositionsRef.current.get(selectedSession.id) ?? null : null}
@@ -1963,12 +2119,12 @@ export function AppShell() {
               workspaceUnavailable={unavailableWorkspace}
               onRecheckWorkspace={recheckWorkspace}
               chatInputRef={chatInputRef}
-              onBranchDataChange={handleBranchDataChange}
+              onBranchDataChange={isChatWorkspaceActive ? undefined : handleBranchDataChange}
               onOpenSettings={openSettingsSection}
-              onSelectProject={desktopMode ? () => void handleSelectProjectFromComposer() : undefined}
-              projectOptions={selectedSession ? [] : availableProjectRoots}
-              onProjectChange={selectedSession ? undefined : handleProjectChangeFromComposer}
-              onOpenFile={(filePath) => handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id })}
+              onSelectProject={desktopMode && !isChatWorkspaceActive ? () => void handleSelectProjectFromComposer() : undefined}
+              projectOptions={selectedSession || isChatWorkspaceActive ? [] : availableProjectRoots}
+              onProjectChange={selectedSession || isChatWorkspaceActive ? undefined : handleProjectChangeFromComposer}
+              onOpenFile={isChatWorkspaceActive ? undefined : handleOpenLinkedFile}
               onOpenModelsConfig={() => setSettingsSection("models")}
               onAppCommand={handleAppCommand}
               onSideModeChange={setSideModeOpen}
@@ -1983,24 +2139,23 @@ export function AppShell() {
               role="status"
               style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, color: "var(--text-muted)", textAlign: "center" }}
             >
-               <div style={{ fontSize: 14, color: "var(--text)" }}>{translate("workspace.opening")}</div>
-              <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: 12 }}>
-                {initialNavigation.requestedCwd}
-              </div>
+              <div style={{ fontSize: 14, color: "var(--text)" }}>{translate("workspace.opening")}</div>
             </div>
           ) : initialCwdStatus === "error" ? (
             <div
               role="alert"
               style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, color: "var(--text-muted)", textAlign: "center" }}
             >
-               <div style={{ fontSize: 14, color: "#dc2626" }}>{translate("workspace.unable")}</div>
-              <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: 12 }}>
-                {initialNavigation.requestedCwd}
-              </div>
+              <div style={{ fontSize: 14, color: "#dc2626" }}>{translate("workspace.unable")}</div>
+              {showInitialRequestedCwd && (
+                <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+                  {initialNavigation.requestedCwd}
+                </div>
+              )}
               <div style={{ maxWidth: 720, fontSize: 12 }}>{initialCwdError}</div>
             </div>
           ) : showPlaceholder ? (
-            activeCwd ? (
+            visibleProjectCwd ? (
               <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 15 }}>
                  {translate("workspace.selectSession")}
               </div>
@@ -2024,7 +2179,7 @@ export function AppShell() {
         {scheduledOpen && (
           <ScheduledView
             projectRoots={availableProjectRoots}
-            defaultCwd={selectedSession?.cwd ?? newSessionCwd ?? activeCwd}
+            defaultCwd={isChatWorkspaceActive ? null : selectedSession?.cwd ?? newSessionCwd ?? activeCwd}
             onBrowseFolder={desktopMode ? handleBrowseScheduledFolder : undefined}
             onOpenSession={async (sessionId) => {
               // handleOpenSession only logs a failure; this page has to tell the user.
@@ -2066,6 +2221,50 @@ export function AppShell() {
         className={`right-panel-overlay-backdrop${rightPanelOpen ? " is-open" : ""}`}
         onClick={handleRightPanelClose}
       />
+      {shortcutHelpOpen && createPortal(
+        <div
+          className="shortcut-help-backdrop"
+          onClick={toggleShortcutHelp}
+        >
+          <div
+            className="shortcut-help-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label={translate("shortcutHelp.title")}
+            tabIndex={-1}
+            ref={shortcutHelpDialogRef}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="shortcut-help-header">
+              <strong>{translate("shortcutHelp.title")}</strong>
+              <button
+                type="button"
+                className="file-workbench-icon-button"
+                onClick={toggleShortcutHelp}
+                aria-label={translate("i18n.close")}
+                title={translate("i18n.close")}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </button>
+            </header>
+            <dl className="shortcut-help-list">
+              <div><dt><kbd>Esc</kbd></dt><dd>{translate("shortcutHelp.stop")}</dd></div>
+              <div><dt><kbd>⌘/Ctrl+N</kbd></dt><dd>{translate("shortcutHelp.newSession")}</dd></div>
+              <div><dt><kbd>⌘/Ctrl+,</kbd></dt><dd>{translate("shortcutHelp.settings")}</dd></div>
+              <div><dt><kbd>⌘/Ctrl+/</kbd></dt><dd>{translate("shortcutHelp.help")}</dd></div>
+              <div><dt><kbd>⌘/Ctrl+\</kbd></dt><dd>{translate("shortcutHelp.hideWorkspace")}</dd></div>
+              <div><dt><kbd>⌘/Ctrl+B</kbd></dt><dd>{translate("shortcutHelp.toggleSidebar")}</dd></div>
+              <div><dt><kbd>⌘/Ctrl+L</kbd></dt><dd>{translate("shortcutHelp.focusComposer")}</dd></div>
+              <div><dt><kbd>⌘/Ctrl+Enter</kbd></dt><dd>{translate("shortcutHelp.send")}</dd></div>
+              <div><dt><kbd>↑</kbd></dt><dd>{translate("shortcutHelp.inputHistory")}</dd></div>
+              <div><dt><kbd>Tab / →</kbd></dt><dd>{translate("shortcutHelp.acceptCompletion")}</dd></div>
+            </dl>
+          </div>
+        </div>,
+        document.body,
+      )}
       {rightPanelOpen && (
         <div
           {...rightPanelResizer.separatorProps}
@@ -2099,11 +2298,11 @@ export function AppShell() {
               activeTabId={activeFileTabId ?? ""}
               onSelectTab={setActiveFileTabId}
               onCloseTab={handleCloseFileTab}
-              onNewTerminal={activeCwd && !activeCwdMissing ? () => handleOpenTerminal(activeCwd) : undefined}
+              onNewTerminal={visibleProjectCwd && !activeCwdMissing ? () => handleOpenTerminal(visibleProjectCwd) : undefined}
             />
           </div>
           <div className="file-workbench-actions">
-            {activeCwd && !activeCwdMissing && (
+            {visibleProjectCwd && !activeCwdMissing && (
               <button
                 type="button"
                 className={`file-workbench-icon-button file-tree-toggle${fileTreeShown ? " is-active" : ""}`}
@@ -2168,7 +2367,7 @@ export function AppShell() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" /></svg>
               </button>
               {fileActionsMenuOpen && (
-                <div className="native-popover file-actions-menu" role="menu" aria-label={translate("contextPanel.fileActions")}>
+                <div className="native-popover app-menu file-actions-menu" role="menu" aria-label={translate("contextPanel.fileActions")}>
                   <button
                     type="button"
                     role="menuitem"
@@ -2299,7 +2498,7 @@ export function AppShell() {
         </div>
 
         {/* Explorer column — always-on project file tree */}
-          {activeCwd && !activeCwdMissing && fileTreeShown && (
+          {visibleProjectCwd && !activeCwdMissing && fileTreeShown && (
             <>
               <div
                 {...fileTreeResizer.separatorProps}
@@ -2371,7 +2570,7 @@ export function AppShell() {
               <div className="file-panel-tree-scroll">
                 <FileExplorer
                   ref={fileExplorerRef}
-                  cwd={activeCwd}
+                  cwd={visibleProjectCwd}
                   onOpenFile={handleOpenFile}
                   refreshKey={explorerRefreshKey}
                   searchQuery={fileExplorerQuery}
@@ -2406,7 +2605,6 @@ export function AppShell() {
         onProjectTrustChanged={handleProjectTrustChanged}
       />
     )}
-    <SettingsEntryMenu menu={settingsEntryMenu} hasProject={Boolean(projectTrustCwd)} onSelectSection={setSettingsSection} />
     {/* After Settings, so it opens above it (z-index 1100 over 1000) when Settings › MCP asks for it. */}
     {projectTrustDialogOpen && projectTrustCwd && (
       <ProjectTrustDialog
@@ -2422,6 +2620,7 @@ export function AppShell() {
     )}
     <UpdateReminder onOpenSettings={() => setSettingsSection("general")} />
     <DomContextMenuHost />
+    <AppNoticeShelf />
     </>
 
   );

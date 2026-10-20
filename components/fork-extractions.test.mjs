@@ -183,27 +183,20 @@ const EXTRACTIONS = [
   {
     name: "AppShell fork layers",
     origin: "components/AppShell.tsx",
-    // Desktop cold-start tab restore, the missing-workspace probe and the sidebar
-    // settings-entry menu are fork features; AppShell keeps the settings button
-    // (pinned by "sidebar header controls") and calls the hooks.
+    // Desktop cold-start tab restore and the missing-workspace probe stay in hooks.
     movedTo: [
       "hooks/useDesktopWorkspaceTabs.ts",
       "hooks/useWorkspaceAvailability.ts",
-      "components/SettingsEntryMenu.tsx",
     ],
-    movedDefinitions: ["workspaceStatusRef", "toggleSettingsMenu", "openDomMenu"],
+    movedDefinitions: ["workspaceStatusRef"],
     absentFromOrigin: [
       "workspaceFileTabsMatchContext",
       "setWorkspaceHydrated",
       "/api/cwd/status",
-      "SETTINGS_SECTION_ITEMS",
-      "settings-entry-menu",
     ],
     requiredInOrigin: [
       "useDesktopWorkspaceTabs(",
       "useWorkspaceAvailability(",
-      "useSettingsEntryMenu(",
-      "<SettingsEntryMenu",
     ],
   },
   {
@@ -280,7 +273,7 @@ const FORK_FEATURES = [
     // selector", reachable here through the fork's restyle) was removed on
     // request; theme selection lives in Settings → General, and its locale keys
     // (`theme.light` / `theme.dark` / …) went with it.
-    markers: ["settingsMenuButtonRef", "sidebar-chrome-button", "handleSidebarToggle"],
+    markers: ["onClick={openSettingsAtLastSection}", "sidebar-chrome-button", "handleSidebarToggle"],
     forbiddenMarkers: ["theme.light", "aria-pressed={isDark}"],
   },
   {
@@ -325,7 +318,7 @@ const FORK_FEATURES = [
   {
     name: "missing-folder path (sidebar)",
     file: "components/SessionSidebar.tsx",
-    markers: ["resolveNewSessionCwd", "actionsRef", "group.cwdMissing"],
+    markers: ["resolveSidebarNewSession", "actionsRef", "group.cwdMissing"],
   },
   {
     name: "Scheduled entry in the sidebar",
@@ -567,19 +560,44 @@ test("fork project actions fall back when the native popup cannot open", async (
   assert.match(handler, /setProjectMenuPos\(\{ top, left \}\)/);
 });
 
-test("sidebar Settings keeps native menu imports and its DOM fallback", async () => {
+test("sidebar Settings opens the remembered safe section directly without a redundant menu", async () => {
   const shell = await read("components/AppShell.tsx");
-  const source = await read("components/SettingsEntryMenu.tsx");
-  // The handler now belongs to the extracted module; the shell must retain
-  // both its hook and rendered fallback rather than re-create the old menu.
-  assert.match(shell, /useSettingsEntryMenu\(/);
-  assert.match(shell, /<SettingsEntryMenu/);
-  assert.match(source, /import \{ canUseNativeMenu, menuPointBelow, showNativeMenu \} from "@\/lib\/desktop-menu"/);
-  const handler = source;
-  assert.match(handler, /SETTINGS_SECTION_ITEMS\.map/);
-  assert.match(handler, /disabled: item\.requiresProject && !hasProject/);
-  assert.match(shell, /toggleSettingsMenu\(event, Boolean\(projectTrustCwd\)\)/);
-  assert.match(handler, /if \(!shown\) openDomMenu\(\)/);
+  assert.match(shell, /onClick=\{openSettingsAtLastSection\}/);
+  assert.match(shell, /onOpenSettings: settingsSection \|\| shortcutHelpOpen \? undefined : openSettingsAtLastSection/);
+  assert.match(shell, /<SettingsPanel[\s\S]*?cwd=\{projectTrustCwd\}[\s\S]*?initialSection=\{settingsSection\}/);
+  assert.doesNotMatch(shell, /useSettingsEntryMenu|<SettingsEntryMenu|toggleSettingsMenu/);
+
+  // Execute the actual click callback with the production section resolver:
+  // remembered project-only pages must not receive the hidden Chats directory.
+  const { createJiti } = await import("jiti");
+  const jiti = createJiti(import.meta.url);
+  const { getLastSettingsSection, setLastSettingsSection } = await jiti.import("../lib/settings-navigation.ts");
+  const values = new Map();
+  const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
+  const body = shell.match(/const openSettingsAtLastSection = useCallback\(\(\) => \{([\s\S]*?)\n  \}, \[/)?.[1];
+  assert.ok(body, "the Settings click callback must remain testable");
+  const run = new Function("setActiveTopPanel", "setSettingsSection", "getLastSettingsSection", "isChatWorkspaceActive", "selectedSession", "newSessionCwd", "activeCwd", body);
+  for (const section of ["general", "models", "skills", "agents", "plugins", "mcp"]) {
+    setLastSettingsSection(section, storage);
+    for (const chat of [false, true]) {
+      const calls = [];
+      run((value) => calls.push(["panel", value]), (value) => calls.push(["settings", value]),
+        (cwd) => getLastSettingsSection(cwd, storage), chat, { cwd: chat ? "/hidden-chat" : "/project" }, null, "/project");
+      const expected = chat && ["skills", "agents", "plugins"].includes(section) ? "general" : section;
+      assert.deepEqual(calls, [["panel", null], ["settings", expected]]);
+    }
+  }
+});
+
+test("sidebar missing-folder protection delegates to the Chats-aware resolver", async () => {
+  const sidebar = await read("components/SessionSidebar.tsx");
+  const helper = await read("lib/sidebar-new-session.ts");
+  assert.match(sidebar, /const target = resolveSidebarNewSession\(\{[\s\S]*?sessions: allSessions,[\s\S]*?recentProjects,[\s\S]*?homeDir,/);
+  assert.match(sidebar, /if \(!target\) return;\s*const \{ cwd, workspaceKind \} = target;/);
+  assert.match(sidebar, /onNewSession\?\.\(tempId, cwd, workspaceKind\)/);
+  assert.match(helper, /import \{ resolveNewSessionCwd \} from "\.\/missing-folder"/);
+  assert.match(helper, /const cwd = resolveNewSessionCwd\(/);
+  assert.doesNotMatch(sidebar, /import \{ resolveNewSessionCwd \}/);
 });
 
 test("the shell mounts the shared in-app file context menu host", async () => {

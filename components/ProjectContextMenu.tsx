@@ -9,8 +9,10 @@
 // the menu state and wires the actions in.
 
 import { useLayoutEffect, useState, type RefObject } from "react";
+import { AppCombobox } from "./AppCombobox";
 import { createPortal } from "react-dom";
 import { isImeComposing } from "@/lib/ime";
+import { useMenuNavigation } from "@/hooks/useMenuNavigation";
 import { showNativeMenu, type NativeMenuEntry, type NativeMenuPoint } from "@/lib/desktop-menu";
 import type { TranslationParams } from "@/lib/i18n/types";
 
@@ -246,6 +248,7 @@ interface ProjectContextMenuProps {
   onCancelRemove: () => void;
   onNewBranchChange: (value: string) => void;
   onCreateWorktree: () => void;
+  onClose?: () => void;
 }
 
 /** The menu itself; ProjectContextMenu portals it to the document body. */
@@ -256,7 +259,9 @@ export function ProjectContextMenuPanel({
   onShowBranches, onShowWorktrees, onShowNewWorktree, onBackToActions, onOpenTerminal, onReveal, onArchive,
   onSwitchBranch, onFetch, onSelectWorktree, onRequestRemove, onConfirmRemove, onCancelRemove,
   onNewBranchChange, onCreateWorktree,
+  onClose = () => {},
 }: ProjectContextMenuProps) {
+  useMenuNavigation(view !== "new-worktree" && !confirmRemove, menuRef, onClose);
   const data = branchMenu?.root === projectRoot ? branchMenu : null;
   const loaded = Boolean(data?.loaded);
   const checkout = data ? currentCheckout(data.worktrees, selectedCwd) : undefined;
@@ -341,6 +346,7 @@ export function ProjectContextMenuPanel({
                     key={`${remote ? "remote:" : "local:"}${name}`}
                     type="button"
                     role="menuitem"
+                    aria-current={isCurrent ? "true" : undefined}
                     disabled={switchingBranch !== null}
                     onClick={() => onSwitchBranch?.(name)}
                     title={holder
@@ -349,9 +355,6 @@ export function ProjectContextMenuPanel({
                         ? t("sidebar.branchRemoteTitle")
                         : t("sidebar.switchBranchTitle", { branch: name })}
                   >
-                    <span className="sidebar-project-context-menu-branch-mark" aria-hidden="true">
-                      {isCurrent ? "✓" : ""}
-                    </span>
                     <span>{name}</span>
                     {holder && <span className="sidebar-project-context-menu-branch-tag">worktree</span>}
                     {remote && !holder && <span className="sidebar-project-context-menu-branch-tag">{t("sidebar.remoteBranchTag")}</span>}
@@ -406,11 +409,9 @@ export function ProjectContextMenuPanel({
                     type="button"
                     role="menuitem"
                     title={worktree.path}
+                    aria-current={checkout?.path === worktree.path ? "true" : undefined}
                     onClick={() => onSelectWorktree(worktree.path)}
                   >
-                    <span className="sidebar-project-context-menu-branch-mark" aria-hidden="true">
-                      {checkout?.path === worktree.path ? "✓" : ""}
-                    </span>
                     <span className="sidebar-project-context-menu-label">{worktreeLabel(worktree)}</span>
                     {worktree.isMain && <span className="sidebar-project-context-menu-branch-tag">{t("sidebar.main")}</span>}
                   </button>
@@ -455,13 +456,13 @@ export function ProjectContextMenuPanel({
         {back(t("sidebar.switchWorktree"), onShowWorktrees)}
         <div className="sidebar-project-context-menu-heading">{t("sidebar.newWorktree")}</div>
         <div className="sidebar-project-context-menu-form">
-          <input
+          <AppCombobox
             autoFocus
             value={newBranch}
-            list="pi-project-worktree-branches"
+            options={branchOptions}
             placeholder={t("sidebar.branchName")}
             aria-label={t("sidebar.branchName")}
-            onChange={(e) => onNewBranchChange(e.target.value)}
+            onValueChange={onNewBranchChange}
             onKeyDown={(e) => {
               if (isImeComposing(e)) return;
               if (e.key === "Enter") {
@@ -474,9 +475,6 @@ export function ProjectContextMenuPanel({
               }
             }}
           />
-          <datalist id="pi-project-worktree-branches">
-            {branchOptions.map((branch) => <option key={branch} value={branch} />)}
-          </datalist>
           <div className="sidebar-project-context-menu-confirm-actions">
             <button
               type="button"
@@ -499,7 +497,7 @@ export function ProjectContextMenuPanel({
   return (
     <div
       ref={menuRef}
-      className={`sidebar-project-context-menu native-popover${view === "actions" ? "" : " sidebar-project-context-menu--wide"}`}
+      className={`sidebar-project-context-menu native-popover app-menu${view === "actions" ? "" : " sidebar-project-context-menu--wide"}`}
       style={{ top: pos.top, left: pos.left, maxHeight: "min(70vh, 420px)", overflowY: "auto" }}
       role="menu"
     >

@@ -85,3 +85,13 @@ test("block variant keeps its popover closed until triggered", () => {
   assert.ok(!html.includes("Open Folder…"));
   assert.ok(!html.includes("/work/project-0"));
 });
+
+
+test("panel projects use the same semantic selection marker as the shared menu", () => {
+  const html = renderToStaticMarkup(React.createElement(ProjectPicker, {
+    ...baseProps, selectedProject: "/work/project-2", variant: "panel",
+  }));
+  assert.equal((html.match(/aria-current="true"/g) ?? []).length, 1);
+  assert.match(html, /class="project-picker-option" aria-current="true"[^>]*title="\/work\/project-2"/);
+  assert.doesNotMatch(html, /points="1.5 5 4 7.5 8.5 2.5"/);
+});

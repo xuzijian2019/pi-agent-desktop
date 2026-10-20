@@ -115,7 +115,7 @@ export function ContextUsageRing({ contextUsage, sessionStats }: ContextUsageRin
       <span className="context-usage-percent" style={{ color }}>{percentage}</span>
     </button>
     {open && position && createPortal(
-      <div ref={panelRef} id={panelId} role="dialog" aria-label={t("chat.sessionUsage")} className="context-usage-popover native-popover" style={position}>
+      <div ref={panelRef} id={panelId} role="dialog" aria-label={t("chat.sessionUsage")} className="context-usage-popover native-popover app-menu" style={position}>
         <header><strong>{t("chat.sessionUsage")}</strong><button ref={closeRef} type="button" aria-label={t("chat.close")} onClick={() => { setOpen(false); triggerRef.current?.focus(); }}>×</button></header>
         <div className="context-usage-summary">
           <span>{t("chat.ctxUsage")}</span><strong style={{ color }}>{percentage}</strong>

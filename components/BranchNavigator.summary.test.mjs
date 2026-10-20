@@ -4,12 +4,12 @@ import test from "node:test";
 import { Script } from "node:vm";
 import ts from "typescript";
 
-const navigatorSource = await readFile(new URL("./BranchNavigator.tsx", import.meta.url), "utf8");
-const chatInputSource = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
-const hookSource = await readFile(new URL("../hooks/useAgentSession.ts", import.meta.url), "utf8");
-const branchSummarySource = await readFile(new URL("../hooks/useBranchSummary.ts", import.meta.url), "utf8");
-const themeSource = await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8");
-const chatWindowSource = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
+const navigatorSource = (await readFile(new URL("./BranchNavigator.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const chatInputSource = (await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const hookSource = (await readFile(new URL("../hooks/useAgentSession.ts", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const branchSummarySource = (await readFile(new URL("../hooks/useBranchSummary.ts", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const themeSource = (await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const chatWindowSource = (await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 
 test("the fork callback forwards summary options without pinning the view to the pre-summary leaf", () => {
   const ast = ts.createSourceFile("ChatWindow.tsx", chatWindowSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);

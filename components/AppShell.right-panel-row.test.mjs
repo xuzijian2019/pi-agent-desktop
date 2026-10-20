@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const source = readFileSync(new URL("./AppShell.tsx", import.meta.url), "utf8");
+// The checkout may use CRLF (Windows); normalize so the exact multiline
+// probes below match regardless of line endings.
+const source = readFileSync(new URL("./AppShell.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 /**
  * Layout sentinels.

@@ -1,9 +1,21 @@
 "use client";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { AppSelect } from "../AppSelect";
 import { useI18n } from "@/hooks/useI18n";
 import { uiFetch } from "@/lib/web-ui-client";
 import { BRANCHES, refreshGitInventory, useGitInventory } from "@/lib/git-inventory";
 import type { BranchOperation, BranchPreview } from "@/lib/git-branch-types";
+// Select content is portaled outside the branch dialog. Follow only this
+// dialog's aria-controls links so choosing a base/location does not dismiss it.
+function containsBranchControlTarget(root: HTMLElement | null, target: Node): boolean {
+  if (!root) return false;
+  if (root.contains(target)) return true;
+  return [...root.querySelectorAll<HTMLElement>("[aria-controls]")].some((trigger) => {
+    const id = trigger.getAttribute("aria-controls");
+    return Boolean(id && root.ownerDocument.getElementById(id)?.contains(target));
+  });
+}
+
 export function BranchControl({ cwd, onNavigate }: { cwd: string; onNavigate: (cwd: string) => void }) {
   const { t } = useI18n(); const [open, setOpen] = useState(false); const git = useGitInventory(cwd, BRANCHES); const inventory = git.branches;
   const [query, setQuery] = useState(""); const [creating, setCreating] = useState(false); const [name, setName] = useState("");
@@ -33,7 +45,7 @@ export function BranchControl({ cwd, onNavigate }: { cwd: string; onNavigate: (c
   useEffect(() => { setOpen(false); setPreview(undefined); setError(""); }, [cwd]);
   useEffect(() => {
     if (!open) return;
-    const close = (event: PointerEvent) => { if (!anchor.current?.contains(event.target as Node)) setOpen(false); };
+    const close = (event: PointerEvent) => { if (!containsBranchControlTarget(anchor.current, event.target as Node)) setOpen(false); };
     document.addEventListener("pointerdown", close); return () => document.removeEventListener("pointerdown", close);
   }, [open]);
   async function review(operation: BranchOperation) { const current = cwd; setBusy(true); setError(""); try { const result = await uiFetch<BranchPreview>("/api/git/branches/preview", { cwd, ...operation }); if (mounted.current && owner.current === current) setPreview(result); } catch (e) { setError(String(e)); } finally { setBusy(false); } }
@@ -46,7 +58,7 @@ export function BranchControl({ cwd, onNavigate }: { cwd: string; onNavigate: (c
   if (inventory?.isGit === false) return null;
   return <div className="workbench-branch-control" ref={anchor} onKeyDown={e => { if (e.key === "Escape" && open) { e.preventDefault(); e.stopPropagation(); setOpen(false); } }}>
     <button type="button" aria-haspopup="dialog" aria-expanded={open} onClick={() => { setOpen(v => !v); if (!open) refreshGitInventory(cwd); }} title={cwd}>⑂ {inventory?.current || (inventory?.head ? `${t("wb.detached")} ${inventory.head.slice(0, 7)}` : t("wb.branch"))}</button>
-    {open && position && <div className="workbench-branch-popover workbench-content native-popover" style={position} role="dialog" aria-label={t("wb.branch")}>
+    {open && position && <div className="workbench-branch-popover workbench-content native-popover app-menu" style={position} role="dialog" aria-label={t("wb.branch")}>
       <div className="workbench-toolbar"><strong>{t("wb.branch")}</strong><button onClick={() => setOpen(false)} aria-label={t("wb.close")}>×</button></div>
       {(error || git.error) && <p role="alert">{error || git.error}</p>}
       {inventory?.isGit && <><small>{inventory.root}</small>
@@ -54,12 +66,12 @@ export function BranchControl({ cwd, onNavigate }: { cwd: string; onNavigate: (c
         <div className="workbench-actions"><button disabled={busy} onClick={async () => { setBusy(true); try { await uiFetch("/api/worktrees/fetch", { cwd }); refreshGitInventory(cwd); } catch (e) { setError(String(e)); } finally { setBusy(false); } }}>{t("wb.fetch")}</button><button onClick={() => (setRemoteRef(undefined), setCreating(v => !v))}>{t("wb.createBranch")}</button></div>
         {(creating || remoteRef) && <form onSubmit={e => { e.preventDefault(); void review(remoteRef ? { action: "switch", name, ref: remoteRef, location: "current" } : { action: "create", name, baseRef, location }); }}>
           <label>{t("wb.name")}<input required value={name} onChange={e => setName(e.target.value)} /></label>
-          {!remoteRef && <><label>{t("wb.base")}<select value={baseRef} onChange={e => setBase(e.target.value)}><option value="HEAD">HEAD · {inventory.head.slice(0, 7)}</option>{inventory.branches.map(b => <option key={b.ref} value={b.ref}>{b.name}</option>)}</select></label>
-          <label>{t("wb.location")}<select value={location} onChange={e => setLocation(e.target.value as "current" | "worktree")}><option value="current">{t("wb.currentCheckout")}</option><option value="worktree">{t("wb.newWorktree")}</option></select></label></>}
+          {!remoteRef && <><label>{t("wb.base")}<AppSelect aria-label={t("wb.base")} value={baseRef} onValueChange={setBase} options={[{ value: "HEAD", label: `HEAD · ${inventory.head.slice(0, 7)}` }, ...inventory.branches.map(b => ({ value: b.ref, label: b.name }))]} /></label>
+          <label>{t("wb.location")}<AppSelect aria-label={t("wb.location")} value={location} onValueChange={value => setLocation(value as "current" | "worktree")} options={[{ value: "current", label: t("wb.currentCheckout") }, { value: "worktree", label: t("wb.newWorktree") }]} /></label></>}
           <button disabled={busy}>{t("wb.reviewOperation")}</button>
         </form>}
         <input aria-label={t("wb.searchBranches")} placeholder={t("wb.searchBranches")} value={query} onChange={e => setQuery(e.target.value)} />
-        {inventory.branches.filter(b => b.name.toLowerCase().includes(query.toLowerCase())).map(b => <button className="workbench-branch-row" title={b.worktree && b.worktree !== inventory.root ? b.worktree : undefined} disabled={busy || b.ref === `refs/heads/${inventory.current}`} key={b.ref} onClick={() => b.worktree && b.worktree !== inventory.root ? (setOpen(false), onNavigate(b.worktree)) : b.remote ? (setRemoteRef(b.ref), setCreating(false), setName(b.name.slice(b.name.indexOf("/") + 1))) : void review({ action: "switch", location: "current", ref: b.ref })}><span>{b.name}</span><small>{t(b.worktree && b.worktree !== inventory.root ? "wb.openWorktree" : "wb.switch")}</small></button>)}
+        {inventory.branches.filter(b => b.name.toLowerCase().includes(query.toLowerCase())).map(b => <button className="workbench-branch-row app-menu-option" title={b.worktree && b.worktree !== inventory.root ? b.worktree : undefined} disabled={busy || b.ref === `refs/heads/${inventory.current}`} key={b.ref} onClick={() => b.worktree && b.worktree !== inventory.root ? (setOpen(false), onNavigate(b.worktree)) : b.remote ? (setRemoteRef(b.ref), setCreating(false), setName(b.name.slice(b.name.indexOf("/") + 1))) : void review({ action: "switch", location: "current", ref: b.ref })}><span>{b.name}</span><small>{t(b.worktree && b.worktree !== inventory.root ? "wb.openWorktree" : "wb.switch")}</small></button>)}
         </>}
       </>}
     </div>}

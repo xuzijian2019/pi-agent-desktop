@@ -54,6 +54,7 @@ export function groupByProject(
   const groups = new Map<string, ProjectGroup>();
 
   for (const session of sessions) {
+    if (session.workspaceKind === "chat") continue;
     const key = session.projectRoot || session.cwd;
     let group = groups.get(key);
     if (!group) {

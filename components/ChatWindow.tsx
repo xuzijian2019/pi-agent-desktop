@@ -3,13 +3,15 @@ import { registerAbortHandler } from "@/hooks/useKeyboardShortcuts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { UnavailableWorkspace } from "@/lib/workspace-availability";
-import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, BlockingExtensionUiRequest, ExtensionUiRequest, LeafChangeOptions, SessionInfo, SessionTreeNode, ToolResultMessage, UserMessage } from "@/lib/types";
+import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, BlockingExtensionUiRequest, ExtensionUiRequest, LeafChangeOptions, SessionInfo, SessionTreeNode, SessionWorkspaceKind, ToolResultMessage, UserMessage } from "@/lib/types";
 import { normalizeCustomPanelLines } from "@/lib/ansi";
 import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantBlocks, hasAssistantAnswer, isAssistantTruncated, isMessageGroupAnchor, splitFinalAssistantBlocks } from "@/lib/message-display";
 import { extractTurnWrittenFiles, type WrittenFile } from "@/lib/turn-written-files";
 import { buildQuotedSelection } from "@/lib/quoted-selection";
 import { MessageView } from "./MessageView";
+import { useReportDesktopReady } from "./desktop";
+import { formatAttachmentSize } from "@/lib/chat-attachments";
 import { ConversationNavigator, type ConversationTurnLocation } from "./ConversationNavigator";
 import { SideChatPanel } from "./SideChatPanel";
 import { MarkdownBody } from "./MarkdownBody";
@@ -42,6 +44,7 @@ interface Props {
   onAppCommand?: (command: AppSlashCommand) => string | void;
   onBranchNavigate?: (cwd: string) => void;
   session: SessionInfo | null;
+  workspaceKind?: SessionWorkspaceKind;
   searchTarget?: { sessionId: string; entryId: string; blockIndex?: number } | null;
   onSearchTargetHandled?: (target: { sessionId: string; entryId: string }) => void;
   initialScrollPosition?: ChatScrollPosition | null;
@@ -269,8 +272,9 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onContextUsageChange, onSelectProject, projectOptions, onProjectChange, onOpenFile, onProjectFilesImported, onOpenModelsConfig, onBranchNavigate, onAppCommand, onSideModeChange, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionDraftKey, onAttentionNeeded, onSystemToolsChange, onSystemInfoLoaderChange, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed }: Props) {
+export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onContextUsageChange, onSelectProject, projectOptions, onProjectChange, onOpenFile, onProjectFilesImported, onOpenModelsConfig, onBranchNavigate, onAppCommand, onSideModeChange, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionDraftKey, onAttentionNeeded, onSystemToolsChange, onSystemInfoLoaderChange, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed }: Props) {
   const { t } = useI18n();
+  const chatOnly = workspaceKind === "chat" || session?.workspaceKind === "chat";
   const [commandDialog, setCommandDialog] = useState<"fork" | "hotkeys" | "session" | null>(null);
   const openStats = useCallback(() => { onSessionStatsPanelOpen?.(); setCommandDialog("session"); }, [onSessionStatsPanelOpen]);
   // Wrap onAgentEnd to play the completion sound. This is more reliable than
@@ -312,18 +316,20 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     isNearBottomRef, showScrollToBottom,
     branchSummaryPending, handleAbortBranchSummary, routedModel,
     applyTaskSetup, handleSend, handleAbort, handleAbortRetry, handleFork, handleEditContent, cancelEdit, handleModelChange,
-    handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior,
+    handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleQueuedMessageAction,
     dismissModelScopeWarnings,
     handleRecallQueue,
     handleBuiltinSlashCommand, retryLoad,
     handleToolPresetChange, handleThinkingLevelChange, handleSetDefaultModel, handleSetDefaultThinkingLevel, loadSlashCommands, scrollToBottom,
   } = useAgentSession({
+    chatWorkspace: chatOnly,
     session, sessionRunning, newSessionCwd, newSessionDraftKey, onAttentionNeeded, onAgentEnd: wrappedOnAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed,
     modelsRefreshKey, chatInputRef, onBranchDataChange: publishBranchData, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen: openStats,
     onOpenSettings,
     deferInitialScroll: Boolean(pendingScrollRestore), onScrollPositionChange,
   });
   const sessionBusy = agentRunning || bashRunning;
+  useReportDesktopReady(!loading, "chat");
   const ephemeral = useEphemeralConversation(session?.id ?? sessionIdRef.current ?? null, session?.cwd ?? newSessionCwd ?? undefined, snapshotLeaf);
   const { side, recap, recapBusy, recapError, closeSide, cancelRecap, handleLocalCommand } = ephemeral;
   const sideOpen = !!side;
@@ -837,20 +843,29 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   }, [ctxKey, onContextUsageChange]);
   useEffect(() => () => { onContextUsageChange?.(null); }, [onContextUsageChange]);
 
-  const cwd = session?.cwd ?? newSessionCwd;
+  const cwd = chatOnly ? undefined : session?.cwd ?? newSessionCwd;
+  const openFile = chatOnly ? undefined : onOpenFile;
   const projectImportBusyRef = useRef(false);
 
-  const onDrop = useCallback((files: File[]) => {
-    const { images, projectFiles } = partitionChatDroppedFiles(files);
-
-    // Images stay on the multimodal attachment path (blocked while the agent is busy).
-    if (images.length > 0 && !sessionBusy) {
-      chatInputRef?.current?.addImages(images);
-    }
-
-    // Documents/other files are copied into the project root and @mentioned so
-    // the agent can read them with its normal tools — not inlined into the prompt.
+  // Documents/other files are copied into the project root and @mentioned so
+  // the agent can read them with its normal tools — not inlined into the prompt.
+  const importProjectFiles = useCallback((projectFiles: File[]) => {
     if (projectFiles.length === 0) return;
+    if (chatOnly) {
+      // A chat has no project to copy into: text files ride inside the message.
+      void (async () => {
+        const rejected = await chatInputRef?.current?.addTextFiles(projectFiles) ?? [];
+        if (rejected.length === 0) return;
+        const detail = rejected.slice(0, 3).map((item) => {
+          const limit = item.reason === "too-many"
+            ? String(item.limit)
+            : "limit" in item ? formatAttachmentSize(item.limit) : "";
+          return `${item.name}: ${t(`chat.attachReason.${item.reason}`, { limit })}`;
+        }).join("; ");
+        addNotice({ type: "error", message: t("chat.attachRejected", { detail }) });
+      })();
+      return;
+    }
     if (!cwd) {
       addNotice({ type: "error", message: t("chat.dropNeedsProject") });
       return;
@@ -893,7 +908,19 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         projectImportBusyRef.current = false;
       }
     })();
-  }, [addNotice, chatInputRef, cwd, onProjectFilesImported, sessionBusy, t]);
+  }, [addNotice, chatInputRef, chatOnly, cwd, onProjectFilesImported, t]);
+
+  const onDrop = useCallback((files: File[]) => {
+    const { images, projectFiles } = partitionChatDroppedFiles(files);
+    if (images.length > 0 && !sessionBusy) chatInputRef?.current?.addImages(images);
+    importProjectFiles(projectFiles);
+  }, [chatInputRef, importProjectFiles, sessionBusy]);
+
+  const onAttachFiles = useCallback((files: File[]) => {
+    const { images, projectFiles } = partitionChatDroppedFiles(files);
+    if (images.length > 0) chatInputRef?.current?.addImages(images);
+    importProjectFiles(projectFiles);
+  }, [chatInputRef, importProjectFiles]);
 
   const { isDragOver, handleDragEnter, handleDragOver, handleDragLeave, handleDrop } = useDragDrop(onDrop);
   // Stable Map identity: `messages` doesn't change during streaming updates
@@ -945,7 +972,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   }, []);
 
   const hasStreamingContent = Boolean(streamState.streamingMessage?.content.length);
-  const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
+  const messageCwd = chatOnly ? undefined : session?.cwd ?? newSessionCwd ?? undefined;
   // Keys that do not change when a sent or streamed message gets its entry id
   // on the post-run reload; keying by the id remounted the sent bubble.
   const messageKeyTrackerRef = useRef<{ sessionId: string | null; tracker: ReturnType<typeof createMessageKeyTracker> } | null>(null);
@@ -1062,7 +1089,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
           toolResults={toolResultsMap}
           modelNames={modelNames}
           cwd={messageCwd}
-          onOpenFile={onOpenFile}
+          onOpenFile={openFile}
           onOpenSession={onOpenSession}
           entryId={entryIds[idx]}
           searchBlock={entryIds[idx] === pendingSearchScroll?.entryId ? searchBlock : undefined}
@@ -1070,6 +1097,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
           onFork={isNew ? undefined : stableHandleFork}
           forking={forkingEntryId === entryIds[idx]}
           onEditContent={stableHandleEditContent}
+          editDisabled={sessionBusy}
           onCancelEdit={cancelEdit}
           isEditing={editEntryId !== null && editEntryId === entryIds[idx]}
           showTimestamp={showTimestamp}
@@ -1185,7 +1213,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     );
   }, [
     messages, activeToolResults, hasEarlierMessages, pendingSearchScroll, searchBlock, onOpenSession, entryIds, streamActive, sessionBusy, isNew, forkingEntryId,
-    modelNames, messageCwd, onOpenFile, stableHandleEditContent, cancelEdit, editEntryId,
+    modelNames, messageCwd, openFile, stableHandleEditContent, cancelEdit, editEntryId,
     stableHandleFork, sessionIdForViews, handleCompact, isCompacting, compactError,
     visibleCount, t, sessionIdRef, setSentinelNode, messageKeys,
   ]);
@@ -1231,9 +1259,10 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     <ChatInput
       ref={chatInputRef}
       showInputHints={isEmptyNew}
-      onBranchNavigate={onBranchNavigate}
+      onBranchNavigate={chatOnly ? undefined : onBranchNavigate}
       onSetupChange={applyTaskSetup}
       onSend={sendMain}
+      onAttachFiles={onAttachFiles}
       onAbort={handleAbort}
       onSteer={agentRunning ? handleSteer : undefined}
       onFollowUp={agentRunning ? handleFollowUp : undefined}
@@ -1258,7 +1287,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       compactResult={compactResult}
       extensionStatuses={extensionStatuses}
       toolPreset={toolPreset}
-      onToolPresetChange={isEmptyNew ? handleToolPresetChange : undefined}
+      onToolPresetChange={!chatOnly && isEmptyNew ? handleToolPresetChange : undefined}
       thinkingLevel={thinkingLevel}
       isAutoThinkingSelection={isAutoThinkingSelection}
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
@@ -1272,6 +1301,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       routedModel={routedModel}
       onAbortBranchSummary={handleAbortBranchSummary}
       queuedMessages={queuedMessages}
+      onQueuedMessageAction={handleQueuedMessageAction}
       inputHistory={inputHistory}
       onRecallQueue={handleRecallQueue}
       slashCommands={slashCommands}
@@ -1281,11 +1311,12 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       onBuiltinCommand={dispatchCommand}
       autoFocus={isNew}
       draftKey={session?.id ?? newSessionDraftKey ?? undefined}
-      cwd={session?.cwd ?? newSessionCwd}
-      projectPath={session?.projectRoot ?? session?.cwd ?? newSessionCwd}
-      onSelectProject={onSelectProject}
-      projectOptions={projectOptions}
-      onProjectChange={onProjectChange}
+      cwd={chatOnly ? undefined : session?.cwd ?? newSessionCwd}
+      projectPath={chatOnly ? undefined : session?.projectRoot ?? session?.cwd ?? newSessionCwd}
+      onSelectProject={chatOnly ? undefined : onSelectProject}
+      projectOptions={chatOnly ? [] : projectOptions}
+      onProjectChange={chatOnly ? undefined : onProjectChange}
+      chatOnly={chatOnly}
       contextUsage={contextUsage}
       sessionStats={sessionStats}
     />
@@ -1363,10 +1394,10 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
               </g>
             </svg>
             <div style={{ maxWidth: 320, color: "var(--text)", fontSize: 13, fontWeight: 550, lineHeight: 1.35 }}>
-              {t("chat.dropFilesHint")}
+              {t(chatOnly ? "chat.dropImagesHint" : "chat.dropFilesHint")}
             </div>
             <div style={{ maxWidth: 360, color: "var(--text-muted)", fontSize: 12, lineHeight: 1.4 }}>
-              {t("chat.dropFilesDetail")}
+              {t(chatOnly ? "chat.dropImagesDetail" : "chat.dropFilesDetail")}
             </div>
           </div>
         </div>
@@ -1451,7 +1482,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
             {renderedMessages}
             {streamState.isStreaming && hasStreamingContent && streamState.streamingMessage && (
-              <MessageView key="streaming-live" message={streamState.streamingMessage as AgentMessage} toolResults={toolResultsMap} isStreaming modelNames={modelNames} cwd={messageCwd} onOpenFile={onOpenFile} />
+              <MessageView key="streaming-live" message={streamState.streamingMessage as AgentMessage} toolResults={toolResultsMap} isStreaming modelNames={modelNames} cwd={messageCwd} onOpenFile={openFile} />
             )}
 
             {agentRunning && !hasStreamingContent && (agentPhase || isCompacting) && (

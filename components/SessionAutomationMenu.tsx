@@ -50,7 +50,7 @@ export function SessionAutomationMenu({
         </svg>
       </button>
       {open && (
-        <div className="native-popover" style={{
+        <div className="native-popover app-menu" style={{
           position: "absolute",
           bottom: "calc(100% + 6px)",
           ...(alignLeft ? { left: 0 } : { right: 0 }),
@@ -59,7 +59,7 @@ export function SessionAutomationMenu({
           padding: "6px 0", minWidth: 230,
         }}>
           {onCompact && (
-            <div style={{ padding: "0 5px" }}>
+            <div>
               <button
                 type="button"
                 className="composer-menu-row"

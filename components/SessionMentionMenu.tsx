@@ -23,7 +23,7 @@ export function SessionMentionMenu({ loaded, matches, activeIndex, itemRefs, onP
   const matchCountLabel = matches.length === 1 ? t("chat.match") : t("chat.matches", { count: matches.length });
   return (
     <div
-      className="native-popover composer-completion-popover is-front"
+      className="native-popover app-menu composer-completion-popover is-front"
     >
       <div className="composer-completion-header">
         <span>{loaded ? t("chat.sessions", { label: matchCountLabel }) : t("chat.loadingSessions")}</span>

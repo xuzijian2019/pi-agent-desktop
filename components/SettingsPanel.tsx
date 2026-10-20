@@ -1,5 +1,7 @@
 "use client";
 
+import { AppSelect } from "./AppSelect";
+
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useTheme } from "@/hooks/useTheme";
@@ -42,6 +44,7 @@ import { DesktopAppSection } from "./desktop";
 import { McpConfig } from "./McpConfig";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
 import { ArtifactsSettingRow } from "./ArtifactsSettingRow";
+import { ChatsSettingsSection } from "./ChatsSettingsSection";
 
 interface Props {
   cwd: string | null;
@@ -215,31 +218,6 @@ function GeneralSettings({
           <AppUpdatesSection onBusyChange={onBusyChange} />
 
           <section className="settings-general-section">
-            <h3 className="settings-general-heading">{t("common.language")}</h3>
-            <div role="radiogroup" aria-label={t("common.language")} className="settings-language-options">
-              {supportedLocales.map((plugin) => {
-                const selected = locale === plugin.id;
-                return (
-                  <button
-                    key={plugin.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    onClick={() => setLocale(plugin.id as typeof locale)}
-                    className="settings-language-option"
-                  >
-                    <span className="settings-language-radio">
-                      {selected && <span className="settings-language-radio-dot" />}
-                    </span>
-                    <span className="settings-language-label">{plugin.label}</span>
-                    <span className="settings-language-code">{plugin.id}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="settings-general-section">
             <h3 className="settings-general-heading">{t("settings.chat")}</h3>
             <div className="settings-chat-options">
               <div className="settings-chat-option settings-chat-switch-option">
@@ -389,9 +367,35 @@ function GeneralSettings({
               </div>
             </div>
           </section>
+          <ChatsSettingsSection />
         </div>
 
         <div className="settings-general-col">
+          <section className="settings-general-section">
+            <h3 className="settings-general-heading">{t("common.language")}</h3>
+            <div role="radiogroup" aria-label={t("common.language")} className="settings-language-options">
+              {supportedLocales.map((plugin) => {
+                const selected = locale === plugin.id;
+                return (
+                  <button
+                    key={plugin.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => setLocale(plugin.id as typeof locale)}
+                    className="settings-language-option"
+                  >
+                    <span className="settings-language-radio">
+                      {selected && <span className="settings-language-radio-dot" />}
+                    </span>
+                    <span className="settings-language-label">{plugin.label}</span>
+                    <span className="settings-language-code">{plugin.id}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
           <section className="settings-general-section">
             <h3 className="settings-general-heading">{t("settings.appearance")}</h3>
             <div role="radiogroup" aria-label={t("settings.appearance")} className="settings-theme-options">
@@ -587,18 +591,13 @@ export function SettingsPanel({
       <div className="settings-dialog-surface">
         <div className="settings-dialog-header">
           <strong className="settings-dialog-title">{t("settings.title")}</strong>
-          <select
+          <AppSelect
             aria-label={t("settings.sectionPicker")}
             value={section}
-            onChange={(event) => activateSection(event.target.value as SettingsSection)}
+            onValueChange={(value) => activateSection(value as SettingsSection)}
             className="settings-mobile-section-picker"
-          >
-            {sections.map((item) => (
-              <option key={item.id} value={item.id} disabled={item.requiresProject && !cwd}>
-                {item.label}
-              </option>
-            ))}
-          </select>
+            options={sections.map((item) => ({ value: item.id, label: item.label, disabled: item.requiresProject && !cwd }))}
+          />
           <nav aria-label={t("settings.title")} className="settings-section-tabs">
             {sections.map((item) => {
               const selected = section === item.id;

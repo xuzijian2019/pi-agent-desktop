@@ -3,9 +3,13 @@ import type { ReferenceSelection } from "./prepare-outgoing";
 import { APP_PREF_KEYS } from "./app-prefs";
 import type { ChatDraftText } from "./pasted-text";
 import { MAX_ATTACHED_IMAGES, isBase64ImageWithinLimits } from "./image-attachments";
+import { CHAT_ATTACHMENT_MAX_FILES, splitMessageForComposer } from "./chat-attachments";
+
+/** Text attachments stay in memory only; unlike ordinary draft fields they are not persisted. */
+export interface ChatDraftFile { id: string; name: string; size: number; text: string }
 
 export interface ChatDraftImage { data: string; mimeType: string }
-export interface ChatDraft { value: string; images: ChatDraftImage[]; texts?: ChatDraftText[]; setup?: TaskSetup; references?: Record<string, ReferenceSelection> }
+export interface ChatDraft { value: string; images: ChatDraftImage[]; files?: ChatDraftFile[]; texts?: ChatDraftText[]; setup?: TaskSetup; references?: Record<string, ReferenceSelection> }
 type RecordValue = { revision: number; draft: ChatDraft | null };
 export type DraftStatus = "loading" | "pending" | "saved" | "failed" | "conflict";
 const drafts = new Map<string, ChatDraft>();
@@ -71,7 +75,10 @@ export async function loadDraft(key: string, discardLocal = false): Promise<Chat
     });
     if (record?.draft && !valid(record.draft)) throw new Error("Invalid draft attachments");
     revisions.set(key, record?.revision ?? 0);
-    if (record?.draft) drafts.set(key, record.draft); else drafts.delete(key);
+    const files = drafts.get(key)?.files;
+    if (record?.draft) drafts.set(key, { ...record.draft, ...(files?.length ? { files } : {}) });
+    else if (files?.length) drafts.set(key, { value: "", images: [], files });
+    else drafts.delete(key);
     status(key, "saved");
     return getDraft(key);
   } catch {
@@ -86,9 +93,10 @@ export async function loadDraft(key: string, discardLocal = false): Promise<Chat
   }
 }
 export function setDraft(key: string, draft: ChatDraft): void {
-  const value = !draft.value && !draft.images.length && !draft.texts?.length && !draft.setup ? null : structuredClone(draft);
+  const value = !draft.value && !draft.images.length && !draft.texts?.length && !draft.files?.length && !draft.setup ? null : structuredClone(draft);
   const previous = drafts.get(key) ?? null;
   if (previous === value || (previous && value && previous.value === value.value
+    && JSON.stringify(previous.files) === JSON.stringify(value.files)
     && JSON.stringify(previous.setup) === JSON.stringify(value.setup) && JSON.stringify(previous.references) === JSON.stringify(value.references)
     && previous.images.length === value.images.length
     && previous.images.every((image, index) => image.data === value.images[index].data && image.mimeType === value.images[index].mimeType)
@@ -99,6 +107,14 @@ export function setDraft(key: string, draft: ChatDraft): void {
   persist(key, value);
 }
 function persist(key: string, draft: ChatDraft | null, force = false): void {
+  // Attached documents can contain third-party/private content. Preserve upstream's
+  // memory-only contract while retaining IndexedDB durability for normal drafts.
+  if (draft) {
+    const persisted = { ...draft };
+    delete persisted.files;
+    draft = !persisted.value && !persisted.images.length && !persisted.texts?.length && !persisted.setup
+      ? null : persisted;
+  }
   status(key, "pending");
   const next = (queues.get(key) ?? Promise.resolve()).then(async () => {
     const database = await db();
@@ -138,15 +154,22 @@ export function mergeRestoredSubmissionDraft(
   submittedImages: ChatDraftImage[] | undefined,
   currentText: string,
   currentImages: ChatDraftImage[],
+  submittedFiles: ChatDraftFile[] | undefined = undefined,
+  currentFiles: ChatDraftFile[] | undefined = undefined,
 ): ChatDraft {
   const images = [...(submittedImages ?? []), ...currentImages]
     .filter(isBase64ImageWithinLimits)
     .slice(0, MAX_ATTACHED_IMAGES)
     .map(({ data, mimeType }) => ({ data, mimeType }));
+  const files = [...(submittedFiles ?? []), ...(currentFiles ?? [])]
+    .filter((file, index, all) => all.findIndex((other) => other.id === file.id) === index)
+    .slice(0, CHAT_ATTACHMENT_MAX_FILES)
+    .map((file) => ({ ...file }));
 
   return {
     value: mergeRestoredSubmissionText(submittedText, currentText),
     images,
+    ...(files.length ? { files } : {}),
   };
 }
 
@@ -154,13 +177,18 @@ export function restoreDraftSubmission(
   key: string,
   text: string,
   images?: ChatDraftImage[],
+  files?: ChatDraftFile[],
 ): ChatDraft {
   const current = getDraft(key) ?? { value: "", images: [] };
+  // A submission that carried attached files comes back as attachments, not as markup.
+  const split = splitMessageForComposer(text);
   const restored = { ...current, ...mergeRestoredSubmissionDraft(
-    text,
+    split.text,
     images,
     current.value,
     current.images,
+    [...(files ?? []), ...split.files],
+    current.files,
   ) };
   setDraft(key, restored);
   return restored;
@@ -174,7 +202,7 @@ export function rekeyDraft(
   if (previousKey === nextKey) return currentDraft ? structuredClone(currentDraft) : getDraft(nextKey);
 
   const storedPrevious = getDraft(previousKey);
-  const previous = currentDraft && (currentDraft.value || currentDraft.images.length || currentDraft.texts?.length || currentDraft.setup)
+  const previous = currentDraft && (currentDraft.value || currentDraft.images.length || currentDraft.texts?.length || currentDraft.files?.length || currentDraft.setup)
     ? structuredClone(currentDraft)
     : (storedPrevious ?? (currentDraft ? structuredClone(currentDraft) : null));
   const next = getDraft(nextKey);
@@ -182,7 +210,7 @@ export function rekeyDraft(
   if (!previous) return next;
 
   const merged = next
-    ? { ...next, ...previous, ...mergeRestoredSubmissionDraft(next.value, next.images, previous.value, previous.images) }
+    ? { ...next, ...previous, ...mergeRestoredSubmissionDraft(next.value, next.images, previous.value, previous.images, next.files, previous.files) }
     : previous;
   setDraft(nextKey, merged);
   return structuredClone(merged);
