@@ -61,7 +61,7 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const base = 'http://127.0.0.1:' + server.address().port;
 let browser;
 try {
-  browser = await chromium.launch({ channel: process.platform === 'win32' ? 'msedge' : undefined, headless: true });
+  browser = await chromium.launch({ executablePath: process.env.E2E_BROWSER_EXECUTABLE, channel: process.env.E2E_BROWSER_CHANNEL || (process.platform === 'win32' ? 'msedge' : undefined), headless: true });
   for (const theme of ['light', 'dark']) for (const width of [1280, 390, 320]) {
     current = makeSession();
     const page = await browser.newPage({ viewport: { width, height: 760 }, hasTouch: width === 320, isMobile: width === 320, reducedMotion: 'reduce' });

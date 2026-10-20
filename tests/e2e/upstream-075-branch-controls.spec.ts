@@ -81,8 +81,21 @@ for (const theme of ["light", "dark"] as const) {
       await expect(dialog).toBeVisible();
       await expect(baseSelect).toHaveText(base);
       await expect(locationSelect).toHaveText("New worktree");
-      // A genuine outside pointer must still dismiss the parent popup.
-      await composer.click();
+      // The popup intentionally covers the textarea center. Find an actually
+      // exposed textarea point, then use a real pointer click (never force or
+      // dispatchEvent) so this still verifies the outside-dismissal handler.
+      const outsidePoint = await composer.evaluate(el => {
+        const rect = el.getBoundingClientRect();
+        for (const x of [4, rect.width - 4]) {
+          for (const y of [4, rect.height / 2, rect.height - 4]) {
+            const hit = document.elementFromPoint(rect.left + x, rect.top + y);
+            if (hit && el.contains(hit) && !hit.closest(".workbench-branch-control")) return { x, y };
+          }
+        }
+        return null;
+      });
+      expect(outsidePoint, "an exposed textarea point outside the branch popup").not.toBeNull();
+      await composer.click({ position: outsidePoint! });
       await expect(dialog).toHaveCount(0);
       expect(snapshot()).toEqual(before);
     });

@@ -23,7 +23,7 @@ const callbacks = { tail: callback("scrollToBottom") };
 const windowSource = await readFile(new URL("../components/ChatWindow.tsx", import.meta.url), "utf8");
 const apply = windowSource.match(/const apply = \(\) => \{([\s\S]*?)\n    \};/)?.[1];
 assert.ok(apply, "actual overlay resize callback");
-const browser = await chromium.launch({ channel: process.platform === "win32" ? "msedge" : undefined, headless: true });
+const browser = await chromium.launch({ executablePath: process.env.E2E_BROWSER_EXECUTABLE, channel: process.env.E2E_BROWSER_CHANNEL || (process.platform === "win32" ? "msedge" : undefined), headless: true });
 try {
   for (const width of [1280, 390, 320]) {
     const page = await browser.newPage({ viewport: { width, height: 760 } });

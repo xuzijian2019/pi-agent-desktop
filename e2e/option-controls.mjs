@@ -10,7 +10,7 @@ const css=(await Promise.all(['app/globals.css','app/settings.css','app/native-t
 const js=await readFile('test-results/ui-send/consistency-preview.js');
 const server=createServer((req,res)=>{res.setHeader('Content-Type',req.url==='/preview.js'?'text/javascript':req.url==='/style.css'?'text/css':'text/html');res.end(req.url==='/preview.js'?js:req.url==='/style.css'?css:'<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"></head><body><div id="root"></div><script src="/preview.js"></script></body></html>');});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;
-const browser=await chromium.launch({channel:process.env.E2E_BROWSER_CHANNEL || (process.platform==='win32'?'msedge':undefined),headless:true}),results=[];
+const browser=await chromium.launch({executablePath:process.env.E2E_BROWSER_EXECUTABLE,channel:process.env.E2E_BROWSER_CHANNEL || (process.platform==='win32'?'msedge':undefined),headless:true}),results=[];
 const rgb=(color)=>color.match(/[\d.]+/g).slice(0,3).map(Number);
 const luminance=(color)=>rgb(color).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;}).reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0);
 const contrast=(a,b)=>{const x=luminance(a),y=luminance(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);};
