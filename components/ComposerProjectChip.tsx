@@ -77,7 +77,7 @@ export function ComposerProjectChip({
       </button>
       {open && projectOptions.length > 0 && onProjectChange && (
         <div
-          className="native-popover composer-project-menu"
+          className="native-popover app-menu composer-project-menu"
           role="menu"
           onMouseLeave={() => setProjectPathTip(null)}
           onScroll={() => setProjectPathTip(null)}
@@ -90,6 +90,7 @@ export function ComposerProjectChip({
                 key={projectRoot}
                 type="button"
                 role="menuitem"
+                aria-current={isCurrent ? "true" : undefined}
                 onClick={() => {
                   onOpenChange(false);
                   setProjectPathTip(null);

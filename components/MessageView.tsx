@@ -23,6 +23,9 @@ import { isThinkingExpandedByDefault, THINKING_EXPANDED_EVENT } from "@/lib/thin
 import { TurnWrittenFiles } from "./TurnWrittenFiles";
 import type { WrittenFile } from "@/lib/turn-written-files";
 import { skillExpansionToCommand } from "@/lib/slash-display";
+import { splitAttachedFiles } from "@/lib/chat-attachments";
+import { AttachedFileList } from "./AttachedFileList";
+import { SavedFileCard, isSavedFileInfo } from "./SavedFileCard";
 import type { SubagentToolDetails } from "@/lib/subagent-extension";
 import { CODEMODE_TOOL_NAME, codemodeCalls, codemodeScript, codemodeScriptPreview, stripCodemodeHeader } from "@/lib/codemode-view";
 import { CodemodeCallList } from "./CodemodeToolView";
@@ -201,6 +204,8 @@ interface Props {
   onFork?: (entryId: string) => void;
   forking?: boolean;
   onEditContent?: (message: UserMessage, entryId: string) => void;
+  /** Shared with MessageView so the disabled reason can travel with the button. */
+  editDisabled?: boolean;
   onCancelEdit?: () => void;
   isEditing?: boolean;
   showTimestamp?: boolean;
@@ -283,9 +288,9 @@ function haveSameRelevantToolResults(
   return true;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenSession, entryId, searchBlock, onFork, forking, onEditContent, onCancelEdit, isEditing, showTimestamp, prevTimestamp, sessionId, writtenFiles, onCompact, isCompacting, compactError }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenSession, entryId, searchBlock, onFork, forking, onEditContent, editDisabled, onCancelEdit, isEditing, showTimestamp, prevTimestamp, sessionId, writtenFiles, onCompact, isCompacting, compactError }: Props) {
   if (message.role === "user") {
-    return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onEditContent={onEditContent} onCancelEdit={onCancelEdit} isEditing={isEditing} />;
+    return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onEditContent={onEditContent} editDisabled={editDisabled} onCancelEdit={onCancelEdit} isEditing={isEditing} />;
   }
   if (message.role === "assistant") {
     return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} onCompact={onCompact} isCompacting={isCompacting} compactError={compactError} />;
@@ -324,6 +329,7 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     && prev.onFork === next.onFork
     && prev.forking === next.forking
     && prev.onEditContent === next.onEditContent
+    && prev.editDisabled === next.editDisabled
     && prev.onCancelEdit === next.onCancelEdit
     && prev.isEditing === next.isEditing
     && prev.showTimestamp === next.showTimestamp
@@ -380,7 +386,7 @@ function CollapsibleUserText({ text, cwd, onOpenFile }: {
   );
 }
 
-function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, onEditContent, onCancelEdit, isEditing }: {
+function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, onEditContent, editDisabled, onCancelEdit, isEditing }: {
   message: UserMessage;
   cwd?: string;
   onOpenFile?: (filePath: string, page?: number) => void;
@@ -388,6 +394,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
   onFork?: (entryId: string) => void;
   forking?: boolean;
   onEditContent?: (message: UserMessage, entryId: string) => void;
+  editDisabled?: boolean;
   onCancelEdit?: () => void;
   isEditing?: boolean;
 }) {
@@ -413,6 +420,9 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
     typeof message.content === "string"
       ? []
       : message.content.filter((b): b is ImageContent => b.type === "image");
+
+  // Files attached in a chat travel inside the text; show them as chips, not a wall of text.
+  const { text: bodyText, files: attachedFiles } = splitAttachedFiles(content);
 
   const commandText = skillExpansionToCommand(content);
   const commandSeparator = commandText?.search(/\s/) ?? -1;
@@ -449,6 +459,10 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
     </div>
   );
   const canEdit = !!entryId && !!onEditContent;
+  const editBlocked = canEdit && editDisabled;
+  const editTitle = editBlocked
+    ? t("i18n.editFromHereBusyTitle")
+    : t("i18n.editFromHereTitle");
   const canCancelEdit = !!isEditing && !!onCancelEdit;
 
   const copyContent = () => {
@@ -509,7 +523,8 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
           ) : (
             <>
               {imageBlocksNode}
-              {content && <CollapsibleUserText text={content} cwd={cwd} onOpenFile={onOpenFile} />}
+              {attachedFiles.length > 0 && <AttachedFileList files={attachedFiles} />}
+              {bodyText && <CollapsibleUserText text={bodyText} cwd={cwd} onOpenFile={onOpenFile} />}
             </>
           )}
         </div>
@@ -538,7 +553,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                 </svg>
               )}
-               {copied ? t("i18n.copied") : t("i18n.copy")}
+               <span aria-live="polite">{copied ? t("i18n.copied") : t("i18n.copy")}</span>
             </button>
           </div>
           {(canFork || canEdit || canCancelEdit) && (
@@ -546,7 +561,9 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
               {canEdit && !canCancelEdit && (
                 <button
                   onClick={() => onEditContent!(editTarget, entryId!)}
-                   title={t("i18n.editFromHereTitle")}
+                  disabled={editBlocked}
+                  aria-disabled={editBlocked || undefined}
+                  title={editTitle}
                   className="msg-action msg-edit-action"
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -893,7 +910,7 @@ function AssistantMessageView({
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
               </svg>
             )}
-             {copied ? t("i18n.copied") : t("i18n.copy")}
+             <span aria-live="polite">{copied ? t("i18n.copied") : t("i18n.copy")}</span>
           </button>
         )}
         {time && !isStreaming && (
@@ -1054,6 +1071,9 @@ function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOp
   const isError = (result?.isError ?? false)
     || (isApplyPatchToolName(block.toolName) && applyPatchResultHasFailures(result?.details));
   const subagent = isSubagentToolDetails(result?.details) ? result.details : null;
+  const savedFile = block.toolName === "save_to_downloads" && !isError && isSavedFileInfo(result?.details)
+    ? result.details
+    : null;
   const codemodeCallCount = codemode ? codemode.calls.length + codemode.omitted : 0;
 
   return (
@@ -1122,6 +1142,9 @@ function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOp
 
       {/* ── Result images — always visible, independent of the collapsed details ── */}
       {resultImages.length > 0 && <ResultImages images={resultImages} isError={isError} />}
+
+      {/* ── A file the chat saved to Downloads — always visible ── */}
+      {savedFile && <SavedFileCard file={savedFile} />}
 
       {/* ── Expanded: applied-patch split diff ── */}
       {expanded && patchFiles && (
@@ -1700,7 +1723,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
               onClick={copyContent}
               className={copied ? "msg-card-action is-active" : "msg-card-action"}
             >
-               {copied ? t("i18n.copied") : t("i18n.copy")}
+               <span aria-live="polite">{copied ? t("i18n.copied") : t("i18n.copy")}</span>
             </button>
           ) : null}
           {(hasDetails || isHiddenDisplay) && (

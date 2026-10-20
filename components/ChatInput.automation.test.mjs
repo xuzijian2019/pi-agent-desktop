@@ -57,7 +57,7 @@ test("known automation never restores the removed gear, compaction or steering b
   });
   assert.doesNotMatch(html, /aria-label="(?:Session automation|Compact context|Stop compaction)"/);
   assert.doesNotMatch(source, /<SessionAutomationMenu\b|onAudioUnlock|<SelectorRow\b/);
-  assert.match(html, /composer-stop-button/);
+  assert.match(html, /data-action="stop"/);
 });
 
 test("extracted mention and project menus preserve the fork's classes and project disambiguation", async () => {
@@ -77,9 +77,9 @@ test("extracted mention and project menus preserve the fork's classes and projec
     }),
   ));
   assert.match(html, /class="chat-project-context is-compact"/);
-  assert.match(html, /class="native-popover composer-project-menu"/);
+  assert.match(html, /class="native-popover app-menu composer-project-menu"/);
   assert.match(html, /class="composer-project-option is-current"/);
-  assert.match(html, /class="native-popover composer-completion-popover is-front"/);
+  assert.match(html, /class="native-popover app-menu composer-completion-popover is-front"/);
   assert.match(html, /class="composer-completion-item is-session is-active"/);
   assert.doesNotMatch(html, /composer-completion-hint/);
   const palette = readFileSync(new URL("../hooks/useSessionMentionPalette.ts", import.meta.url), "utf8");
@@ -113,7 +113,7 @@ test("prepared composer sends remain single-shot and never clear a newer draft",
     const draftKeyRef = { current: "a" };
     const handler = script.runInNewContext({
       invalidDraftImages: false, orphanedPaste: false, draftKey: "a", hydratedDraftKey: "a", persistenceStatus: "saved",
-      value: "original", pastedTexts: [], attachedImages: [], isStreaming: false, workspaceUnavailable: false,
+      attachedFilesRef: { current: [] }, value: "original", pastedTexts: [], attachedImages: [], isStreaming: false, workspaceUnavailable: false,
       splicePastedTexts: (text) => text, dispatchBuiltin: async () => false, onBuiltinCommand: undefined,
       draftKeyRef, preparingRef: { current: false }, snapshotRef: { current: () => draft },
       setPreparationError(message) { assert.equal(message, ""); },
@@ -132,4 +132,44 @@ test("prepared composer sends remain single-shot and never clear a newer draft",
     if (calls.length) assert.equal(calls[0][0], "resolved session reference");
     assert.equal(clearCount, scenario === "unchanged" ? 1 : 0, scenario);
   }
+});
+
+test("async text attachments revalidate limits and follow a rekey without resurrecting the old draft", async () => {
+  const ts = (await import("typescript")).default;
+  const { Script } = await import("node:vm");
+  const ast = ts.createSourceFile("ChatInput.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let method;
+  function visit(node) {
+    if (ts.isMethodDeclaration(node) && node.name.getText(ast) === "addTextFiles") method = node;
+    ts.forEachChild(node, visit);
+  }
+  visit(ast);
+  assert.ok(method);
+  const script = new Script(ts.transpileModule(`(async function${method.getText(ast).slice("async addTextFiles".length)})`, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText);
+  const pending = [];
+  const refs = { current: [] };
+  const key = { current: "new" };
+  const aliases = { current: new Map() };
+  const stored = new Map();
+  const fn = script.runInNewContext({
+    draftKeyRef: key, attachedFilesRef: refs, attachmentDraftAliasesRef: aliases,
+    readChatTextAttachments: () => new Promise(resolve => pending.push(resolve)), extractDocxText() {},
+    getDraft: k => stored.get(k), setDraft: (k, value) => stored.set(k, value),
+    setAttachedFiles: files => { refs.current = files; },
+    CHAT_ATTACHMENT_MAX_FILES: 5, CHAT_ATTACHMENT_MAX_TOTAL_BYTES: 512 * 1024,
+  });
+  const file = n => ({ id: String(n), name: `${n}.txt`, size: 100, text: "x" });
+  const first = fn([]), second = fn([]);
+  aliases.current.set("new", "session"); key.current = "session";
+  pending[0]({ accepted: [1,2,3,4].map(file), rejected: [] });
+  assert.equal((await first).length, 0);
+  pending[1]({ accepted: [5,6].map(file), rejected: [] });
+  assert.equal((await second)[0].reason, "too-many");
+  assert.equal(refs.current.length, 5);
+  assert.equal(stored.has("new"), false);
+  refs.current = [{ ...file(7), size: 512 * 1024 - 10 }];
+  const third = fn([]);
+  pending[2]({ accepted: [file(8)], rejected: [] });
+  assert.equal((await third)[0].reason, "total-too-large");
+  assert.equal(refs.current.length, 1);
 });

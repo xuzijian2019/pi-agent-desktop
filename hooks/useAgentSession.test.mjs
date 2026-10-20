@@ -127,10 +127,13 @@ test("fresh sessions use the preference while persisted and live sessions restor
   assert.match(source, /isNew \? loadStoredToolPreset\(\) : CONFIGURED_TOOL_PRESET/);
   assert.match(
     preferenceSource,
-    /useLayoutEffect\(\(\) => \{\s*if \(!existingSessionId && \(!isNew \|\| sessionIdRef\.current\)\) return;\s*setToolPresetState\(getPreferredToolPreset\(\)\)/,
+    /const existingSessionId = session\?\.id;[\s\S]*?useLayoutEffect\(\(\) => \{\s*if \(chatWorkspace\) \{\s*setToolPresetState\("none"\);\s*return;\s*\}\s*if \(!existingSessionId && \(!isNew \|\| sessionIdRef\.current\)\) return;\s*setToolPresetState\(getPreferredToolPreset\(\)\)/,
   );
   assert.match(source, /if \(agentState\?\.running\) \{\s*loadTools\(session\.id\)/);
-  assert.match(source, /d\.toolNames !== undefined \? getPresetFromToolNames\(d\.toolNames\) : CONFIGURED_TOOL_PRESET/);
+  assert.match(
+    source,
+    /setToolPresetState\(chatWorkspace\s*\? "none"\s*: d\.toolNames !== undefined\s*\? getPresetFromToolNames\(d\.toolNames\)\s*: CONFIGURED_TOOL_PRESET\)/,
+  );
   assert.match(changeSource, /setPreferredToolPreset\(preset\)/);
   assert.match(changeSource, /type: "set_tools",\s*\.\.\.\(toolNames !== undefined \? \{ toolNames \} : \{\}\),/);
   assert.match(changeSource, /activeSessionId !== sid \|\| result\?\.recreated/);
@@ -152,13 +155,13 @@ test("sessions the user never overrode follow pi's configured defaultTools (#700
   // A new session must omit toolNames entirely rather than pin pi-web's own preset.
   assert.match(ensureSource, /\.\.\.\(toolNames !== undefined \? \{ toolNames \} : \{\}\),/);
   assert.doesNotMatch(ensureSource, /^ +toolNames,$/m);
-  assert.match(ensureSource, /sessionToolsPinnedRef\.current = toolNames !== undefined/);
+  assert.match(ensureSource, /sessionToolsPinnedRef\.current = chatWorkspace \|\| toolNames !== undefined/);
 
   // An unpinned session keeps saying "configured" instead of borrowing whichever
   // preset its resolved tools happen to match.
   assert.match(
     loadToolsSource,
-    /setToolPresetState\(sessionToolsPinnedRef\.current \? getPresetFromTools\(tools\) : CONFIGURED_TOOL_PRESET\)/,
+    /setToolPresetState\(chatWorkspace\s*\? "none"\s*: sessionToolsPinnedRef\.current\s*\? getPresetFromTools\(tools\)\s*: CONFIGURED_TOOL_PRESET\)/,
   );
 });
 
@@ -184,6 +187,18 @@ test("in-session branch switches wait for a run, and both fork top-bar navigator
     source.indexOf("  const handleLeafChange = useCallback"),
     source.indexOf("  const handleModelChange = useCallback"),
   );
+
+  // Fork copies into a new file, so only a shell command blocks it; the
+  // in-session edit still waits because pi refuses navigate_tree mid-run.
+  assert.match(chatWindowSource, /onFork=\{isNew \? undefined : stableHandleFork\}/);
+  assert.match(chatWindowSource, /onEditContent=\{stableHandleEditContent\}/);
+  assert.match(chatWindowSource, /editDisabled=\{sessionBusy\}/);
+  assert.match(messageViewSource, /disabled=\{editBlocked\}/);
+  assert.match(messageViewSource, /t\("i18n\.editFromHereBusyTitle"\)/);
+  assert.match(chatWindowSource, /onAskInNewChat && quotedSelection\.sourceEntryId && !bashRunning &&/);
+  const forkSource = source.slice(source.indexOf("  const handleFork = useCallback"), source.indexOf("  const handleNavigate = useCallback"));
+  assert.match(forkSource, /addNotice\(\{ type: "error", message:/);
+
   // A branch summary being generated holds the leaf too, like compaction.
   assert.match(leafChangeSource, /if \(bashRunningRef\.current \|\| agentRunningRef\.current \|\| isCompacting \|\| branchSummaryHolds\(branchSummarySessionIdRef\.current, sessionIdRef\.current\)\) return;/);
   assert.match(source, /const branchSwitchLocked = agentRunning \|\| bashRunning \|\| isCompacting \|\| branchSummaryPending;/);
@@ -205,7 +220,10 @@ test("first user messages expose both branch actions and edit before their own e
   assert.match(chatWindowSource, /if \(bashRunningRef\.current\) return;\s*handleFork\(entryId\)/);
   assert.match(chatWindowSource, /if \(sessionBusyRef\.current\) return;\s*handleEditContent\(message, entryId\)/);
   assert.match(nativeThemeSource, /\.chat-window\[data-bash-running="true"\] \.user-msg-actions \{/);
-  assert.match(nativeThemeSource, /\.chat-window\[data-session-busy="true"\] \.user-msg-actions \.msg-edit-action \{/);
+  // Busy edit remains visible with an accessible disabled button; memoization must refresh it.
+  assert.match(chatWindowSource, /editDisabled=\{sessionBusy\}/);
+  assert.match(messageViewSource, /disabled=\{editBlocked\}/);
+  assert.match(messageViewSource, /prev\.editDisabled === next\.editDisabled/);
   assert.match(navigateSource, /type: "navigate_tree",\s*targetId: entryId/);
   assert.match(navigateSource, /await loadSession\(sid\)/);
 });
@@ -740,7 +758,7 @@ test("carries the last tool preset and effort level into new sessions", async ()
   assert.match(source, /function loadStoredToolPreset\(\): ToolPreset \{ return getPreferredToolPreset\(\)/);
   assert.match(source, /asConcreteThinkingLevel\(getPref\(APP_PREF_KEYS.thinkingLevel\)\)/);
   assert.match(source, /isNew \? loadStoredToolPreset\(\) : CONFIGURED_TOOL_PRESET/);
-  assert.match(source, /isNew \? loadStoredThinkingLevel\(\) : null/);
+  assert.match(source, /isNew && !chatWorkspace \? loadStoredThinkingLevel\(\) : null/);
   assert.match(source, /const selectedThinkingLevel = thinkingLevelOverrideRef.current/);
   assert.match(source, /removePref\(APP_PREF_KEYS.thinkingLevel\)/);
   assert.match(source, /setPref\(APP_PREF_KEYS.thinkingLevel, level\)/);
@@ -973,4 +991,38 @@ test("a newer automation change retires an older failure resync for the same ses
   await older;
   assert.equal(commandCount, 2);
   assert.deepEqual(resynced, []);
+});
+
+
+test("stable fork and edit callbacks read current busy refs without stale closures", async () => {
+  const ts = (await import("typescript")).default;
+  const { Script } = await import("node:vm");
+  const callbacks = chatWindowSource.slice(
+    chatWindowSource.indexOf("  const stableHandleFork = useCallback"),
+    chatWindowSource.indexOf("  // Register the abort handler"),
+  );
+  const forked = [], edited = [];
+  const bashRunningRef = { current: false };
+  const sessionBusyRef = { current: false };
+  const context = {
+    useCallback: (callback) => callback,
+    bashRunningRef, sessionBusyRef,
+    handleFork: (entryId) => forked.push(entryId),
+    handleEditContent: (message, entryId) => edited.push([message, entryId]),
+  };
+  new Script(ts.transpile(callbacks + "\nglobalThis.handlers = { stableHandleFork, stableHandleEditContent };"))
+    .runInNewContext(context);
+  const { stableHandleFork, stableHandleEditContent } = context.handlers;
+  const message = { role: "user", content: [] };
+  sessionBusyRef.current = true;
+  stableHandleFork("running-agent");
+  stableHandleEditContent(message, "blocked-edit");
+  bashRunningRef.current = true;
+  stableHandleFork("blocked-shell");
+  sessionBusyRef.current = false;
+  bashRunningRef.current = false;
+  stableHandleFork("idle");
+  stableHandleEditContent(message, "idle");
+  assert.deepEqual(forked, ["running-agent", "idle"]);
+  assert.deepEqual(edited, [[message, "idle"]]);
 });

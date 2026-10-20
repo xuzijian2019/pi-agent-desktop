@@ -99,18 +99,21 @@ test("latest selection, history, native links and project search", async ({ page
   await expect(linkA).toHaveAttribute("aria-current", "page");
   await page.goForward(); await expect(page).toHaveURL(new RegExp(ids[1])); await expect(composer).toHaveValue("draft beta");
   await expect(page).toHaveTitle(/beta.*navigation-/);
-  // Recent and the project tree are distinct routes to the same session. Both
+  // Timeline and the project tree are distinct routes to the same session. Both
   // must reflect selection and restore the same draft after either is clicked.
-  const recentA = page.locator(`.sidebar-recent-section a[href="?session=${ids[0]}"]`);
-  const recentB = page.locator(`.sidebar-recent-section a[href="?session=${ids[1]}"]`);
+  await page.getByRole("button", { name: "Projects menu", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Session timeline", exact: true }).click();
+  const recentA = page.locator(`.sidebar-project-timeline a[href="?session=${ids[0]}"]`);
+  const recentB = page.locator(`.sidebar-project-timeline a[href="?session=${ids[1]}"]`);
   await expect(recentA).toHaveCount(1); await expect(recentB).toHaveCount(1);
   await recentA.click(); await expect(page).toHaveURL(new RegExp(ids[0]));
   await expect(composer).toHaveValue("draft alpha");
   await expect(recentA).toHaveAttribute("aria-current", "page");
-  await expect(linkA).toHaveAttribute("aria-current", "page");
   await recentB.click(); await expect(page).toHaveURL(new RegExp(ids[1]));
   await expect(composer).toHaveValue("draft beta");
   await expect(recentB).toHaveAttribute("aria-current", "page");
+  await page.getByRole("button", { name: "Projects menu", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Group by project", exact: true }).click();
   await expect(linkB).toHaveAttribute("aria-current", "page");
   const popupPromise = context.waitForEvent("page");
   await linkA.click({ modifiers: ["ControlOrMeta"] });

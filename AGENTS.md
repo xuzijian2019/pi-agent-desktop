@@ -37,7 +37,8 @@ Typecheck: `node_modules/.bin/tsc --noEmit` · Lint: `npm run lint`
   fails tests that pin newer SDK behaviour. `npm test` runs `npm run check:deps` first and
   stops with the mismatched packages; `npm ci` fixes it.
 - **`next dev` rewrites `AGENTS.md`**: it appends a "This is NOT the Next.js you know" block
-  to this file on every start. Run `git checkout -- AGENTS.md` before committing; it is not part of the work.
+  to this file on every start. Preserve the project and user instructions here; review generated
+  additions separately and never reset the entire file to discard development output.
 
 ---
 
@@ -179,6 +180,7 @@ Fork notes:
 - [fork-files-security.md](docs/agents/fork-files-security.md): security posture (web password, OAuth tokens, preview sandboxes), worktrees and branch switching, the file access allow-list, web password throttling.
 - [fork-desktop.md](docs/agents/fork-desktop.md): the Tauri shell (desktop token, native menus in Rust, file context menu, window state, tauri plugin version pairing), workspace terminals and node-pty / quickjs staging, Windows overwrite installs.
 - [fork-ui.md](docs/agents/fork-ui.md): who contains whom in the topbar / chat column / right panel, the settings dialog tabs, touch affordances, completion sound, plugins and skills.
+- [fork-chat-workspace.md](docs/agents/fork-chat-workspace.md): the non-project Chats section, the hidden `chat-workspace` cwd and `workspaceKind` identity, project-workbench suppression, and the server-enforced chat policy (skills and MCP yes; no file, shell or other extension tools; no context files), text attachments, and continuing a chat in a project.
 
 ### AgentSession lifecycle (`lib/rpc-manager.ts`)
 - One `AgentSessionWrapper` per session id, keyed in `globalThis.__piSessions`
@@ -207,6 +209,7 @@ Each one undid a real regression; the linked note has the reasoning.
 - After an SDK bump run `npm run desktop:prepare && npm run desktop:verify`; never hard-code a nested staging destination; keep all three Windows `node_modules` guards. ([fork-desktop](docs/agents/fork-desktop.md))
 - Layout: the center column contains topbar and chat; the right-panel block is a full-height sibling inside the outer row; no `paddingLeft: sidebarResizer.width` on the topbar. Pinned by `AppShell.right-panel-row.test.mjs`. ([fork-ui](docs/agents/fork-ui.md))
 - `SettingsPanel` keeps the `onBusyChange` guard so a desktop update cannot be dismissed mid-install. ([fork-ui](docs/agents/fork-ui.md))
+- Chats use a server-owned hidden cwd and `workspaceKind`; never derive that path in the browser, group it with projects, or expose it to project trust / worktrees / files / terminals. Server policy must keep chats off the shell and editing, off every extension tool the user has not allowed, `read` limited to skills, saved files and files the user named in their own message, writes limited to `save_to_downloads`, and context-file-free, even for persisted sessions. ([fork-chat-workspace](docs/agents/fork-chat-workspace.md))
 
 ---
 
@@ -247,6 +250,17 @@ Location: `~/.pi/agent/sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl`
 `SessionContext.entryIds[]` parallels `messages[]`: each displayed message's `.jsonl` entry id, used for fork and navigate_tree.
 
 ## Styling: fork CSS lives only in `app/native-theme.css`
+
+**UI consistency is mandatory (user requirement).** Every application menu, dropdown,
+option picker and autocomplete popup must use the shared `.app-menu` surface and menu
+tokens in `app/native-theme.css`. Form choices use `components/AppSelect.tsx`; do not
+introduce raw `<select>` controls or OS-native application option menus. Preserve the
+same palette, nested radii, inset, row spacing, selected/disabled states and focus
+treatment in both themes. Use the existing design as the reference, consult the
+sources in `docs/ui-menu-audit.md`, and inspect actual rendered states at desktop and
+narrow widths before claiming visual consistency. System file/directory dialogs are
+separate OS tasks. Run `node --test scripts/ui-menu-consistency.test.mjs` after menu work;
+changes to shared choices also run `node e2e/option-controls.mjs`.
 
 `app/globals.css` and `app/settings.css` are pi-web's and stay byte-identical to upstream — `scripts/upstream-css-baseline.test.mjs` fails on any edit. Put every fork rule in `app/native-theme.css` (imported last in `app/layout.tsx`); overrides of upstream rules that other theme rules must beat go in its "fork base layer" at the top. After an upstream merge run `node scripts/upstream-css-baseline.mjs update <upstream-ref>` (the sync workflow does). Layout of the theme file and the design intent to restore after a merge: `docs/native-theme.md`.
 

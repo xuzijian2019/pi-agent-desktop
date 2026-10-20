@@ -114,53 +114,55 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
-            ## Pi Agent Desktop 0.7.3
+            ## Pi Agent Desktop 0.7.5
 
             ### New
 
-            - The sidebar gains a cross-project **Recent** section, remembers expanded project lists, and disambiguates projects that share a folder name.
-            - The composer project chip and project menus use the same disambiguated project names.
-            - Fetch, create, switch, and remove Git worktrees from a project's **…** menu; branch switching stays in the composer git control.
-            - Scheduled Tasks shows which process owns the scheduler lease and lets a stale or exited owner be taken over safely.
+            - **Chats can do more.** A chat now uses your installed skills and MCP servers (an MCP server you configured is trusted: its tools may write files or run commands), and you can attach text, code, and Word (.docx) files to a message. Name a file by its full path and the chat can read it; ask for a file and it is saved to your Downloads folder (never overwriting; you can require a confirmation before each save in the Chats section of Settings › General). Programs and installers are never saved.
+            - Pin, group, and archive chats from the sidebar, set a default model and reasoning level for new chats, and choose which extra tools chats may use in the **Chats** section of **Settings › General**. **Continue in a project** copies a chat into a project so it gains that project's tools.
+            - **Editable follow-up queue.** Messages sent while the agent is working wait in a list above the composer: edit, delete, or send one now to steer the current run. They are delivered automatically when the run finishes.
+            - Settings and every menu, dropdown, and option picker now share one consistent look, spacing, and keyboard behavior.
+
+            ### Improved
+
+            - The window appears once its first screen is ready instead of showing an empty frame, and the app starts faster.
+            - Chat scrolling keeps your sent message in place while a reply streams.
 
             ### Fixed
 
-            - Direct Scheduled URLs no longer lose their workspace selection while restoring a hidden chat.
-            - Mobile and narrow desktop layouts keep a visible way to close the workspace overlay.
-            - Opening the workspace panel with no file selected now shows the project file tree.
-            - Skills installation rejects option-like package names, and LAN/terminal authorization is stricter.
-
-            ### Other
-
-            - `npm test` checks installed dependencies against the lockfile before running.
-            - Route coverage expands for worktrees, skills, API keys, desktop dialogs, and terminals.
-            - A vulnerable transitive `sprintf-js` dependency is removed.
+            - After a Windows overwrite install, the app no longer keeps showing the previous version's interface.
+            - Files attached in one chat no longer appear in another; editing or restoring a message with attachments brings the files back as attachments.
+            - A path written inside an attached file no longer lets the chat read that file; only paths you type yourself count.
+            - The default reasoning level can be saved from the keyboard (arrow right to the star, then Enter).
+            - `dev:lan` and `start:lan` now mark the server as network-exposed, which switches off chats reading and saving files on this computer.
+            - Opening Settings from a chat whose first message contains a double space no longer freezes the app.
 
             Bundled components: pi 1.3.0, pi-web 0.10.0.
 
             ---
 
-            ## Pi Agent Desktop 0.7.3
+            ## Pi Agent Desktop 0.7.5
 
             ### 新增
 
-            - 侧边栏新增跨项目**最近**区域，会记住项目列表的展开状态，并为同名项目补充父目录以作区分。
-            - 输入框的项目标签与项目菜单使用相同的去重命名规则。
-            - 可在项目 **…** 菜单中拉取、创建、切换和移除 Git worktree；分支切换仍统一在输入框的 Git 控件中操作。
-            - 定时任务页会显示调度租约的负责进程；租约过期或进程退出后可安全接管。
+            - **对话能力增强。** 对话现在可以使用已安装的 Skills 和 MCP 服务器（你配置的 MCP 服务器被视为可信，其工具可能写入文件或执行命令），消息可附加文本、代码和 Word（.docx）文件。写出文件的完整路径，对话就能读取它；让它生成文件，会保存到“下载”文件夹（不会覆盖已有文件；可在 设置 › 通用 的“对话”部分要求每次保存前先确认）。程序和安装包不会被保存。
+            - 侧边栏可固定、分组和归档对话；在 **设置 › 通用** 的“对话”部分可设置新对话的默认模型与推理级别，并选择对话额外可用的工具。**在项目中继续**会把对话复制到项目里，使其获得该项目的工具。
+            - **可编辑的跟进队列。** 智能体工作期间发送的消息会排在输入框上方的列表中：可编辑、删除，或立即发送以引导当前运行；运行结束后自动投递。
+            - 设置页以及所有菜单、下拉框和选项选择器，统一了外观、间距和键盘操作。
+
+            ### 改进
+
+            - 窗口在首屏就绪后才显示，不再先出现空白画面，应用启动也更快。
+            - 对话滚动在回复流式输出时，会让你刚发送的消息保持在原位。
 
             ### 修复
 
-            - 直接打开定时任务页时，后台恢复的工作区选择不再丢失。
-            - 移动端和窄桌面布局始终有可见入口关闭工作区浮层。
-            - 没有选中文件时打开工作区面板，会显示项目文件树。
-            - Skills 安装会拒绝形似命令参数的包名；LAN 与终端授权也更严格。
-
-            ### 其他
-
-            - `npm test` 会先按锁文件检查已安装依赖再运行测试。
-            - 增加 worktree、Skills、API key、桌面对话框和终端路由测试。
-            - 移除存在漏洞的间接依赖 `sprintf-js`。
+            - Windows 覆盖安装后，应用不再继续显示上一版本的界面。
+            - 在一个对话中添加的附件不会再出现在另一个对话里；编辑或恢复带附件的消息时，文件会作为附件回到输入框。
+            - 附件内容中写出的路径不再让对话获得读取该文件的权限，只有你自己输入的路径才算数。
+            - 默认推理级别现在可以用键盘保存（方向键右移到星标，再按 Enter）。
+            - `dev:lan` 与 `start:lan` 现在会把服务标记为对外开放，从而关闭对话读取和保存本机文件的能力。
+            - 修复：当对话的第一条消息含连续空格时，点击设置会导致应用卡死。
 
             内置组件版本：pi 1.3.0、pi-web 0.10.0。
           releaseDraft: true
@@ -181,7 +183,10 @@ jobs:
         run: |
           version="$(node -p "require('./src-tauri/pi-agent-desktop-package.json').version")"
           gh release upload "v$version" src-tauri/resources/component-versions.json --clobber
-          gh release edit "v$version" --draft=false --latest
+          # A prerelease is never served by the updater. Say so explicitly
+          # instead of relying on the value tauri-action used when it first
+          # created the draft (v0.7.3 ended up marked prerelease).
+          gh release edit "v$version" --draft=false --latest --prerelease=false
 
   # A partially failed matrix leaves the release a draft and skips `manifest`,
   # which is correct — but it was also completely silent. Four consecutive

@@ -15,7 +15,9 @@ import type {
 } from "@/lib/types";
 import { isBlockingExtensionUiRequest } from "@/lib/browser-notifications";
 import { normalizeToolCalls } from "@/lib/normalize";
+import { attachmentAwareTitle } from "@/lib/chat-attachments";
 import { isPromptRejectedError, sendAgentCommand } from "@/lib/agent-client";
+import { mergeComposerQueueSnapshot, type ComposerQueueActionResult, type PendingComposerMessage } from "@/lib/composer-queue-types";
 import { fetchWithRetry } from "@/lib/fetch-timeout";
 import { APP_PREF_KEYS, getPref, getPrefBool, removePref, setPref } from "@/lib/app-prefs";
 import { cacheSessionData, invalidateSessionData, getCachedSessionData } from "@/lib/session-data-cache";
@@ -127,7 +129,7 @@ type AgentStateResponse = {
   extensionWidgets?: ExtensionWidgetItem[];
   routedModel?: RoutedModelInfo;
   cacheWarming?: CacheWarmingInfo;
-  queuedMessages?: { steering?: string[]; followUp?: string[] } | null;
+  queuedMessages?: { steering?: string[]; followUp?: string[]; pending?: PendingComposerMessage[]; pendingVersion?: number } | null;
   autoCompactionEnabled?: boolean;
   autoRetryEnabled?: boolean;
   steeringMode?: string;
@@ -139,10 +141,12 @@ export type { SessionAutomation } from "@/hooks/useSessionAutomation";
 export interface QueuedMessages {
   steering: string[];
   followUp: string[];
+  pending?: PendingComposerMessage[];
+  pendingVersion?: number;
 }
 
-function normalizeQueuedMessages(q?: { steering?: string[]; followUp?: string[] } | null): QueuedMessages {
-  return { steering: q?.steering ?? [], followUp: q?.followUp ?? [] };
+function mergeQueuedMessages(previous: QueuedMessages, q?: AgentStateResponse["queuedMessages"]): QueuedMessages {
+  return { steering: q?.steering ?? [], followUp: q?.followUp ?? [], ...mergeComposerQueueSnapshot(previous, q ?? {}) };
 }
 
 type ExtensionUiDialogRequest = Extract<ExtensionUiRequest, { method: "select" | "confirm" | "input" | "editor" }>;
@@ -200,6 +204,8 @@ export interface UseAgentSessionOptions {
   sessionRunning?: boolean;
   newSessionCwd: string | null;
   newSessionDraftKey: string | null;
+  /** Hidden model-only workspace: always no tools and no shell commands. */
+  chatWorkspace?: boolean;
   onAgentEnd?: () => void;
   onAttentionNeeded?: (request: BlockingExtensionUiRequest) => void;
   onSessionCreated?: (session: SessionInfo, sourceDraftKey: string) => void;
@@ -352,7 +358,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
     session, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, onSessionRenamed,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen,
-    onOpenSettings,
+    onOpenSettings, chatWorkspace = false,
   } = opts;
   const { t } = useI18n();
 
@@ -385,8 +391,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [modelThinkingLevelMaps, setModelThinkingLevelMaps] = useState<Record<string, Record<string, string | null>>>({});
   const [newSessionModel, setNewSessionModel] = useState<SelectedModel | null>(null);
   const [newSessionDefaultModel, setNewSessionDefaultModel] = useState<SelectedModel | null>(null);
-  const [toolPreset, setToolPreset] = useState<ToolPreset>(() => isNew ? loadStoredToolPreset() : CONFIGURED_TOOL_PRESET);
-  const [newSessionThinkingLevel, setNewSessionThinkingLevel] = useState<ConcreteThinkingLevel | null>(() => isNew ? loadStoredThinkingLevel() : null);
+  const [toolPreset, setToolPreset] = useState<ToolPreset>(() => chatWorkspace ? "none" : isNew ? loadStoredToolPreset() : CONFIGURED_TOOL_PRESET);
+  const [newSessionThinkingLevel, setNewSessionThinkingLevel] = useState<ConcreteThinkingLevel | null>(() => isNew && !chatWorkspace ? loadStoredThinkingLevel() : null);
   const [newSessionDefaultThinkingLevel, setNewSessionDefaultThinkingLevel] = useState<ConcreteThinkingLevel | null>(null);
   const [savedDefaultThinkingLevel, setSavedDefaultThinkingLevel] = useState<ConcreteThinkingLevel | null>(null);
   const [currentThinkingOverride, setCurrentThinkingOverride] = useState<ConcreteThinkingLevel | null>(null);
@@ -463,9 +469,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // id) is the same live conversation, not a session switch.
   const promotedIdentityRef = useRef<{ from: string; to: string } | null>(null);
   const newSessionModelOverrideRef = useRef<SelectedModel | null>(null);
-  const thinkingLevelOverrideRef = useRef<ConcreteThinkingLevel | null>(isNew ? loadStoredThinkingLevel() : null);
+  const thinkingLevelOverrideRef = useRef<ConcreteThinkingLevel | null>(isNew && !chatWorkspace ? loadStoredThinkingLevel() : null);
   const thinkingLevelPinsRef = useRef<Record<string, string>>({});
-  const defaultThinkingLevelRef = useRef<ConcreteThinkingLevel | null>(isNew ? loadStoredThinkingLevel() : null);
+  const defaultThinkingLevelRef = useRef<ConcreteThinkingLevel | null>(isNew && !chatWorkspace ? loadStoredThinkingLevel() : null);
   const promptRunIdRef = useRef(0);
   const optimisticUserMessageKeyRef = useRef<string | null>(null);
   const modelSwitchPendingRef = useRef(false);
@@ -617,8 +623,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         // New sessions relaunch with the user's last picked preset/effort; the
         // stored effort is sent explicitly at creation and pi clamps it to the
         // model's supported levels (same-or-above, else nearest below).
-        const storedThinking = loadStoredThinkingLevel();
-        setToolPreset(loadStoredToolPreset());
+        const storedThinking = chatWorkspace ? null : loadStoredThinkingLevel();
+        setToolPreset(chatWorkspace ? "none" : loadStoredToolPreset());
         setNewSessionThinkingLevel(storedThinking);
         setCurrentThinkingOverride(null);
         setLiveThinkingLevel(null);
@@ -652,9 +658,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const setToolPresetState = opts.setToolPreset ?? setToolPreset;
 
   useLayoutEffect(() => {
+    if (chatWorkspace) {
+      setToolPresetState("none");
+      return;
+    }
     if (!existingSessionId && (!isNew || sessionIdRef.current)) return;
     setToolPresetState(getPreferredToolPreset());
-  }, [existingSessionId, isNew, setToolPresetState]);
+  }, [chatWorkspace, existingSessionId, isNew, setToolPresetState]);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     const container = scrollContainerRef.current;
@@ -868,8 +878,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       // Tool-preset state is independent of the view cache: it must be applied
       // on every read, cached window or not (#700).
-      sessionToolsPinnedRef.current = d.toolNames !== undefined;
-      setToolPresetState(d.toolNames !== undefined ? getPresetFromToolNames(d.toolNames) : CONFIGURED_TOOL_PRESET);
+      sessionToolsPinnedRef.current = chatWorkspace || d.toolNames !== undefined;
+      setToolPresetState(chatWorkspace
+        ? "none"
+        : d.toolNames !== undefined
+          ? getPresetFromToolNames(d.toolNames)
+          : CONFIGURED_TOOL_PRESET);
       setCurrentModelOverride((current) => modelSwitchPendingRef.current ? current : null);
       setCurrentThinkingOverride(null);
       setError(null);
@@ -915,7 +929,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (liveState.systemPrompt !== undefined) setSystemPrompt(liveState.systemPrompt ?? null);
           if (liveState.extensionStatuses !== undefined) setExtensionStatuses(liveState.extensionStatuses ?? []);
           if (liveState.extensionWidgets !== undefined) setExtensionWidgets(liveState.extensionWidgets ?? []);
-          if (liveState.queuedMessages !== undefined) setQueuedMessages(normalizeQueuedMessages(liveState.queuedMessages));
+          if (liveState.queuedMessages !== undefined) setQueuedMessages(previous => mergeQueuedMessages(previous, liveState.queuedMessages));
         } else if (!agentState.running) {
           setQueuedMessages({ steering: [], followUp: [] });
         }
@@ -940,7 +954,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (loadFlightsRef.current.get(flightKey) === flight) loadFlightsRef.current.delete(flightKey);
     });
     return await flight;
-  }, [seedStreamingSnapshot, setToolPresetState, syncLiveModel]);
+  }, [chatWorkspace, seedStreamingSnapshot, setToolPresetState, syncLiveModel]);
 
   const loadContext = useCallback(async (sid: string, leafId: string | null, before?: string | null, options?: { tail?: number; signal?: AbortSignal }) => {
     const requestId = ++contextLoadIdRef.current;
@@ -1003,14 +1017,18 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const tools = await sendAgentCommand<ToolEntry[]>(sid, { type: "get_tools" });
       if (!tools || !isCurrent() || !sessionHookMountedRef.current) return null;
       const { getPresetFromTools } = await import("@/lib/tool-presets");
-      setToolPresetState(sessionToolsPinnedRef.current ? getPresetFromTools(tools) : CONFIGURED_TOOL_PRESET);
+      setToolPresetState(chatWorkspace
+        ? "none"
+        : sessionToolsPinnedRef.current
+          ? getPresetFromTools(tools)
+          : CONFIGURED_TOOL_PRESET);
       onSystemToolsChange?.(tools);
       return tools;
     } catch (e) {
       console.error("Failed to load tools:", e);
       return null;
     }
-  }, [onSystemToolsChange, setToolPresetState]);
+  }, [chatWorkspace, onSystemToolsChange, setToolPresetState]);
 
   const promoteNewSession = useCallback((messageCount = 0, firstMessage = "(no messages)") => {
     const sid = sessionIdRef.current;
@@ -1033,14 +1051,15 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       created: new Date().toISOString(),
       modified: new Date().toISOString(),
       messageCount,
-      firstMessage,
+      firstMessage: attachmentAwareTitle(firstMessage),
       transient: true,
+      workspaceKind: chatWorkspace ? "chat" : "project",
     }, provisionalDraftKey);
-  }, [isNew, newSessionCwd, newSessionDraftKey, onSessionCreated, opts.chatInputRef]);
+  }, [chatWorkspace, isNew, newSessionCwd, newSessionDraftKey, onSessionCreated, opts.chatInputRef]);
 
   const taskSetupRef = useRef<TaskSetup | undefined>(undefined);
   const applyTaskSetup = useCallback((setup: TaskSetup | undefined) => {
-    if (!isNew || sessionIdRef.current) return;
+    if (!isNew || sessionIdRef.current || chatWorkspace) return;
     taskSetupRef.current = setup;
     const model = setup?.model ?? null;
     const effort = !setup || setup.effort === "inherit" ? loadStoredThinkingLevel() ?? "auto" : setup.effort;
@@ -1050,7 +1069,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     thinkingLevelOverrideRef.current = effort === "auto" ? null : effort;
     setNewSessionThinkingLevel(effort === "auto" ? null : effort);
     setToolPreset(tools);
-  }, [isNew]);
+  }, [chatWorkspace, isNew]);
 
   const ensureNewSession = useCallback(async () => {
     if (sessionIdRef.current) return sessionIdRef.current;
@@ -1065,8 +1084,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (selectedModel) setPendingModel(selectedModel);
       // Undefined means the user never overrode the loadout: omit the field entirely
       // so pi resolves settings.json defaultTools instead of being pinned to ours (#700).
-      const toolNames = getToolNamesForPreset(toolPreset);
-      sessionToolsPinnedRef.current = toolNames !== undefined;
+      const toolNames = chatWorkspace ? [] : getToolNamesForPreset(toolPreset);
+      sessionToolsPinnedRef.current = chatWorkspace || toolNames !== undefined;
       const res = await fetch("/api/agent/new", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1111,7 +1130,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       ensuringNewSessionRef.current = null;
     }
-  }, [isNew, newSessionCwd, toolPreset]);
+  }, [chatWorkspace, isNew, newSessionCwd, toolPreset]);
 
   // Opening the System or Tools panel may initialize an otherwise dormant
   // session. This is deliberately a non-prompt command: it creates no message
@@ -1545,7 +1564,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // would otherwise leave the "Stop compaction" UI stuck. No state
       // (wrapper destroyed) means nothing is compacting.
       setIsCompacting(state?.isCompacting ?? false);
-      setQueuedMessages(normalizeQueuedMessages(state?.queuedMessages));
+      setQueuedMessages(previous => mergeQueuedMessages(previous, state?.queuedMessages));
       const busy = data.running && state
         && (state.isStreaming || state.isPromptRunning || state.isCompacting);
       if (busy) {
@@ -1657,7 +1676,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
               if (d.state?.extensionWidgets !== undefined) setExtensionWidgets(d.state.extensionWidgets ?? []);
               // Aborted turns can leave messages queued in pi (delivered with the
               // next turn); dead wrapper (no state) means the queue is gone.
-              setQueuedMessages(normalizeQueuedMessages(d.state?.queuedMessages));
+              setQueuedMessages(previous => mergeQueuedMessages(previous, d.state?.queuedMessages));
             })
             .catch(() => {});
         }
@@ -1836,10 +1855,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         break;
       }
       case "queue_update":
-        setQueuedMessages({
+        setQueuedMessages(previous => ({
+          ...previous,
           steering: [...((event.steering as string[] | undefined) ?? [])],
           followUp: [...((event.followUp as string[] | undefined) ?? [])],
-        });
+        }));
+        break;
+      case "composer_queue_update":
+        setQueuedMessages(previous => ({ ...previous, ...mergeComposerQueueSnapshot(previous, {
+          pending: event.items as PendingComposerMessage[], pendingVersion: event.pendingVersion as number | undefined,
+        }) }));
         break;
       case "auto_retry_start":
         setRetryInfo({ attempt: event.attempt as number, maxAttempts: event.maxAttempts as number, errorMessage: event.errorMessage as string | undefined });
@@ -1907,6 +1932,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const isExcluded = trimmedMessage.startsWith("!!");
       const bashCmd = (isExcluded ? trimmedMessage.slice(2) : trimmedMessage.slice(1)).trim();
       if (!bashCmd) {
+        restoreSubmission(message, images, composerDraftKey);
+        return;
+      }
+      if (chatWorkspace) {
+        addNotice({ type: "error", message: t("chat.chatOnlyNoShell") });
         restoreSubmission(message, images, composerDraftKey);
         return;
       }
@@ -2015,11 +2045,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setAgentPhase(null);
       dispatch({ type: "end" });
     }
-  }, [isNew, newSessionCwd, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, cancelEventStreamGrace, closeEvents, composerDraftKey, reconcileAgentState, restoreSubmission, editEntryId, setEdit, branchSummarySessionIdRef]);
+  }, [isNew, newSessionCwd, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, cancelEventStreamGrace, chatWorkspace, closeEvents, composerDraftKey, reconcileAgentState, restoreSubmission, editEntryId, setEdit, branchSummarySessionIdRef, t]);
 
   const executeBash = useCallback(async (command: string, excludeFromContext: boolean) => {
     if (agentRunningRef.current || bashRunningRef.current) return;
     const inputText = `${excludeFromContext ? "!!" : "!"}${command}`;
+    if (chatWorkspace) {
+      addNotice({ type: "error", message: t("chat.chatOnlyNoShell") });
+      restoreSubmission(inputText, undefined, composerDraftKey);
+      return;
+    }
     bashRunningRef.current = true;
     setPendingBash({ command, excludeFromContext, output: "" });
     setBashRunning(true);
@@ -2046,7 +2081,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setPendingBash(null);
       setBashRunning(false);
     }
-  }, [addNotice, composerDraftKey, ensureEventsConnected, ensureNewSession, loadSession, promoteNewSession, restoreSubmission, session]);
+  }, [addNotice, chatWorkspace, composerDraftKey, ensureEventsConnected, ensureNewSession, loadSession, promoteNewSession, restoreSubmission, session, t]);
   executeBashRef.current = executeBash;
 
   const handleAbort = useCallback(async () => {
@@ -2517,8 +2552,49 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [sendStreamingPrompt]);
 
   const handleFollowUp = useCallback(async (message: string, images?: AttachedImage[]) => {
-    await sendStreamingPrompt(message, "followUp", images);
-  }, [sendStreamingPrompt]);
+    const sid = sessionIdRef.current;
+    const generation = sessionGenerationRef.current;
+    if (!sid || editEntryId) {
+      restoreSubmission(message, images, composerDraftKey);
+      return;
+    }
+    try {
+      await sendAgentCommand(sid, {
+        type: "queue_composer", message,
+        images: images?.map(image => ({ type: "image", data: image.data, mimeType: image.mimeType })),
+      });
+    } catch (error) {
+      // Only explicit server rejection proves the outbox did not accept it.
+      if (error instanceof Error && "status" in error) restoreSubmission(message, images, composerDraftKey);
+      if (sessionGenerationRef.current === generation) addNotice({ type: "error", message: String(error) });
+    }
+  }, [addNotice, composerDraftKey, editEntryId, restoreSubmission]);
+
+  const handleQueuedMessageAction = useCallback(async (id: string, action: "send" | "edit" | "delete") => {
+    const sid = sessionIdRef.current;
+    const generation = sessionGenerationRef.current;
+    if (!sid) return;
+    const key = composerDraftKey;
+    try {
+      const result = await sendAgentCommand<ComposerQueueActionResult>(sid, {
+        type: action === "send" ? "send_composer_message" : "take_composer_message", id,
+      });
+      if (sessionGenerationRef.current === generation) {
+        setQueuedMessages(previous => ({ ...previous, ...mergeComposerQueueSnapshot(previous, result) }));
+      }
+      const item = result.item;
+      if (action === "edit" && item) {
+        const images = item.images?.map(image => ({
+          data: image.data, mimeType: image.mimeType,
+          previewUrl: `data:${image.mimeType};base64,${image.data}`,
+        }));
+        // Restores into the captured session draft, preserving any text already typed.
+        restoreSubmission(item.message, images, key);
+      }
+    } catch (error) {
+      if (sessionGenerationRef.current === generation) addNotice({ type: "error", message: error instanceof Error ? error.message : String(error) });
+    }
+  }, [addNotice, composerDraftKey, restoreSubmission]);
 
   const handleAbortCompaction = useCallback(async () => {
     const sid = sessionIdRef.current;
@@ -2537,7 +2613,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const result = await sendAgentCommand<{ steering?: string[]; followUp?: string[] }>(sid, { type: "clear_queue" });
       // clearQueue also emits an empty queue_update, but that only reaches us
       // while SSE is connected — clear locally so idle recalls update the UI.
-      setQueuedMessages({ steering: [], followUp: [] });
+      setQueuedMessages(previous => ({ ...previous, steering: [], followUp: [] }));
       const texts = [...(result?.steering ?? []), ...(result?.followUp ?? [])];
       if (texts.length > 0) {
         opts.chatInputRef?.current?.prependText(texts.join("\n\n"));
@@ -2549,8 +2625,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [opts.chatInputRef, addNotice]);
 
   const handleThinkingLevelChange = useCallback(async (level: ThinkingLevelOption) => {
-    if (level === "auto") removePref(APP_PREF_KEYS.thinkingLevel);
-    else setPref(APP_PREF_KEYS.thinkingLevel, level);
+    if (!chatWorkspace) {
+      if (level === "auto") removePref(APP_PREF_KEYS.thinkingLevel);
+      else setPref(APP_PREF_KEYS.thinkingLevel, level);
+    }
     if (level === "auto") {
       thinkingLevelOverrideRef.current = null;
       setNewSessionThinkingLevel(null);
@@ -2575,7 +2653,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       console.error("Failed to set thinking level:", e);
       setCurrentThinkingOverride(null);
     }
-  }, [isNew]);
+  }, [chatWorkspace, isNew]);
 
   const handleSetDefaultThinkingLevel = useCallback(async (level: ConcreteThinkingLevel) => {
     try {
@@ -2591,6 +2669,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [addNotice, displayThinkingLevel, handleThinkingLevelChange, reloadModelsQuietly, saveDefaultPreferences]);
 
   const handleToolPresetChange = useCallback(async (preset: ToolPreset) => {
+    if (chatWorkspace) {
+      setToolPresetState("none");
+      return;
+    }
     if (!isNew || agentRunningRef.current || ensuringNewSessionRef.current) return;
     const toolNames = getToolNamesForPreset(preset);
     setPreferredToolPreset(preset);
@@ -2637,7 +2719,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } catch (e) {
       console.error("Failed to set tools:", e);
     }
-  }, [isNew, cancelEventStreamGrace, clearSlashCommands, closeEvents, loadTools, maintainEventsConnected, setToolPresetState, syncLiveModel]);
+  }, [isNew, cancelEventStreamGrace, chatWorkspace, clearSlashCommands, closeEvents, loadTools, maintainEventsConnected, setToolPresetState, syncLiveModel]);
 
   const scrollToMessage = useCallback((element: HTMLElement, viewportOffset = 16) => {
     const container = scrollContainerRef.current;
@@ -2744,7 +2826,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (agentState.state.systemPrompt !== undefined) setSystemPrompt(agentState.state.systemPrompt ?? null);
           if (agentState.state.extensionStatuses !== undefined) setExtensionStatuses(agentState.state.extensionStatuses ?? []);
           if (agentState.state.extensionWidgets !== undefined) setExtensionWidgets(agentState.state.extensionWidgets ?? []);
-          if (agentState.state.queuedMessages !== undefined) setQueuedMessages(normalizeQueuedMessages(agentState.state.queuedMessages));
+          if (agentState.state.queuedMessages !== undefined) setQueuedMessages(previous => mergeQueuedMessages(previous, agentState.state?.queuedMessages));
         }
       });
     }
@@ -2964,7 +3046,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // Actions
     branchSummaryPending, handleAbortBranchSummary, routedModel,
     applyTaskSetup, handleSend, handleAbort, handleAbortRetry, handleFork, handleNavigate, handleModelChange,
-    handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
+    handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction, handleQueuedMessageAction,
     handleRecallQueue,
     handleBuiltinSlashCommand,
     handleEditContent,

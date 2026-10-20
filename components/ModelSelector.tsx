@@ -160,8 +160,6 @@ export function ModelSelector({
   };
 
   const saveDefault = (option: ModelSelectorOption) => {
-    setOpen(false);
-    setFilter("");
     onSetDefault?.(option.provider, option.modelId);
   };
 
@@ -249,6 +247,7 @@ export function ModelSelector({
         return (
           <div
             ref={panelRef}
+            className="native-popover app-menu"
             role="listbox"
             aria-label={ariaLabel}
             style={{
@@ -295,7 +294,7 @@ export function ModelSelector({
                 />
               </div>
             )}
-            <div style={{ minHeight: 0, overflowY: "auto" }}>
+            <div className="app-menu-list">
               {onClear && !filter.trim() && (
                 <SelectorRow active={!value} gutter={Boolean(onSetDefault)} onSelect={() => {
                   setOpen(false);

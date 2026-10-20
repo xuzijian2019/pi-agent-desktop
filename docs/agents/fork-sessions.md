@@ -1,5 +1,26 @@
 # Sessions, events and the chat client — fork notes
 
+## Editable composer outbox
+
+`lib/composer-queue.ts` owns individually identified pending composer messages, including images.
+`queue_composer` accepts into this outbox, `take_composer_message` claims one for edit/delete,
+and `send_composer_message` claims one and submits it through the existing prompt admission
+with `streamingBehavior: "steer"`. Already claimed IDs return a successful no-op with the latest
+queue snapshot, without sending/restoring the message again. Every queue mutation increments
+`pendingVersion`; clients ignore older polling, SSE or action snapshots so delayed responses
+cannot resurrect consumed rows. Lock row actions immediately with a ref, before React renders.
+Never clear/rebuild SDK
+queues to emulate individual operations. SDK queues remain available to extensions.
+
+After `agent_settled` and prompt-promise cleanup, the outbox checks `isRunning()` and admits
+one next message through the existing MCP/preflight path. Rejection restores that entry and
+pauses automatic delivery. Stop also pauses delivery, preserving entries for edit/delete or
+explicit Send now; it must not stop one run only to start the next queued task immediately.
+`composer_queue_update` and `get_state.queuedMessages.pending` keep views synchronized.
+The process-global outbox survives page reloads and idle wrapper eviction, but not application
+exit. Outbox data must not enter model context before delivery. Queue tests include real wrapper
+admission and mocked run lifecycles; they do not call paid models or use user sessions.
+
 Fork-owned notes moved out of `AGENTS.md` to keep it short. The upstream doc on the same topic (`docs/agents/*.md` without the `fork-` prefix) may describe the same area in other words; where they disagree, these notes describe this fork. Hard rules that must survive a merge are also listed in `AGENTS.md` under **Hard rules**.
 
 ## Branch summaries (pi's "Summarize branch?")
@@ -54,6 +75,8 @@ pi ≥ 0.86 `isIdle` stays false through auto-retry backoff, branch summaries, a
 `get_state` reports `autoCompactionEnabled`, `autoRetryEnabled`, `steeringMode`, `followUpMode`; the composer's gear popover toggles them through `set_auto_compaction` / `set_auto_retry` / `set_steering_mode` / `set_follow_up_mode`, and `abort_retry` backs the "Cancel retry" link in the retry banner. `useAgentSession.automation` mirrors the four values inside `syncLiveModel` — every get_state path updates them automatically; a new session shows no gear until a wrapper exists (values null). Thinking levels come from `getSupportedThinkingLevels` per model; do not reintroduce a manual DeepSeek xhigh clamp — 0.86 `setThinkingLevel` clamps to `getAvailableThinkingLevels()` itself and a manual `state.thinkingLevel` write bypasses the append/emit path.
 
 ## Composer send path is single-shot and guarded
+The prompt-anchor spacer must subtract the floating composer's separate trailing spacer (`composerOverlaySpacerRef`). Both contribute to the same scroll height; counting the composer clearance twice makes the first streaming tail-follow scroll push the sent message above the viewport.
+
 `ChatInput.handleSend` routes slash commands through `runBuiltinCommand` (the pending-guard wrapper) and sends exactly one `onSend` with the `#session`-mention-resolved text. A merge once left a second raw `onSend(msg, …)` behind it: the first send flips `agentRunningRef`, the second hits the running guard and *restores the just-sent text back into the composer* — every message appeared to "stick". `components/ChatInput.test.mjs` runs the extracted handler in a VM to pin one-send semantics.
 
 ## `!command` output renders live, then collapses

@@ -25,6 +25,7 @@ import { FolderIcon, getFileIcon } from "./FileIcons";
 import type { SelectorRowStar } from "./SelectorRow";
 
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useMenuNavigation } from "@/hooks/useMenuNavigation";
 import { useEnterSendMode } from "@/hooks/useEnterSendMode";
 import { useI18n } from "@/hooks/useI18n";
 import type { ExtensionStatusItem } from "@/lib/types";
@@ -33,8 +34,20 @@ import type { ContextUsage, SessionStatsInfo } from "@/lib/pi-types";
 import { ContextUsageRing } from "./ContextUsageRing";
 import { useChatAppearance } from "@/hooks/useChatAppearance";
 import type { ToolPreset } from "@/lib/tool-presets";
+import {
+  CHAT_ATTACHMENT_MAX_FILES,
+  CHAT_ATTACHMENT_MAX_TOTAL_BYTES,
+  composeMessageWithAttachedFiles,
+  extractDocxText,
+  formatAttachmentSize,
+  readChatTextAttachments,
+  splitMessageForComposer,
+  type ChatAttachmentRejection,
+  type ChatTextAttachment,
+} from "@/lib/chat-attachments";
 import { SessionMentionMenu } from "./SessionMentionMenu";
 import { ComposerProjectChip, getProjectLabel } from "./ComposerProjectChip";
+import { ComposerOutbox, type ComposerQueueAction } from "./ComposerOutbox";
 import { useSessionMentionPalette } from "@/hooks/useSessionMentionPalette";
 
 
@@ -50,6 +63,8 @@ interface Props {
   showInputHints?: boolean;
   onSetupChange?: (setup: TaskSetup | undefined) => void;
   onBranchNavigate?: (cwd: string) => void;
+  /** Files picked with "+": images and other files. Without it the picker takes images only. */
+  onAttachFiles?: (files: File[]) => void;
   onAbort: () => void;
   onSteer?: (message: string, images?: AttachedImage[]) => void;
   onFollowUp?: (message: string, images?: AttachedImage[]) => void;
@@ -115,6 +130,7 @@ interface Props {
     followUpMode?: "all" | "one-at-a-time";
   }) => void;
   queuedMessages?: QueuedMessages | null;
+  onQueuedMessageAction?: (id: string, action: ComposerQueueAction) => Promise<void>;
   inputHistory?: string[];
   onRecallQueue?: () => void;
   slashCommands?: SlashCommandInfo[];
@@ -125,6 +141,8 @@ interface Props {
   draftKey?: string;
   /** Session working directory — enables the @ file autocomplete menu */
   cwd?: string | null;
+  /** The hidden model-only chat workspace: images only, no file/shell mentions. */
+  chatOnly?: boolean;
   /** Project root shown in the composer so the session context is always visible. */
   projectPath?: string | null;
   /** Open the project chooser and switch the active project. */
@@ -151,6 +169,8 @@ export interface ChatInputHandle {
   replaceMessage: (message: UserMessage) => void;
   prependText: (text: string) => void;
   addImages: (files: File[]) => void;
+  /** Chats only: read text files into chips that travel inside the next message. */
+  addTextFiles: (files: File[]) => Promise<ChatAttachmentRejection[]>;
   focus: () => void;
   rekeyDraft: (previousKey: string, nextKey: string) => void;
   restoreSubmission: (text: string, images?: ChatDraftImage[], targetDraftKey?: string) => void;
@@ -808,17 +828,18 @@ function DraftSavingIndicator({ loading }: { loading: boolean }) {
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
-  onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, workspaceUnavailable, onRecheckWorkspace, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange, modelSwitching,
+  onSend, onAttachFiles, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, workspaceUnavailable, onRecheckWorkspace, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange, modelSwitching,
   defaultModel, onSetDefaultModel,
   compactError, compactNotice, compactResult, toolPreset, onToolPresetChange,
   thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   savedDefaultThinkingLevel, onSetDefaultThinkingLevel,
-  retryInfo, onAbortRetry, routedModel, branchSummaryPending = false, onAbortBranchSummary, queuedMessages, inputHistory = [], onRecallQueue,
+  retryInfo, onAbortRetry, routedModel, branchSummaryPending = false, onAbortBranchSummary, queuedMessages, onQueuedMessageAction, inputHistory = [], onRecallQueue,
   slashCommands, slashCommandsLoading, onLoadSlashCommands,
   onBuiltinCommand, onViewCommand,
   onPromptWithStreamingBehavior,
   draftKey,
   cwd,
+  chatOnly = false,
   projectPath,
   onSelectProject,
   projectOptions = [],
@@ -886,10 +907,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [pastedTexts, setPastedTexts] = useState<PastedTextChip[]>(() => (
     draftKey ? draftTextsToPastedTexts(getDraft(draftKey)?.texts) : []
   ));
+  const [attachedFiles, setAttachedFiles] = useState<ChatTextAttachment[]>(() => (
+    draftKey ? getDraft(draftKey)?.files ?? [] : []
+  ));
+  const attachmentDraftAliasesRef = useRef(new Map<string, string>());
+  const attachedFilesRef = useRef(attachedFiles);
+  attachedFilesRef.current = attachedFiles;
   const projectLabel = getProjectLabel(projectPath, projectOptions);
   const trimmedValue = value.trimStart();
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
-  const bashMode = attachedImages.length === 0 && trimmedValue.startsWith("!");
+  const bashMode = !chatOnly && attachedImages.length === 0 && trimmedValue.startsWith("!");
   const bashExcluded = bashMode && trimmedValue.startsWith("!!");
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [slashActiveIndex, setSlashActiveIndex] = useState(0);
@@ -940,7 +967,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const {
     hashQuery, setHashQuery, hashMenuOpen, setHashMenuOpen, hashActiveIndex, setHashActiveIndex,
     hashMatches, hashItemRefs, sessionIndex, sessionMentionTargetsRef, updateHashQuery, applyHashCompletion,
-  } = useSessionMentionPalette({ cwd, value, setValue, setAtQuery, textareaRef });
+  } = useSessionMentionPalette({ cwd: chatOnly ? null : cwd, value, setValue, setAtQuery, textareaRef });
+  useEffect(() => {
+    if (!chatOnly) return;
+    setAtQuery(null);
+    setAtMenuOpen(false);
+    setHashQuery(null);
+    setHashMenuOpen(false);
+  }, [chatOnly, setHashMenuOpen, setHashQuery]);
   valueRef.current = value;
   attachedImagesRef.current = attachedImages;
   pastedTextsRef.current = pastedTexts;
@@ -951,7 +985,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const preparingRef = useRef(false);
   const preparationRef = useRef<{ key: string; result: PreparedOutgoing } | null>(null);
   const preparationController = useRef<AbortController | null>(null);
-  const snapshot = useCallback((): ChatDraft => ({ value: valueRef.current, images: attachedImagesRef.current.map(imageToDraftImage), texts: pastedTextsToDraftTexts(pastedTextsRef.current), setup: draftSetup, references: { ...Object.fromEntries([...sessionMentionTargetsRef.current].map(([label, id]) => [label, { id }])), ...referenceSelections } }), [draftSetup, referenceSelections, sessionMentionTargetsRef]);
+  const snapshot = useCallback((): ChatDraft => ({ value: valueRef.current, images: attachedImagesRef.current.map(imageToDraftImage), files: attachedFilesRef.current, texts: pastedTextsToDraftTexts(pastedTextsRef.current), setup: draftSetup, references: { ...Object.fromEntries([...sessionMentionTargetsRef.current].map(([label, id]) => [label, { id }])), ...referenceSelections } }), [draftSetup, referenceSelections, sessionMentionTargetsRef]);
   const snapshotRef = useRef(snapshot); snapshotRef.current = snapshot;
   const prepare = useCallback(async () => {
     const draft = snapshotRef.current(); const owner = draftKeyRef.current;
@@ -959,10 +993,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (preparationRef.current?.key === key) return preparationRef.current.result;
     preparationController.current?.abort();
     const controller = new AbortController(); preparationController.current = controller;
-    const result = await prepareOutgoingMessage(draft, fetch, controller.signal);
+    // Chats have no project/session mention capability. A quoted # token is plain
+    // text there, not permission to fetch another session's transcript.
+    const prepared = chatOnly
+      ? { text: splicePastedTexts(draft.value, draftTextsToPastedTexts(draft.texts)).trim(), images: draft.images }
+      : await prepareOutgoingMessage(draft, fetch, controller.signal);
+    const result = { ...prepared, text: composeMessageWithAttachedFiles(prepared.text, draft.files ?? []) };
     if (owner !== draftKeyRef.current) throw new Error(t("wb.draftChanged"));
     preparationRef.current = { key, result }; return result;
-  }, [model, thinkingLevel, toolPreset, t]);
+  }, [chatOnly, model, thinkingLevel, toolPreset, t]);
   useEffect(() => () => { preparationController.current?.abort(); }, [draftKey]);
 
   useImperativeHandle(ref, () => ({
@@ -986,12 +1025,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     replaceMessage(message: UserMessage) {
       const ta = textareaRef.current;
       const current = ta ? ta.value : value;
-      if (!canRestoreUserMessage(current, attachedImagesRef.current.length, pendingImageCountRef.current)) return;
+      if (!canRestoreUserMessage(current, attachedImagesRef.current.length + attachedFilesRef.current.length, pendingImageCountRef.current)) return;
 
-      const restoredText = getUserMessageText(message);
+      // The message's attached files come back as attachments, not as markup in the text.
+      const split = splitMessageForComposer(getUserMessageText(message));
+      const restoredText = split.text;
       const restoredImages = draftImagesToAttachedImages(getUserMessageDraftImages(message));
       valueRef.current = restoredText;
       attachedImagesRef.current = restoredImages;
+      attachedFilesRef.current = split.files;
+      setAttachedFiles(split.files);
       setValue(restoredText);
       setAtQuery(null);
       setHashQuery(null);
@@ -1028,17 +1071,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     },
     rekeyDraft(previousKey: string, nextKey: string) {
       if (previousKey === nextKey) return;
+      attachmentDraftAliasesRef.current.set(previousKey, nextKey);
       if (draftKeyRef.current !== previousKey) {
         rekeyStoredDraft(previousKey, nextKey);
         return;
       }
 
-      const currentDraft = {
-        value: valueRef.current,
-        images: attachedImagesRef.current.map(imageToDraftImage),
-      };
+      const currentDraft = snapshotRef.current();
       const moved = rekeyStoredDraft(previousKey, nextKey, currentDraft) ?? { value: "", images: [] };
       const unchanged = moved.value === currentDraft.value
+        && (moved.files?.length ?? 0) === (currentDraft.files?.length ?? 0)
         && moved.images.length === currentDraft.images.length
         && moved.images.every((image, index) => (
           image.data === currentDraft.images[index]?.data
@@ -1050,6 +1092,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       const movedImages = draftImagesToAttachedImages(moved.images);
       valueRef.current = moved.value;
       attachedImagesRef.current = movedImages;
+      attachedFilesRef.current = moved.files ?? [];
+      setAttachedFiles(attachedFilesRef.current);
       setValue(moved.value);
       setAttachedImages((current) => {
         current.forEach(revokeImagePreview);
@@ -1059,7 +1103,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       setHistoryMenuOpen(false);
     },
     restoreSubmission(text: string, images?: ChatDraftImage[], targetDraftKey?: string) {
-      if (!text.trim() && !images?.length) return;
+      // A queued or rejected message carries its files as markup; they return as attachments.
+      const { text: typedText, files: submittedFiles } = splitMessageForComposer(text);
+      if (!typedText.trim() && !images?.length && !submittedFiles.length) return;
 
       // clearInput is queued before the submission handler runs. Compose with
       // that queued state so a fast rejection cannot observe stale DOM text and
@@ -1070,14 +1116,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       const storedDraft = !targetsCurrentComposer && destinationDraftKey
         ? getDraft(destinationDraftKey)
         : null;
-      const restoredDraft = mergeRestoredSubmissionDraft(
-        text,
+      const restoredDraft = { ...(targetsCurrentComposer ? snapshotRef.current() : storedDraft), ...mergeRestoredSubmissionDraft(
+        typedText,
         images,
         targetsCurrentComposer ? valueRef.current : (storedDraft?.value ?? ""),
         targetsCurrentComposer
           ? attachedImagesRef.current.map(imageToDraftImage)
           : (storedDraft?.images ?? []),
-      );
+        submittedFiles,
+        targetsCurrentComposer ? attachedFilesRef.current : storedDraft?.files,
+      ) };
       // The first optimistic message switches ChatWindow out of its empty-state
       // layout and remounts this component. Persist synchronously so recovery is
       // not lost if this instance is the one being unmounted.
@@ -1096,8 +1144,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       // functional updates below, so update the imperative snapshot first.
       valueRef.current = restoredDraft.value;
       attachedImagesRef.current = restoredImages;
+      attachedFilesRef.current = restoredDraft.files ?? [];
+      setAttachedFiles(attachedFilesRef.current);
       setValue((current) => {
-        const restored = mergeRestoredSubmissionText(text, current);
+        const restored = mergeRestoredSubmissionText(typedText, current);
         valueRef.current = restored;
         return restored;
       });
@@ -1149,6 +1199,41 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     },
     addImages(files: File[]) {
       processImageFiles(files);
+    },
+    async addTextFiles(files: File[]) {
+      // Reading a Word file asks the server, so the user may have moved to another chat by
+      // the time it answers: the files belong to the chat they were attached in.
+      const startedIn = draftKeyRef.current;
+      const { accepted, rejected } = await readChatTextAttachments(files, attachedFilesRef.current, extractDocxText);
+      let target = startedIn;
+      const visited = new Set<string>();
+      while (target && attachmentDraftAliasesRef.current.has(target) && !visited.has(target)) {
+        visited.add(target);
+        target = attachmentDraftAliasesRef.current.get(target);
+      }
+      const current = draftKeyRef.current === target;
+      const stored = target ? getDraft(target) : undefined;
+      const existing = current ? attachedFilesRef.current : stored?.files ?? [];
+      const next = [...existing];
+      let bytes = existing.reduce((sum, file) => sum + file.size, 0);
+      // Other reads may have completed during extraction. Enforce limits against
+      // the destination now, not only against the pre-await snapshot.
+      for (const file of accepted) {
+        if (next.length >= CHAT_ATTACHMENT_MAX_FILES) {
+          rejected.push({ name: file.name, reason: "too-many", limit: CHAT_ATTACHMENT_MAX_FILES });
+        } else if (bytes + file.size > CHAT_ATTACHMENT_MAX_TOTAL_BYTES) {
+          rejected.push({ name: file.name, reason: "total-too-large", limit: CHAT_ATTACHMENT_MAX_TOTAL_BYTES });
+        } else { next.push(file); bytes += file.size; }
+      }
+      if (next.length !== existing.length) {
+        if (current) {
+          attachedFilesRef.current = next;
+          setAttachedFiles(next);
+        } else if (target) {
+          setDraft(target, { ...(stored ?? { value: "", images: [] }), files: next });
+        }
+      }
+      return rejected;
     },
     focus() {
       textareaRef.current?.focus();
@@ -1252,6 +1337,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (removed) setValue((prev) => prev.split(removed.token).join(""));
   }, []);
 
+  const clearAttachedFiles = useCallback(() => {
+    attachedFilesRef.current = [];
+    setAttachedFiles([]);
+  }, []);
+
+  const removeAttachedFile = useCallback((id: string) => {
+    const next = attachedFilesRef.current.filter((file) => file.id !== id);
+    attachedFilesRef.current = next;
+    setAttachedFiles(next);
+  }, []);
+
   const clearInput = useCallback(() => {
     valueRef.current = "";
     setValue("");
@@ -1261,13 +1357,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (draftKey) clearDraft(draftKey);
     clearImages();
     setPastedTexts([]);
+    clearAttachedFiles();
     setDraftSetup(undefined);
     setReferenceSelections({});
     sessionMentionTargetsRef.current.clear();
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [clearImages, draftKey, setHashQuery, sessionMentionTargetsRef]);
+  }, [clearAttachedFiles, clearImages, draftKey, setHashQuery, sessionMentionTargetsRef]);
 
   // Chips whose token was deleted from the composer by hand are dropped so
   // state, draft persistence and the chip row all follow the visible text.
@@ -1292,6 +1389,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         prev.forEach(revokeImagePreview);
         return draftImagesToAttachedImages(draft?.images);
       });
+      attachedFilesRef.current = draft?.files ?? [];
+      setAttachedFiles(attachedFilesRef.current);
       setPastedTexts(draftTextsToPastedTexts(draft?.texts));
       setDraftSetup(draft?.setup);
       if (draft?.setup) onSetupChange?.(draft.setup);
@@ -1307,7 +1406,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   useEffect(() => {
     if (!draftKey || hydratedDraftKey !== draftKey) return;
     setDraft(draftKey, snapshot());
-  }, [attachedImages, draftKey, hydratedDraftKey, value, pastedTexts, snapshot]);
+  }, [attachedFiles, attachedImages, draftKey, hydratedDraftKey, value, pastedTexts, snapshot]);
   const restoreSavedDraft = useCallback(async () => {
     if (!draftKey) return;
     setHydratedDraftKey(undefined);
@@ -1316,6 +1415,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     setValue(draft?.value ?? "");
     clearImages();
     setAttachedImages(draftImagesToAttachedImages(draft?.images));
+    attachedFilesRef.current = draft?.files ?? [];
+    setAttachedFiles(attachedFilesRef.current);
     setPastedTexts(draftTextsToPastedTexts(draft?.texts));
     setReferenceSelections(draft?.references ?? {});
     sessionMentionTargetsRef.current = new Map(Object.entries(draft?.references ?? {}).map(([label, target]) => [label, target.id]));
@@ -1360,6 +1461,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   const dispatchBuiltin = useCallback(async (msg: string): Promise<boolean> => {
     if (builtinCommandPendingRef.current) return true;
+    if (attachedFilesRef.current.length) return false;
     const command = parseWebSlashCommand(msg);
     if (!command) return false;
     const original = JSON.stringify(snapshotRef.current());
@@ -1413,12 +1515,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const handleSend = useCallback(async () => {
     if (invalidDraftImages || orphanedPaste || (draftKey && hydratedDraftKey !== draftKey) || persistenceStatus === "conflict") return;
     const msg = splicePastedTexts(value, pastedTexts).trim();
-    if (!msg && !attachedImages.length) return;
+    if (!msg && !attachedImages.length && !attachedFilesRef.current.length) return;
     if (await dispatchBuiltin(msg)) return;
     // A bare /mcp still reaches the handler mid-run: it opens Settings › MCP when
     // pi's built-in MCP extension owns it (useAgentSession).
     if (isStreaming && !isBareMcpCommand(msg)) return;
-    if (!attachedImages.length && msg.startsWith("/") && onBuiltinCommand) {
+    if (!attachedImages.length && !attachedFilesRef.current.length && msg.startsWith("/") && onBuiltinCommand) {
       const result = await onBuiltinCommand(msg);
       if (draftKeyRef.current !== draftKey) return;
       if (result.handled) {
@@ -1470,8 +1572,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     ? t(slashQuery ? "chat.match" : "chat.command")
     : t(slashQuery ? "chat.matches" : "chat.commands", { count: filteredSlashCommands.length });
   const hasInputText = Boolean(value.trim());
-  const canQueueStreamingMessage = hasInputText || attachedImages.length > 0;
-  const canSend = canQueueStreamingMessage && !workspaceUnavailable;
+  const canQueueStreamingMessage = hasInputText || attachedImages.length > 0 || attachedFiles.length > 0;
+  const canSend = canQueueStreamingMessage && !workspaceUnavailable && !builtinCommandPending
+    && !invalidDraftImages && !orphanedPaste && (!draftKey || hydratedDraftKey === draftKey) && persistenceStatus !== "conflict";
+  const showStop = isStreaming && !canQueueStreamingMessage;
   // Warn when images are attached but the selected model is known not to accept
   // image input (#584), including a resolved default. Unknown models stay silent.
   const showImageUnsupportedWarning = (
@@ -1487,13 +1591,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   // Recomputed from the text before the caret on every change/caret move.
   // Disabled entirely when there is no cwd (new session without a directory).
   const updateAtQuery = useCallback((text: string, cursor: number | null) => {
-    if (!cwd) {
+    if (chatOnly || !cwd) {
       setAtQuery(null);
       return;
     }
     const pos = cursor ?? text.length;
     setAtQuery(extractAtQuery(text.slice(0, pos)));
-  }, [cwd]);
+  }, [chatOnly, cwd]);
 
   const atQueryText = atQuery?.query ?? null;
   const atLocalFileMatches: FileIndexEntry[] = React.useMemo(() => (
@@ -1675,9 +1779,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const sendQueued = useCallback(async (mode: "steer" | "followup") => {
     if (invalidDraftImages || orphanedPaste || (draftKey && hydratedDraftKey !== draftKey) || persistenceStatus === "conflict") return;
     const msg = splicePastedTexts(value, pastedTexts).trim();
-    if (!msg && !attachedImages.length) return;
+    if (!msg && !attachedImages.length && !attachedFilesRef.current.length) return;
     if (await dispatchBuiltin(msg)) return;
-    if (!attachedImages.length && onBuiltinCommand && isBareMcpCommand(msg)) {
+    if (!attachedImages.length && !attachedFilesRef.current.length && onBuiltinCommand && isBareMcpCommand(msg)) {
       // Settings › MCP opens when pi's built-in MCP extension owns /mcp
       // (useAgentSession); another extension's /mcp is queued as before.
       const result = await onBuiltinCommand(msg);
@@ -1695,7 +1799,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       if (draftKeyRef.current !== draftKey) return;
       const streamingBehavior = mode === "steer" ? "steer" : "followUp";
       const images = prepared.images.length ? attachedImages : undefined;
-      if (msg.startsWith("/") && onPromptWithStreamingBehavior) onPromptWithStreamingBehavior(prepared.text, streamingBehavior, images);
+      if (mode === "steer" && !attachedFilesRef.current.length && msg.startsWith("/") && onPromptWithStreamingBehavior) onPromptWithStreamingBehavior(prepared.text, streamingBehavior, images);
       else if (mode === "steer" && onSteer) onSteer(prepared.text, images);
       else if (onFollowUp) onFollowUp(prepared.text, images);
       if (JSON.stringify(snapshotRef.current()) === original) clearInput();
@@ -2051,9 +2155,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     return thinkingLevelMap[lvl] ?? lvl;
   })();
   const rawToolPresetLabel = Object.entries(TOOL_PRESET_MAP).find(([, v]) => v === (toolPreset ?? "configured"))?.[0] ?? "configured";
-  const toolPresetLabel = rawToolPresetLabel === "chat-only" ? t("chat.chatOnly") : rawToolPresetLabel;
+  const toolPresetLabel = chatOnly ? t("chat.chatWorkspace") : rawToolPresetLabel === "chat-only" ? t("chat.chatOnly") : rawToolPresetLabel;
 
   // Close dropdowns on outside click
+  useMenuNavigation(toolDropdownOpen, toolDropdownRef, () => setToolDropdownOpen(false));
+  useMenuNavigation(thinkingDropdownOpen, thinkingDropdownRef, () => setThinkingDropdownOpen(false));
+  useMenuNavigation(projectDropdownOpen, projectDropdownRef, () => setProjectDropdownOpen(false));
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (
@@ -2102,12 +2209,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       {!compact && <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept={!onAttachFiles ? "image/*" : undefined}
         multiple
         hidden
         onChange={(e) => {
           const files = Array.from(e.target.files ?? []);
-          processImageFiles(files);
+          if (onAttachFiles) onAttachFiles(files);
+          else processImageFiles(files);
           e.target.value = "";
         }}
       />}
@@ -2217,12 +2325,33 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {compactError}
           </div>
         )}
+        {attachedFiles.length > 0 && (
+          <div className="composer-file-chips" style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+            {attachedFiles.map((file) => (
+              <span key={file.id} className="composer-file-chip" title={`${file.name} · ${formatAttachmentSize(file.size)}`}>
+                <span className="composer-file-chip-name">{file.name}</span>
+                <span className="composer-file-chip-size">{formatAttachmentSize(file.size)}</span>
+                <button
+                  type="button"
+                  className="composer-file-chip-remove"
+                  onClick={() => removeAttachedFile(file.id)}
+                  aria-label={t("chat.removeAttachment", { name: file.name })}
+                >
+                  <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+                    <line x1="1" y1="1" x2="7" y2="7" /><line x1="7" y1="1" x2="1" y2="7" />
+                  </svg>
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* Main input */}
         <div className="composer-input-anchor">
           {historyMenuOpen && inputHistory.length > 0 && (
             <div
               ref={historyMenuRef}
-              className="native-popover composer-completion-popover is-history"
+              className="native-popover app-menu composer-completion-popover is-history"
             >
               <div
                 title={t("chat.inputHistory")}
@@ -2276,7 +2405,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           {slashMenuOpen && slashQuery !== null && (
             <div
               ref={slashMenuRef}
-              className={`native-popover composer-completion-popover is-slash${isNarrow ? " is-narrow" : ""}`}
+              className={`native-popover app-menu composer-completion-popover is-slash${isNarrow ? " is-narrow" : ""}`}
               style={{ "--completion-max": `${slashMaxHeight}px` } as React.CSSProperties}
             >
               <div
@@ -2333,7 +2462,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               <div
                 ref={atMenuRef}
                 style={{ maxHeight: atMenuMaxHeight === null ? "min(48vh, 400px)" : `min(48vh, 400px, ${atMenuMaxHeight}px)` }}
-                className="native-popover composer-completion-popover"
+                className="native-popover app-menu composer-completion-popover"
               >
                 <div
                   className="composer-completion-header"
@@ -2383,6 +2512,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </div>
             );
           })()}
+          <ComposerOutbox items={queuedMessages?.pending ?? []} onAction={onQueuedMessageAction} />
           <div ref={composerRef} className="chat-composer">
           {draftKey && (persistenceStatus === "pending" || persistenceStatus === "loading") && (
             <DraftSavingIndicator key={JSON.stringify([draftKey, value])} loading={persistenceStatus === "loading"} />
@@ -2502,7 +2632,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             onPaste={handlePaste}
             placeholder={!showHints ? "" :
               isStreaming && (onSteer || onFollowUp)
-                ? t("chat.steerPlaceholder")
+                ? t("chat.queuePlaceholder")
                 : isStreaming ? t("chat.agentPlaceholder")
                 : isNarrow
                 ? (t("chat.messagePlaceholderShort") || "Message…")
@@ -2511,52 +2641,25 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             rows={1}
           />
 
-          {isStreaming ? (
-            <div className="composer-send-row">
-              {onAbort && (
-                <button
-                  onClick={onAbort}
-                  title={t("chat.stopAgent")}
-                  aria-label={t("chat.stopAgent")}
-                  className="composer-stop-button"
-                >
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                    <rect x="1.5" y="1.5" width="7" height="7" rx="1.5" fill="currentColor" />
-                  </svg>
-                  {t("chat.stop")}
-                </button>
-              )}
-              <button
-                className="native-primary-button composer-send-button"
-                onClick={() => {
-                  if (isStreaming && (onSteer || onFollowUp)) sendQueued(onFollowUp ? "followup" : "steer");
-                  else handleSend();
-                }}
-                disabled={isStreaming ? !canQueueStreamingMessage : (!value.trim() && !attachedImages.length)}
-                aria-keyshortcuts="Enter Alt+Enter"
-                title={isStreaming && onFollowUp ? (attachedImages.length ? t("chat.imagesCannotQueue") : t("chat.followUpTitle")) : undefined}
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="2" y1="7" x2="11" y2="7" />
-                  <polyline points="7.5 3 12 7 7.5 11" />
-                </svg>
-                {t("chat.send")}
-              </button>
-            </div>
-          ) : (
-            <button
-              className="native-primary-button composer-send-button"
-              onClick={handleSend}
-              disabled={builtinCommandPending || !canSend}
-              aria-label={t("chat.send")}
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="2" y1="7" x2="11" y2="7" />
-                <polyline points="7.5 3 12 7 7.5 11" />
+          <button
+            type="button"
+            className={compact ? "native-primary-button" : "native-primary-button composer-send-button"}
+            data-action={showStop ? "stop" : isStreaming ? "queue" : "send"}
+            onClick={showStop ? onAbort : isStreaming ? () => void sendQueued(onFollowUp ? "followup" : "steer") : handleSend}
+            disabled={!showStop && (!canSend || (isStreaming && !onFollowUp && !onSteer))}
+            title={t(showStop ? "chat.stopAgent" : isStreaming ? "chat.queueMessage" : "chat.send")}
+            aria-label={t(showStop ? "chat.stopAgent" : isStreaming ? "chat.queueMessage" : "chat.send")}
+            style={{ flexShrink: 0, alignSelf: "flex-end", ...(compact ? { display: "flex", alignItems: "center", gap: 6 } : null) }}
+          >
+            {showStop ? (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1.5" /></svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="8" y1="13" x2="8" y2="3.5" /><polyline points="3.5 7.5 8 3 12.5 7.5" />
               </svg>
-              {!isMobile && t("chat.send")}
-            </button>
-          )}
+            )}
+            {compact && t(showStop ? "chat.stop" : "chat.send")}
+          </button>
           </div>
           {/* Session controls sit below the input card, not inside it. */}
           </div>
@@ -2579,8 +2682,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 type="button"
                 className={`native-toolbar-button composer-toolbar-chip is-icon-only composer-attach-button${attachedImages.length ? " has-attachments" : ""}`}
                 onClick={() => fileInputRef.current?.click()}
-                title={t("chat.attachImage")}
-                aria-label={t("chat.attachImage")}
+                title={t(!onAttachFiles ? "chat.attachImage" : "chat.attachFiles")}
+                aria-label={t(!onAttachFiles ? "chat.attachImage" : "chat.attachFiles")}
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
@@ -2643,7 +2746,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       ? { left: 8, right: 8, maxWidth: "calc(100vw - 16px)" }
                       : { left: modelDropdownRect.left, width: "max-content", minWidth: modelDropdownRect.width };
                     return (
-                      <div ref={modelDropdownPanelRef} className="native-popover composer-model-panel" style={{ bottom, ...panelPos, maxHeight: maxH }}>
+                      <div ref={modelDropdownPanelRef} className="native-popover app-menu composer-model-panel" style={{ bottom, ...panelPos, maxHeight: maxH }}>
                       {showModelFilter && (
                         <div className="composer-model-filter-row">
                           <input
@@ -2735,7 +2838,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   <span className="composer-nowrap">{thinkingDisplayLabel}</span>
                 </button>
                 {thinkingDropdownOpen && (
-                  <div className="native-popover composer-dropdown-panel is-thinking">
+                  <div className="native-popover app-menu composer-dropdown-panel is-thinking">
                     <div className="composer-menu-scroll">
                     {selectableThinkingLevels(THINKING_LEVELS, availableThinkingLevels, thinkingLevelMap).map((lvl) => {
                       const isActive = lvl === "auto" ? isAutoThinkingSelection : !isAutoThinkingSelection && resolvedThinkingLevel === lvl;
@@ -2812,7 +2915,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   {(!isCompact || controlsMenuOpen) && <span className="composer-nowrap">{toolPresetLabel}</span>}
                 </button>
                 {toolDropdownOpen && (
-                  <div className="native-popover composer-dropdown-panel is-tools">
+                  <div className="native-popover app-menu composer-dropdown-panel is-tools">
                     <div className="composer-menu-scroll">
                     {TOOL_PRESETS.map((lvl) => {
                       const preset = TOOL_PRESET_MAP[lvl];

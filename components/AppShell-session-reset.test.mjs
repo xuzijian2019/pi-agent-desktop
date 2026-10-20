@@ -31,7 +31,8 @@ test("chat file links open in the file panel with session-scoped access", async 
   const start = source.indexOf("<ChatWindow");
   assert.notEqual(start, -1);
   const chatWindow = source.slice(start, source.indexOf("/>", start));
-  assert.match(chatWindow, /onOpenFile=\{\(filePath\) => handleOpenFile\(filePath, getFileName\(filePath\), \{ sourceSessionId: selectedSession\?\.id \}\)\}/);
+  assert.match(chatWindow, /onOpenFile=\{isChatWorkspaceActive \? undefined : handleOpenLinkedFile\}/);
+  assert.match(source, /const handleOpenLinkedFile = useCallback\([\s\S]*?handleOpenFile\(filePath, getFileName\(filePath\), \{ sourceSessionId: selectedSession\?\.id \?\? null, page \}\)/);
 });
 
 test("session restore remains desktop-only while panel state supports browsers", async () => {

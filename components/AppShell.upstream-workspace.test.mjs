@@ -132,6 +132,7 @@ test("a direct Scheduled URL survives project selection and delayed workspace re
     scheduledOpenRef: { current: true },
     suppressCwdBumpRef: { current: false },
     branchLeafChangeFnRef: { current: null },
+    chatWorkspaceCwd: null, newSessionWorkspaceKind: "project",
     activeCwd: "/old-project", activeFileTabId: null, selectedSession: null,
     newSessionCwd: null, sessionCatalog: [], sessionKey: 0, isMobile: false,
     scheduledOpen: true, branchTree: [], branchActiveLeafId: null, branchSwitchLocked: false,
@@ -217,4 +218,65 @@ test("extracted workspace state persists browser panels without restoring the de
   assert.equal(harness.options.activeFileTabId, "file:/browser/current.txt");
   assert.equal(harness.writes.length, 1);
   assert.equal(harness.writes[0].value.fileTabs[0].sourceSessionId, "browser");
+});
+
+
+test("new project navigation cannot inherit Chat workspace restrictions", () => {
+  const context = withState({
+    chatWorkspaceCwd: "/server-owned-chat", newSessionWorkspaceKind: "chat",
+    scheduledOpen: true, selectedSession: { id: "chat", cwd: "/server-owned-chat", workspaceKind: "chat" },
+    newSessionCwd: "/server-owned-chat", newSessionDraftId: "old", sessionKey: 1,
+    navigationGeneration: { current: 0 }, activeNewSessionDraftKeyRef: { current: "old" },
+    branchTree: [1], branchActiveLeafId: "old", branchLeafChangeFnRef: { current: () => {} },
+    branchSwitchLocked: true, activeTopPanel: "branches", fileTabs: [], activeFileTabId: null,
+    fileTreeOpen: false, rightPanelOpen: false, rightPanelExpanded: false, isMobile: false,
+    invalidateWorkspaceRestore() {},
+    window: { history: { state: {}, pushState() {} } },
+  });
+  run(`${declaration("handleNewSession")}
+globalThis.start = handleNewSession;`, context);
+  context.start("new-project", "/project");
+  assert.equal(context.newSessionWorkspaceKind, "project");
+  assert.equal(context.newSessionCwd, "/project");
+  assert.equal(context.activeNewSessionDraftKeyRef.current, "new:/project");
+  assert.equal(context.selectedSession, null);
+  assert.equal(context.branchSwitchLocked, false);
+  context.fileTabs = [{ id: "file:/project/private.txt" }];
+  context.activeFileTabId = "file:/project/private.txt";
+  context.fileTreeOpen = context.rightPanelOpen = context.rightPanelExpanded = true;
+  context.start("new-chat", "/server-owned-chat");
+  assert.equal(context.newSessionWorkspaceKind, "chat");
+  assert.equal(context.fileTabs.length, 0);
+  assert.equal(context.activeFileTabId, null);
+  assert.equal(context.rightPanelOpen, false);
+  assert.equal(context.fileTreeOpen, false);
+  assert.equal(context.rightPanelExpanded, false);
+});
+
+test("browser Back to a blank project reclassifies a previously active Chat", async () => {
+  const effect = nodes.find((node) => ts.isCallExpression(node)
+    && node.expression.getText(tree) === "useEffect"
+    && node.arguments[0]?.getText(tree).includes('window.addEventListener("popstate"'));
+  assert.ok(effect);
+  let listener;
+  const context = withState({
+    chatWorkspaceCwd: "/server-owned-chat", newSessionWorkspaceKind: "chat",
+    navigationGeneration: { current: 0 }, selectedSession: { id: "chat" },
+    newSessionCwd: "/server-owned-chat", activeCwd: "/server-owned-chat",
+    URLSearchParams,
+    window: {
+      location: { search: "?cwd=%2Fproject" }, history: { state: {} },
+      addEventListener(type, callback) { assert.equal(type, "popstate"); listener = callback; },
+      removeEventListener(type, callback) { assert.equal(type, "popstate"); assert.equal(callback, listener); },
+    },
+  });
+  const cleanup = run(`(${effect.arguments[0].getText(tree)})()`, context);
+  await listener();
+  assert.equal(context.newSessionWorkspaceKind, "project");
+  assert.equal(context.activeCwd, "/project");
+  assert.equal(context.selectedSession, null);
+  context.window.location.search = "?cwd=%2Fserver-owned-chat";
+  await listener();
+  assert.equal(context.newSessionWorkspaceKind, "chat");
+  cleanup();
 });

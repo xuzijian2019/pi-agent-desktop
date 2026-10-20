@@ -131,8 +131,8 @@ test("the worktree page switches, removes non-main checkouts and creates new one
   // One remove button, for the feature worktree only; main is never removable.
   assert.equal(html.match(/worktree-remove-button/g)?.length, 1);
   assert.ok(html.includes(`sidebar.removeWorktreeTitle(${FEATURE.path})`));
-  // The selected worktree carries the check mark, main carries its tag.
-  assert.match(html, /✓<\/span><span class="sidebar-project-context-menu-label">feature<\/span>/);
+  // Current-checkout semantics drive the shared selection pill; main keeps its tag.
+  assert.match(html, /aria-current="true"><span class="sidebar-project-context-menu-label">feature<\/span>/);
   assert.match(html, /<span class="sidebar-project-context-menu-label">main<\/span><span class="sidebar-project-context-menu-branch-tag">sidebar.main<\/span>/);
   assert.ok(html.includes("sidebar.newWorktree"));
 });
@@ -168,8 +168,8 @@ test("the branch page leads with a fetch row that shows its progress", () => {
 
 test("the new-worktree page suggests local branches and only creates with a name", () => {
   const empty = render({ view: "new-worktree" });
-  assert.match(empty, /<input[^>]*list="pi-project-worktree-branches"/);
-  for (const branch of ["main", "feature", "dev"]) assert.ok(empty.includes(`<option value="${branch}">`), branch);
+  assert.match(empty, /<input[^>]*role="combobox"/);
+  assert.doesNotMatch(empty, /<datalist|<select/);
   assert.match(empty, /sidebar-project-context-menu-primary"[^>]*disabled/);
   const named = render({ view: "new-worktree", newBranch: "topic" });
   assert.doesNotMatch(named, /sidebar-project-context-menu-primary"[^>]*disabled/);
@@ -208,7 +208,15 @@ function descendants(node) {
 }
 
 function control(overrides, predicate) {
-  const nodes = descendants(ProjectContextMenuPanel(propsFor(overrides)));
+  let nodes;
+  function CaptureMenu() {
+    // Render under React's dispatcher: the menu now uses a keyboard-navigation
+    // hook. Capture its actual elements without calling hooks outside a render.
+    const tree = ProjectContextMenuPanel(propsFor(overrides));
+    nodes = descendants(tree);
+    return tree;
+  }
+  renderToStaticMarkup(React.createElement(CaptureMenu));
   const found = nodes.find(predicate);
   assert.ok(found, "Expected an actionable control in the rendered menu");
   return found;
@@ -235,7 +243,7 @@ test("worktree controls invoke the requested checkout, confirmation and navigati
 test("new worktree Enter submits once, IME does not submit, and Escape returns without creating", () => {
   let creates = 0;
   let backs = 0;
-  const input = control({ view: "new-worktree", newBranch: "topic", onCreateWorktree: () => creates++, onShowWorktrees: () => backs++ }, (node) => node.type === "input");
+  const input = control({ view: "new-worktree", newBranch: "topic", onCreateWorktree: () => creates++, onShowWorktrees: () => backs++ }, (node) => node.props?.["aria-label"] === "sidebar.branchName" && typeof node.props.onKeyDown === "function");
   let prevented = 0;
   let stopped = 0;
   const event = (key, composing = false) => ({ key, nativeEvent: { isComposing: composing }, preventDefault() { prevented++; }, stopPropagation() { stopped++; } });
