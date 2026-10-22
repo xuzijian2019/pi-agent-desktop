@@ -101,6 +101,8 @@ try {
     assert.ok((await page.locator(".markdown-body").textContent()).endsWith("最终正文。"));
     assert.equal(await page.locator(".streamdown-animated").count(), 0, "completion flushes immediately");
     assert.equal(await page.locator(".markdown-body h2").count(), 90);
+    // Matched baseline/current viewport evidence for the long-content replay.
+    await page.screenshot({ path: `${out}/${mode}-long-content.png` });
     assert.deepEqual(errors, []);
     await page.close();
   }
