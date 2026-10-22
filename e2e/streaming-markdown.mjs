@@ -115,7 +115,9 @@ try {
       document.documentElement.classList.toggle("dark", theme === "dark");
     }, theme);
     const text = "## 流式 Markdown\n\n已完成的段落，包含 **重点** 和 [本地文件](src/main.ts)。\n\n- 第一项\n- 第二项\n\n| 功能 | 状态 |\n| --- | --- |\n| 中文流式 | 正常 |\n\n正在继续回复";
-    await set(page, text); await delay(250);
+    await set(page, text);
+    // A fresh page may still show the correct Suspense fallback while the lazy renderer resolves.
+    await page.locator(".streamdown-animated").waitFor({ state: "visible" });
     assert.equal(await page.locator(".streamdown-animated").count(), 1);
     const geometry = () => page.locator(".markdown-body").evaluate((body) => {
       const box = body.getBoundingClientRect();
@@ -132,6 +134,8 @@ try {
     assert.ok((await page.locator(".markdown-body").textContent()).includes("强调文字"));
     await page.getByRole("link", { name: "本地文件" }).click();
     assert.equal(await page.locator("html").getAttribute("data-opened-file"), "/project/src/main.ts");
+    await page.waitForFunction(() => document.querySelector('.markdown-body')
+      .getAnimations({ subtree: true }).every(animation => animation.playState === 'finished'));
     await page.screenshot({ path: `${out}/${theme}-${width}.png` });
     // Replacement/reconnection must not show text from the previous response.
     await set(page, "替换后的回复。", true);
@@ -187,7 +191,8 @@ try {
   assert.equal(await page.getByRole("link", { name: "manual" }).getAttribute("href"), "https://example.com");
   await set(page, "$$\nx = y\n$$"); await delay(120);
   assert.equal(await page.locator(".katex-display").count(), 1);
-  await set(page, "Normal text streaming"); await delay(120);
+  await set(page, "Normal text streaming");
+  await page.locator(".streamdown-animated").waitFor({ state: "visible" });
   assert.equal(await page.locator(".streamdown-animated").count(), 1);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.waitForFunction(() => !document.querySelector(".streamdown-animated"));

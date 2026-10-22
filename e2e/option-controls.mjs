@@ -110,6 +110,14 @@ try{
   assert.equal(await toolRows.count(),5);
   assert.equal(await toolRows.first().locator('.composer-icon').count(),1,'active tool has checkmark');
   await toolRows.nth(1).hover();
+  // Hover dispatch precedes the native popover's 120ms background transition.
+  // Observe settled styles before keeping the exact selected/hover/color assertions.
+  await page.waitForFunction(() => {
+    const rows = [...document.querySelectorAll('.composer-dropdown-panel.is-tools button.composer-option-row')].slice(0, 2);
+    return rows.length === 2 && rows[1].matches(':hover')
+      && rows.every(row => getComputedStyle(row).backgroundColor !== 'rgba(0, 0, 0, 0)'
+        && row.getAnimations().every(animation => animation.playState === 'finished'));
+  });
   const states=await toolRows.evaluateAll(rows=>rows.slice(0,2).map(row=>({selected:row.classList.contains('is-active'),color:getComputedStyle(row).backgroundColor,hovered:row.matches(':hover')})));
   assert.equal(states[0].selected,true);assert.equal(states[1].hovered,true);assert.ok(states.every(state=>state.color!=='rgba(0, 0, 0, 0)'));
   await tools.screenshot({path:`test-results/ui-send/menu-gap-config-${theme}-${width}.png`});

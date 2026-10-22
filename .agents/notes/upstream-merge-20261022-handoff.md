@@ -70,3 +70,9 @@
 - Independent review of actual Next dev manifests: initial page chunks decrease from 23 to 22; all 22 initial JavaScript chunks inspected, with Streamdown vendor implementations absent (only async loader/lazy metadata remains). This validates the eager-load boundary, not a real Safari device run.
 
 - Corrected-tree local gates: TypeScript passed, lint 0 errors / 21 warnings, full unit suite 3244 passed with zero failures/skips/cancellations. Seven fixture environment/wiring tests passed. No app binary build performed.
+
+## First exact-head CI and fixture synchronization follow-up
+- PR #36 initial head b64f44f2da5b372729d3641244e1a1bc4aab08af: run 39786710183 checks, Linux/Windows Rust test+clippy, audit and drift passed. E2E: 53 passed, 2 failed.
+- New streaming fixture checked animated wrapper after fixed 250ms on a fresh lazy/Suspense page. Wait for the actual visible wrapper instead, retaining exact count, spacing and content assertions. Do not increase timeout. First-run long-content metrics: 25,589 characters; parsed characters 446,363 baseline vs 8,995 current, stable-section parses 18 vs 0, draft input retained. No streaming screenshots were produced before failure.
+- Existing option-controls hover check read computed colors immediately after hover despite native-popover button background transition of 120ms. Wait for hover/nontransparent colors and completed animations, retaining all original assertions; product CSS unchanged. This is test synchronization, not a claim that the failing run passed.
+- Wait for Markdown animations to complete before screenshot capture. The corrected revision still requires its own CI and pixel review. No assertion weakened, no timeout increased.
