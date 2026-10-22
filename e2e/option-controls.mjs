@@ -143,12 +143,12 @@ try{
   await reasoning.click();await medium.locator('.composer-option-star.is-default').waitFor();
   await reasoningMenu.screenshot({path:`test-results/ui-send/selection-reasoning-${theme}-${width}.png`});
   await reasoning.click();await reasoningMenu.waitFor({state:'hidden'});
-  await page.getByRole('button',{name:'Change model',exact:true}).click();
+  await page.getByRole('button').and(page.getByTitle('Change model',{exact:true})).click();
   const models=page.locator('.composer-model-panel');const modelRows=models.locator('button.composer-option-row');
   await assertForkRows(models,modelRows,'fork models');
   await assertNativeKeyboardActivation(page,modelRows.nth(1));await models.waitFor({state:'hidden'});
   assert.equal(await page.evaluate(()=>window.__values().model.modelId),'second');
-  await page.getByRole('button',{name:'Change model',exact:true}).click();
+  await page.getByRole('button').and(page.getByTitle('Change model',{exact:true})).click();
   await models.locator('.composer-option-star-row').first().hover();await models.locator('button.composer-option-star').first().click();await models.waitFor({state:'hidden'});
   assert.equal(await page.evaluate(()=>window.__values().defaultModel.modelId),'first');
   const input=page.locator('textarea');await input.fill('');await input.press('ArrowUp');
