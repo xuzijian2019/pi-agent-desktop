@@ -110,6 +110,14 @@ try{
   assert.equal(await toolRows.count(),5);
   assert.equal(await toolRows.first().locator('.composer-icon').count(),1,'active tool has checkmark');
   await toolRows.nth(1).hover();
+  // Hover dispatch precedes the native popover's 120ms background transition.
+  // Observe settled styles before keeping the exact selected/hover/color assertions.
+  await page.waitForFunction(() => {
+    const rows = [...document.querySelectorAll('.composer-dropdown-panel.is-tools button.composer-option-row')].slice(0, 2);
+    return rows.length === 2 && rows[1].matches(':hover')
+      && rows.every(row => getComputedStyle(row).backgroundColor !== 'rgba(0, 0, 0, 0)'
+        && row.getAnimations().every(animation => animation.playState === 'finished'));
+  });
   const states=await toolRows.evaluateAll(rows=>rows.slice(0,2).map(row=>({selected:row.classList.contains('is-active'),color:getComputedStyle(row).backgroundColor,hovered:row.matches(':hover')})));
   assert.equal(states[0].selected,true);assert.equal(states[1].hovered,true);assert.ok(states.every(state=>state.color!=='rgba(0, 0, 0, 0)'));
   await tools.screenshot({path:`test-results/ui-send/menu-gap-config-${theme}-${width}.png`});
@@ -135,12 +143,12 @@ try{
   await reasoning.click();await medium.locator('.composer-option-star.is-default').waitFor();
   await reasoningMenu.screenshot({path:`test-results/ui-send/selection-reasoning-${theme}-${width}.png`});
   await reasoning.click();await reasoningMenu.waitFor({state:'hidden'});
-  await page.getByRole('button',{name:'Change model',exact:true}).click();
+  await page.getByRole('button').and(page.getByTitle('Change model',{exact:true})).click();
   const models=page.locator('.composer-model-panel');const modelRows=models.locator('button.composer-option-row');
   await assertForkRows(models,modelRows,'fork models');
   await assertNativeKeyboardActivation(page,modelRows.nth(1));await models.waitFor({state:'hidden'});
   assert.equal(await page.evaluate(()=>window.__values().model.modelId),'second');
-  await page.getByRole('button',{name:'Change model',exact:true}).click();
+  await page.getByRole('button').and(page.getByTitle('Change model',{exact:true})).click();
   await models.locator('.composer-option-star-row').first().hover();await models.locator('button.composer-option-star').first().click();await models.waitFor({state:'hidden'});
   assert.equal(await page.evaluate(()=>window.__values().defaultModel.modelId),'first');
   const input=page.locator('textarea');await input.fill('');await input.press('ArrowUp');

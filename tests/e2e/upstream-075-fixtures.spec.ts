@@ -6,7 +6,7 @@ import { sandboxServerEnv } from "./sandbox";
 const run = promisify(execFile);
 // Keep upstream's browser regression fixtures in the fork's Playwright entry
 // point. These use synthetic DOM/session data, never an actual model or user HOME.
-for (const fixture of ["chat-prompt-anchor", "composer-outbox", "option-controls"]) {
+for (const fixture of ["chat-prompt-anchor", "composer-outbox", "option-controls", "streaming-markdown"]) {
   test(`0.7.5 ${fixture} regression fixture`, async ({}, testInfo) => {
     test.setTimeout(180_000);
     const env = { ...process.env, ...sandboxServerEnv() };

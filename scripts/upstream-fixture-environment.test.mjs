@@ -37,7 +37,7 @@ test("fixture children keep sandbox HOME but use the runner's resolved browser",
   }
 });
 
-for (const fixture of ["chat-prompt-anchor", "composer-outbox", "option-controls"]) {
+for (const fixture of ["chat-prompt-anchor", "composer-outbox", "option-controls", "streaming-markdown"]) {
   test(`${fixture} honors the explicit browser executable and channel`, () => {
     const source = ts.createSourceFile("fixture.js", readFileSync(new URL(`../e2e/${fixture}.mjs`, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
     const launch = findNode(source, n => ts.isCallExpression(n) && n.expression.getText(source) === "chromium.launch");
@@ -50,3 +50,16 @@ for (const fixture of ["chat-prompt-anchor", "composer-outbox", "option-controls
     }
   });
 }
+
+test("streaming Markdown replay remains wired into the fork Playwright entry", () => {
+  const source = readFileSync(new URL("../tests/e2e/upstream-075-fixtures.spec.ts", import.meta.url), "utf8");
+  assert.match(source, /"streaming-markdown"/);
+});
+
+test("legacy browsers cannot eagerly import the streaming vendor", () => {
+  const source = readFileSync(new URL("../components/StreamingMarkdown.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /import\s*\{[^}]*Streamdown[^}]*\}\s*from/);
+  assert.match(source, /lazy\(\(\) => import\("@lobehub\/streamdown"\)/);
+  assert.match(source, /reducedMotion \|\| !supportsStreamingMarkdownAnimation\(\)/);
+  assert.match(source, /<Suspense fallback=\{<ReactMarkdown/);
+});

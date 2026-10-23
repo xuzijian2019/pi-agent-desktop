@@ -204,9 +204,20 @@
       "drift": 264,
       "reason": "Fork-specific product docs, Simplified Chinese translation of README.md. Same handling as README.md. Upstream's other translations (ja, ru) are deleted in this fork on purpose \u2014 if a sync resurrects them, delete them again rather than translating Pi Agent docs into a language nobody here maintains.",
       "disposition": "accepted"
+    },
+    "components/MarkdownBody.tsx": {
+      "risk": "medium",
+      "drift": 173,
+      "structuralDrift": 171,
+      "disposition": "accepted",
+      "reason": "Uses the fork's headless streaming adapter and coalesced preprocessing while preserving Pi's plugins and widget mapping. Incoming markdown changes must retain the static/safety fallbacks, immediate completion and stream replacement behavior."
     }
   },
   "forkOwnedPaths": [
+    "components/StreamingMarkdown.tsx",
+    "hooks/useStreamingMarkdown.ts",
+    "lib/streaming-markdown.ts",
+    "lib/streaming-markdown.test.mjs",
     "src-tauri/",
     "desktop/",
     "scripts/",
@@ -276,6 +287,7 @@
     "reduce": "Drift that can be removed without losing anything \u2014 desktop-only code that belongs in components/desktop/, or fork additions sitting in an upstream file that can move to a fork-owned one. Act on these."
   },
   "decisionLog": [
+    "2026-10-21 \u2014 MarkdownBody now integrates @lobehub/streamdown through fork-owned StreamingMarkdown and useStreamingMarkdown, retaining Pi's remark/rehype pipeline, widgets, final-text flush and document-scoped fallbacks. Stable block caching and paced word fades replace full-document parsing on every streamed snapshot; no Lobe UI theme is imported. Browser replay measures parse volume against the former 120ms strategy.",
     "2026-07-26 \u2014 lib/api-types.ts: fork update types moved to lib/app-update-types.ts; file now matches upstream and left the manifest.",
     "2026-07-26 \u2014 components/AppShell.tsx: desktop window chrome moved to components/desktop/ (-53 structural). The remaining 376 lines are the top-bar redesign; accepted.",
     "2026-07-26 \u2014 TabBar, FileExplorer, useTheme, FileViewer: assessed as generic improvements with zero desktop coupling. Upstreaming was declined, so accepted rather than reverted \u2014 reverting would delete working features to save CI review time.",
