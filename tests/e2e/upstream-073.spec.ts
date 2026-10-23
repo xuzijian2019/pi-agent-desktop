@@ -1,5 +1,6 @@
 import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -65,9 +66,14 @@ async function openWorktrees(page: Page, cwd: string) {
 }
 
 test("cross-project worktree actions keep project identity and honor cancel and confirmation", async ({ page, request }, testInfo) => {
-  const root = path.join(WORK_ROOT, `merge-073-${randomUUID()}`);
-  const first = path.join(root, "alpha", "repository");
-  const second = path.join(root, "beta", "repository");
+  const root = path.join(realpathSync(WORK_ROOT), `merge-073-${randomUUID()}`);
+  // Distinct basenames: the sidebar shows only the project basename, so two
+  // repos both named "repository" would render identically and the tree could
+  // not tell the two projects apart. The real path matters for the same
+  // reason: the server resolves symlinks, so on macOS os.tmpdir()'s /var/…
+  // becomes /private/var/… in the tree's aria-labels.
+  const first = path.join(root, "alpha-repository");
+  const second = path.join(root, "beta-repository");
   const firstId = await fixture(first, "Alpha merge review");
   const secondId = await fixture(second, "Beta merge review");
   await refresh(request, secondId);
