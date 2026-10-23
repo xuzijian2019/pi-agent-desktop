@@ -21,7 +21,7 @@ test("fixture children keep sandbox HOME but use the runner's resolved browser",
   for (const channel of [undefined, "chrome"]) {
     let call;
     const fn = script.runInNewContext({
-      test: { setTimeout() {} }, fixture: "chat-prompt-anchor",
+      test: { setTimeout() {}, skip() {} }, fixture: "chat-prompt-anchor",
       process: { execPath: "/node", platform: "linux", env: { HOME: "/runner", XDG_STATE_HOME: "/private", E2E_BROWSER_EXECUTABLE: "/stale/chrome" } },
       chromium: { executablePath: () => "/runner/.cache/chromium/chrome" },
       sandboxServerEnv: () => ({ HOME: "/sandbox", XDG_CACHE_HOME: "/sandbox/.cache", PI_CODING_AGENT_DIR: "/sandbox/agent" }),
