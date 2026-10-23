@@ -257,8 +257,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [chatWorkspaceCwd, setChatWorkspaceCwd] = useState<string | null>(null);
   // Same fold model as a project: folding drops the extra pages, so the next
-  // unfold starts again from the first five chats.
-  const [chatsCollapsed, setChatsCollapsed] = useState(() => getPref(APP_PREF_KEYS.collapsedChats) === "1");
+  // unfold starts again from the first five chats. The fold is a render input
+  // in the server HTML, and storage is empty there, so it starts unfolded and
+  // the stored preference is applied after hydration (see `chatsPrefReady`).
+  const [chatsCollapsed, setChatsCollapsed] = useState(false);
+  const [chatsPrefReady, setChatsPrefReady] = useState(false);
   const [chatSessionPages, setChatSessionPages] = useState(() => {
     const stored = getPrefJson<unknown>(APP_PREF_KEYS.chatSessionPages);
     return typeof stored === "number" && Number.isInteger(stored) && stored > 0 ? stored : 0;
@@ -595,6 +598,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
   useEffect(() => {
     setExplorerOpen(loadExplorerOpen());
+    setChatsCollapsed(getPref(APP_PREF_KEYS.collapsedChats) === "1");
+    setChatsPrefReady(true);
   }, []);
 
   // Persist unread markers so they survive a browser refresh before the user
@@ -613,9 +618,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [collapsedProjects]);
 
   useEffect(() => {
+    // Skip the first commit: it still holds the pre-hydration default and
+    // would erase the stored fold before the restore above applies it.
+    if (!chatsPrefReady) return;
     if (chatsCollapsed) setPref(APP_PREF_KEYS.collapsedChats, "1");
     else removePref(APP_PREF_KEYS.collapsedChats);
-  }, [chatsCollapsed]);
+  }, [chatsCollapsed, chatsPrefReady]);
 
   useEffect(() => {
     if (pinnedChats.size === 0) removePref(APP_PREF_KEYS.pinnedChats);
