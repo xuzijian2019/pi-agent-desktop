@@ -1528,7 +1528,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 )}
               </svg>
             </span>
-            <span className="sidebar-project-tree-name" style={group.cwdMissing ? { opacity: 0.55 } : undefined}>{projectDisplayNames.get(group.projectRoot) ?? group.displayName}</span>
+            <span className="sidebar-project-tree-name" style={group.cwdMissing ? { opacity: 0.55 } : undefined}>{group.displayName}</span>
             {branchSubtitle && (
               <span className="sidebar-project-tree-branch" title={branchSubtitle}>
                 {branchSubtitle}
