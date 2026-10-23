@@ -170,6 +170,12 @@ test("Chats fold like a project and unfold back to the first five", () => {
   // The fold and the page count survive a reload.
   assert.match(source, /APP_PREF_KEYS\.collapsedChats/);
   assert.match(source, /APP_PREF_KEYS\.chatSessionPages/);
+  // The fold is part of the server-rendered markup, so it must start from the
+  // server default and only then read storage — otherwise hydration mismatches.
+  assert.match(source, /const \[chatsCollapsed, setChatsCollapsed\] = useState\(false\);/);
+  assert.doesNotMatch(source, /setChatsCollapsed\] = useState\(\(\) => getPref/);
+  assert.match(source, /setChatsCollapsed\(getPref\(APP_PREF_KEYS\.collapsedChats\) === "1"\)/);
+  assert.match(source, /if \(!chatsPrefReady\) return;/);
 });
 
 test("the Chats header shows its menu and add buttons only on hover, like Projects", () => {
