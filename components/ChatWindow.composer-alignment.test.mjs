@@ -36,11 +36,9 @@ test("the new-session screen has no header row above the composer", () => {
 });
 
 test("composer and message columns share one padding and one max width", () => {
-  const columnPadding = Number(/const CHAT_COLUMN_PADDING = (\d+);/.exec(source)?.[1]);
-  assert.ok(Number.isFinite(columnPadding), "CHAT_COLUMN_PADDING must be a number");
   assert.match(
     source,
-    /padding: `0 \$\{CHAT_COLUMN_PADDING\}px`/,
+    /padding: "0 var\(--chat-column-padding, 16px\)"/,
     "the overlay composer insets the same column padding as the message list",
   );
 
