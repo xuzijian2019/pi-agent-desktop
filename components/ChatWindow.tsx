@@ -13,7 +13,6 @@ import { MessageView } from "./MessageView";
 import { useReportDesktopReady } from "./desktop";
 import { formatAttachmentSize } from "@/lib/chat-attachments";
 import { ConversationNavigator, type ConversationTurnLocation } from "./ConversationNavigator";
-import { SideChatPanel } from "./SideChatPanel";
 import { MarkdownBody } from "./MarkdownBody";
 import { useEphemeralConversation } from "@/hooks/useEphemeralConversation";
 import { ChatCommandDialog } from "./ChatCommandDialog";
@@ -37,10 +36,11 @@ import { findChatScrollAnchor, type ChatScrollPosition } from "@/lib/chat-scroll
 import { captureScrollDistance, getVisibleRenderWindow, isScrollAtTail, restoreScrollTop, VISIBLE_PAGE_SIZE } from "@/lib/chat-lazy-load";
 import { sessionVisibleCounts } from "@/lib/scroll-memory";
 import { isImeComposing } from "@/lib/ime";
+import { useChatAccess } from "@/hooks/useChatAccess";
+import { ChatConfirmDialog } from "./ChatConfirmDialog";
 import { assignMessageKeys, createMessageKeyTracker } from "@/lib/message-keys";
 
 interface Props {
-  onSideModeChange?: (open: boolean) => void;
   onAppCommand?: (command: AppSlashCommand) => string | void;
   onBranchNavigate?: (cwd: string) => void;
   session: SessionInfo | null;
@@ -271,7 +271,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onContextUsageChange, onSelectProject, projectOptions, onProjectChange, onOpenFile, onProjectFilesImported, onOpenModelsConfig, onBranchNavigate, onAppCommand, onSideModeChange, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionDraftKey, onAttentionNeeded, onSystemToolsChange, onSystemInfoLoaderChange, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed }: Props) {
+export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onContextUsageChange, onSelectProject, projectOptions, onProjectChange, onOpenFile, onProjectFilesImported, onOpenModelsConfig, onBranchNavigate, onAppCommand, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionDraftKey, onAttentionNeeded, onSystemToolsChange, onSystemInfoLoaderChange, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed }: Props) {
   const { t } = useI18n();
   const chatOnly = workspaceKind === "chat" || session?.workspaceKind === "chat";
   const [commandDialog, setCommandDialog] = useState<"fork" | "hotkeys" | "session" | null>(null);
@@ -319,7 +319,7 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
     dismissModelScopeWarnings,
     handleRecallQueue,
     handleBuiltinSlashCommand, retryLoad,
-    handleToolPresetChange, handleThinkingLevelChange, handleSetDefaultModel, handleSetDefaultThinkingLevel, loadSlashCommands, scrollToBottom,
+    handleToolPresetChange, handleChatAccessRebuilt, handleThinkingLevelChange, handleSetDefaultModel, handleSetDefaultThinkingLevel, loadSlashCommands, scrollToBottom,
   } = useAgentSession({
     chatWorkspace: chatOnly,
     session, sessionRunning, newSessionCwd, newSessionDraftKey, onAttentionNeeded, onAgentEnd: wrappedOnAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed,
@@ -328,19 +328,26 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
     deferInitialScroll: Boolean(pendingScrollRestore), onScrollPositionChange,
   });
   const sessionBusy = agentRunning || bashRunning;
+  // A chat's folder and whether it may use the computer; the server owns both.
+  const chatAccess = useChatAccess(session?.id, chatOnly && Boolean(session) && !isNew, handleChatAccessRebuilt);
+  const [chatUnlockDialog, setChatUnlockDialog] = useState<"unlock" | "lock" | null>(null);
+  const handleToggleChatUnlocked = useCallback((nextUnlocked: boolean) => {
+    if (sessionBusy) {
+      addNotice({ type: "error", message: t("chat.chatUnlockBusy") });
+      return;
+    }
+    setChatUnlockDialog(nextUnlocked ? "unlock" : "lock");
+  }, [addNotice, sessionBusy, t]);
+  // The desktop window stays hidden until the conversation it opens on is
+  // loaded (or its load failed and the error is what the user will see).
   useReportDesktopReady(!loading, "chat");
   const ephemeral = useEphemeralConversation(session?.id ?? sessionIdRef.current ?? null, session?.cwd ?? newSessionCwd ?? undefined, snapshotLeaf);
-  const { side, recap, recapBusy, recapError, closeSide, cancelRecap, handleLocalCommand } = ephemeral;
-  const sideOpen = !!side;
+  const { recap, recapBusy, recapError, cancelRecap, handleLocalCommand } = ephemeral;
   const sendMain = useCallback((...args: Parameters<typeof handleSend>) => { setSnapshotLeaf(undefined); return handleSend(...args); }, [handleSend]);
-  const returnToMain = useCallback(() => {
-    closeSide(); requestAnimationFrame(() => chatInputRef?.current?.focus());
-  }, [closeSide, chatInputRef]);
   const dispatchCommand = useCallback(async (text: string) => {
     const result = await handleLocalCommand(text);
     return result.handled ? result : handleBuiltinSlashCommand(text);
   }, [handleLocalCommand, handleBuiltinSlashCommand]);
-  useEffect(() => { onSideModeChange?.(sideOpen); return () => onSideModeChange?.(false); }, [sideOpen, onSideModeChange]);
 
   useEffect(() => setCommandDialog(null), [session?.id, newSessionCwd]);
   const forkChoices = useMemo(() => messages.flatMap((message, index) => message.role === "user" && entryIds[index]
@@ -531,7 +538,7 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
     handleFork(entryId);
   }, [handleFork]);
   // Editing only prefills the composer; the branch moves when the edit is sent
-  // (useAgentSession), so the side-chat snapshot follows that send like any other.
+  // (useAgentSession), so the recap snapshot follows that send like any other.
   const stableHandleEditContent = useCallback((message: UserMessage, entryId: string) => {
     if (sessionBusyRef.current) return;
     handleEditContent(message, entryId);
@@ -539,9 +546,9 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
 
   // Register the abort handler for the global Esc shortcut
   useEffect(() => {
-    registerAbortHandler(side ? returnToMain : sessionBusy ? handleAbort : null);
+    registerAbortHandler(sessionBusy ? handleAbort : null);
     return () => registerAbortHandler(null);
-  }, [sessionBusy, handleAbort, side, returnToMain]);
+  }, [sessionBusy, handleAbort]);
 
   // --- Lazy-load historical messages ---
   // Only render the last N messages initially. When the user scrolls to the
@@ -1316,6 +1323,8 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
       projectOptions={chatOnly ? [] : projectOptions}
       onProjectChange={chatOnly ? undefined : onProjectChange}
       chatOnly={chatOnly}
+      chatAccess={chatAccess}
+      onToggleChatUnlocked={handleToggleChatUnlocked}
       contextUsage={contextUsage}
       sessionStats={sessionStats}
     />
@@ -1346,12 +1355,12 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
       data-session-busy={sessionBusy ? "true" : undefined}
       data-bash-running={bashRunning ? "true" : undefined}
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-      onDragEnter={side ? event => { event.preventDefault(); event.stopPropagation(); } : handleDragEnter}
-      onDragOver={side ? event => { event.preventDefault(); event.stopPropagation(); } : handleDragOver}
-      onDragLeave={side ? event => { event.preventDefault(); event.stopPropagation(); } : handleDragLeave}
-      onDrop={side ? event => { event.preventDefault(); event.stopPropagation(); } : handleDrop}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
-      <div ref={chatContentRegionRef} className="relative flex min-h-0 flex-1 flex-col" inert={!!side} aria-hidden={side ? true : undefined}>
+      <div ref={chatContentRegionRef} className="relative flex min-h-0 flex-1 flex-col">
       {(recapBusy || recapError || recap) && <section className="mx-4 my-2 max-h-[40%] shrink-0 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--bg-panel)] p-4" aria-label={t("recap.title")}>
         <div className="mb-2 flex flex-wrap items-center gap-2 text-sm"><strong>{t("recap.title")}</strong>
           {recapBusy && <><span role="status">{t("recap.loading")}</span><button className="ml-auto text-[var(--accent)]" onClick={cancelRecap}>{t("recap.cancel")}</button></>}
@@ -1638,8 +1647,23 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
         document.body,
       )}
 
-      {side && <SideChatPanel messages={side.messages} busy={side.busy} error={side.error} ready={side.ready} parentRunning={agentRunning || bashRunning} cwd={session?.cwd ?? undefined} onSend={ephemeral.sendSide} onStop={returnToMain} onClose={returnToMain} />}
-      {!side && commandDialog && <ChatCommandDialog kind={commandDialog} stats={sessionStats} sessionId={session?.id ?? sessionIdRef.current ?? null} choices={forkChoices} onClose={() => setCommandDialog(null)} onFork={id => { setCommandDialog(null); void handleFork(id); }} />}
+      {commandDialog && <ChatCommandDialog kind={commandDialog} stats={sessionStats} sessionId={session?.id ?? sessionIdRef.current ?? null} choices={forkChoices} onClose={() => setCommandDialog(null)} onFork={id => { setCommandDialog(null); void handleFork(id); }} />}
+      {chatUnlockDialog && chatAccess && (
+        <ChatConfirmDialog
+          title={t(chatUnlockDialog === "unlock" ? "chat.chatUnlockTitle" : "chat.chatLockTitle")}
+          body={t(chatUnlockDialog === "unlock" ? "chat.chatUnlockBody" : "chat.chatLockBody")}
+          confirmLabel={t(chatUnlockDialog === "unlock" ? "chat.chatUnlockConfirm" : "chat.chatLockConfirm")}
+          cancelLabel={t("chat.chatConfirmCancel")}
+          busy={chatAccess.busy}
+          error={chatAccess.error}
+          onCancel={() => { chatAccess.clearError(); setChatUnlockDialog(null); }}
+          onConfirm={() => {
+            void chatAccess.setUnlocked(chatUnlockDialog === "unlock").then((ok) => {
+              if (ok) setChatUnlockDialog(null);
+            });
+          }}
+        />
+      )}
     </div>
   );
 }

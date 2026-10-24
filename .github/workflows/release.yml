@@ -114,57 +114,47 @@ jobs:
           tagName: v__VERSION__
           releaseName: pi-agent-desktop v__VERSION__
           releaseBody: |
-            ## Pi Agent Desktop 0.7.5
+            ## Pi Agent Desktop 0.7.6
 
             ### New
 
-            - **Chats can do more.** A chat now uses your installed skills and MCP servers (an MCP server you configured is trusted: its tools may write files or run commands), and you can attach text, code, and Word (.docx) files to a message. Name a file by its full path and the chat can read it; ask for a file and it is saved to your Downloads folder (never overwriting; you can require a confirmation before each save in the Chats section of Settings › General). Programs and installers are never saved.
-            - Pin, group, and archive chats from the sidebar, set a default model and reasoning level for new chats, and choose which extra tools chats may use in the **Chats** section of **Settings › General**. **Continue in a project** copies a chat into a project so it gains that project's tools.
-            - **Editable follow-up queue.** Messages sent while the agent is working wait in a list above the composer: edit, delete, or send one now to steer the current run. They are delivered automatically when the run finishes.
-            - Settings and every menu, dropdown, and option picker now share one consistent look, spacing, and keyboard behavior.
+            - **Every chat gets its own folder.** A chat now works in a private folder of its own and cannot run shell commands by default. To let one chat use your computer (a shell, files anywhere), turn it on for that chat only; it is never available when the server is exposed to the network. Show a chat's folder in your file manager from its menu, and deleting a chat can move its folder to the Trash.
+            - Updated to the bundled **pi 1.4.0** SDK.
 
             ### Improved
 
-            - The window appears once its first screen is ready instead of showing an empty frame, and the app starts faster.
-            - Chat scrolling keeps your sent message in place while a reply streams.
+            - Opening very large session files is much faster and uses far less memory: bulky browser-automation output that the interface never shows is no longer parsed.
+            - Streaming replies render faster: finished Markdown blocks are cached instead of being re-rendered on every update.
+            - **Open With** on a source-code or JSON file now lists code editors, not Word, Excel, Numbers, or Notes.
+            - The default font prefers your system monospace and falls back to proper CJK fonts.
 
             ### Fixed
 
-            - After a Windows overwrite install, the app no longer keeps showing the previous version's interface.
-            - Files attached in one chat no longer appear in another; editing or restoring a message with attachments brings the files back as attachments.
-            - A path written inside an attached file no longer lets the chat read that file; only paths you type yourself count.
-            - The default reasoning level can be saved from the keyboard (arrow right to the star, then Enter).
-            - `dev:lan` and `start:lan` now mark the server as network-exposed, which switches off chats reading and saving files on this computer.
-            - Opening Settings from a chat whose first message contains a double space no longer freezes the app.
+            - The window title no longer loops on titles that contain repeated spaces.
 
-            Bundled components: pi 1.3.0, pi-web 0.10.0.
+            Bundled components: pi 1.4.0, pi-web 0.10.0.
 
             ---
 
-            ## Pi Agent Desktop 0.7.5
+            ## Pi Agent Desktop 0.7.6
 
             ### 新增
 
-            - **对话能力增强。** 对话现在可以使用已安装的 Skills 和 MCP 服务器（你配置的 MCP 服务器被视为可信，其工具可能写入文件或执行命令），消息可附加文本、代码和 Word（.docx）文件。写出文件的完整路径，对话就能读取它；让它生成文件，会保存到“下载”文件夹（不会覆盖已有文件；可在 设置 › 通用 的“对话”部分要求每次保存前先确认）。程序和安装包不会被保存。
-            - 侧边栏可固定、分组和归档对话；在 **设置 › 通用** 的“对话”部分可设置新对话的默认模型与推理级别，并选择对话额外可用的工具。**在项目中继续**会把对话复制到项目里，使其获得该项目的工具。
-            - **可编辑的跟进队列。** 智能体工作期间发送的消息会排在输入框上方的列表中：可编辑、删除，或立即发送以引导当前运行；运行结束后自动投递。
-            - 设置页以及所有菜单、下拉框和选项选择器，统一了外观、间距和键盘操作。
+            - **每个对话都有自己的文件夹。** 对话现在在专属的私有文件夹中工作，默认不能执行 shell 命令。如需让某个对话使用你的电脑（shell、访问任意位置的文件），可只为该对话单独开启；当服务对外开放到网络时，此功能始终不可用。可从对话菜单在文件管理器中显示对话文件夹，删除对话时也可把它的文件夹移到废纸篓。
+            - 内置 **pi 1.4.0** SDK 升级。
 
             ### 改进
 
-            - 窗口在首屏就绪后才显示，不再先出现空白画面，应用启动也更快。
-            - 对话滚动在回复流式输出时，会让你刚发送的消息保持在原位。
+            - 打开超大会话文件明显更快、占用内存更少：界面从不显示的大体积浏览器自动化输出不再被解析。
+            - 回复流式输出时渲染更快：已完成的 Markdown 块会被缓存，不再每次更新都重新渲染。
+            - 对源代码、JSON 等文件使用 **打开方式** 时，只列出代码编辑器，不再出现 Word、Excel、Numbers 或“备忘录”。
+            - 默认字体优先使用系统等宽字体，并为中日韩文字提供合适的回退字体。
 
             ### 修复
 
-            - Windows 覆盖安装后，应用不再继续显示上一版本的界面。
-            - 在一个对话中添加的附件不会再出现在另一个对话里；编辑或恢复带附件的消息时，文件会作为附件回到输入框。
-            - 附件内容中写出的路径不再让对话获得读取该文件的权限，只有你自己输入的路径才算数。
-            - 默认推理级别现在可以用键盘保存（方向键右移到星标，再按 Enter）。
-            - `dev:lan` 与 `start:lan` 现在会把服务标记为对外开放，从而关闭对话读取和保存本机文件的能力。
-            - 修复：当对话的第一条消息含连续空格时，点击设置会导致应用卡死。
+            - 当窗口标题含连续空格时，标题不再陷入循环。
 
-            内置组件版本：pi 1.3.0、pi-web 0.10.0。
+            内置组件版本：pi 1.4.0、pi-web 0.10.0。
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: true

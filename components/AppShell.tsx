@@ -384,7 +384,6 @@ export function AppShell() {
     reclampRightPanelWidth();
     reclampFileTreeWidth();
   }, [reclampFileTreeWidth, reclampRightPanelWidth, reclampSidebarWidth, rightPanelOpen, rightPanelWidth]);
-  const [sideModeOpen, setSideModeOpen] = useState(false);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const [pendingQuotePrompt, setPendingQuotePrompt] = useState<{ sessionId: string; text: string } | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
@@ -2018,7 +2017,7 @@ export function AppShell() {
             </button>
           )}
           {showChat && !scheduledOpen && (
-            <div inert={sideModeOpen} className="app-topbar-actions" style={{ opacity: sideModeOpen ? 0.45 : undefined, display: "flex", alignItems: "stretch", height: "100%" }}>
+            <div className="app-topbar-actions" style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
               {hasSubagentSessions && <button className="native-toolbar-button" onClick={() => toggleTopPanel("agents")}>{translate("agentSwitcher.title")}</button>}
               {!isChatWorkspaceActive && (hasForks(branchTree) || activeTopPanel === "branches") && (
                 <BranchNavigator
@@ -2127,7 +2126,6 @@ export function AppShell() {
               onOpenFile={isChatWorkspaceActive ? undefined : handleOpenLinkedFile}
               onOpenModelsConfig={() => setSettingsSection("models")}
               onAppCommand={handleAppCommand}
-              onSideModeChange={setSideModeOpen}
               onOpenSession={handleOpenSession}
               onAskInNewChat={handleAskInNewChat}
               quoteSelectionEnabled={quoteSelectionEnabled}

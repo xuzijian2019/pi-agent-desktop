@@ -1076,6 +1076,34 @@ test("chat-only composer keeps shell, file and session mentions out of the input
   assert.match(source, /if \(chatOnly \|\| !cwd\) \{\s*setAtQuery\(null\)/);
   assert.match(source, /useSessionMentionPalette\(\{ cwd: chatOnly \? null : cwd/);
   assert.match(source, /const prepared = chatOnly[\s\S]*?splicePastedTexts[\s\S]*?: await prepareOutgoingMessage/); // Chats must never resolve project/session references.
+  // The chat's rows (what it can do, its folder, the computer switch) come from ChatAccessRows.
+  assert.match(source, /\{chatOnly && \([\s\S]*?<ChatAccessRows[\s\S]*?access=\{chatAccess\}/);
+  const rows = readFileSync(new URL("./ChatAccessRows.tsx", import.meta.url), "utf8");
+  assert.match(rows, /t\("chat\.chatOnlyDescription"\)/);
+});
+
+test("chat access stays reachable without project presets, hints or reasoning controls", () => {
+  for (const unlocked of [false, true]) {
+    const html = renderWithI18n(React.createElement(ChatInput, {
+      onSend() {},
+      isStreaming: false,
+      chatOnly: true,
+      hasTranscript: true,
+      showInputHints: false,
+      chatAccess: {
+        state: { chat: true, folder: "/fixture/chat", unlocked, available: true },
+        busy: false,
+        error: null,
+        reveal: async () => {},
+        setUnlocked: async () => true,
+        clearError() {},
+      },
+    }));
+    // Unlike the project-only tool preset, the access entry must survive a first message.
+    assert.match(html, /aria-expanded="false"/);
+    assert.match(html, unlocked ? /aria-label="Chat · computer"/ : /aria-label="Chat"/);
+    assert.doesNotMatch(html, /Change tool preset/);
+  }
 });
 
 test("only the chat composer offers saving a default model or reasoning level", () => {

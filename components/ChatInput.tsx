@@ -46,6 +46,8 @@ import {
   type ChatTextAttachment,
 } from "@/lib/chat-attachments";
 import { SessionMentionMenu } from "./SessionMentionMenu";
+import { ChatAccessRows } from "./ChatAccessRows";
+import type { ChatAccessControls } from "@/hooks/useChatAccess";
 import { ComposerProjectChip, getProjectLabel } from "./ComposerProjectChip";
 import { ComposerOutbox, type ComposerQueueAction } from "./ComposerOutbox";
 import { useSessionMentionPalette } from "@/hooks/useSessionMentionPalette";
@@ -141,8 +143,12 @@ interface Props {
   draftKey?: string;
   /** Session working directory — enables the @ file autocomplete menu */
   cwd?: string | null;
-  /** The hidden model-only chat workspace: images only, no file/shell mentions. */
+  /** A non-project chat workspace: images only, no file/shell mentions in the composer. */
   chatOnly?: boolean;
+  /** A chat's folder and computer access (null until the server answers). */
+  chatAccess?: ChatAccessControls | null;
+  /** The user flipped "let this chat use my computer"; the parent confirms and applies it. */
+  onToggleChatUnlocked?: (nextUnlocked: boolean) => void;
   /** Project root shown in the composer so the session context is always visible. */
   projectPath?: string | null;
   /** Open the project chooser and switch the active project. */
@@ -840,6 +846,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   draftKey,
   cwd,
   chatOnly = false,
+  chatAccess = null,
+  onToggleChatUnlocked,
   projectPath,
   onSelectProject,
   projectOptions = [],
@@ -2155,7 +2163,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     return thinkingLevelMap[lvl] ?? lvl;
   })();
   const rawToolPresetLabel = Object.entries(TOOL_PRESET_MAP).find(([, v]) => v === (toolPreset ?? "configured"))?.[0] ?? "configured";
-  const toolPresetLabel = chatOnly ? t("chat.chatWorkspace") : rawToolPresetLabel === "chat-only" ? t("chat.chatOnly") : rawToolPresetLabel;
+  // A chat workspace and the "Chat only" tool preset of a project are different things.
+  const chatUnlocked = chatOnly && Boolean(chatAccess?.state.unlocked);
+  const toolPresetLabel = chatOnly
+    ? t(chatUnlocked ? "chat.chatUnlocked" : "chat.chatWorkspace")
+    : rawToolPresetLabel === "chat-only"
+      ? t("chat.chatOnly")
+      : rawToolPresetLabel;
 
   // Close dropdowns on outside click
   useMenuNavigation(toolDropdownOpen, toolDropdownRef, () => setToolDropdownOpen(false));
@@ -2870,6 +2884,32 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         </ComposerOptionRow>
                       );
                     })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            {chatOnly && (
+              <div ref={toolDropdownRef} className="composer-anchor composer-chat-access-anchor">
+                <button
+                  type="button"
+                  className={`native-toolbar-button composer-toolbar-chip${toolDropdownOpen ? " is-open" : ""}`}
+                  aria-label={toolPresetLabel}
+                  aria-expanded={toolDropdownOpen}
+                  onClick={() => setToolDropdownOpen((open) => !open)}
+                >
+                  <span className="composer-nowrap">{toolPresetLabel}</span>
+                </button>
+                {toolDropdownOpen && (
+                  <div className="native-popover app-menu composer-dropdown-panel is-tools is-chat-access" role="menu">
+                    <div className="composer-menu-scroll">
+                      <ChatAccessRows
+                        access={chatAccess}
+                        onToggleUnlocked={(next) => {
+                          setToolDropdownOpen(false);
+                          onToggleChatUnlocked?.(next);
+                        }}
+                      />
                     </div>
                   </div>
                 )}
