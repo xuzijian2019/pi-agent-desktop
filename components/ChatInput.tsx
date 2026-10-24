@@ -1435,12 +1435,29 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const persistenceStatus = draftKey ? getDraftStatus(draftKey) : "saved";
   const invalidDraftImages = attachedImages.length > MAX_ATTACHED_IMAGES || attachedImages.some((image) => !isBase64ImageWithinLimits(image));
   const orphanedPaste = (value.match(/\[Pasted text \d+ · \d+ lines\]/g) ?? []).some((token) => !pastedTexts.some((paste) => paste.token === token));
-  useEffect(() => {
+  const resizeTextarea = useCallback(() => {
     const ta = textareaRef.current;
     if (!ta) return;
     ta.style.height = "auto";
-    if (value) ta.style.height = `${ta.scrollHeight}px`;
-  }, [value]);
+    // CSS owns the height limit; remeasure wrapping without duplicating it here.
+    if (ta.value) ta.style.height = `${ta.scrollHeight}px`;
+  }, []);
+
+  useLayoutEffect(resizeTextarea, [value, fontSize, resizeTextarea]);
+
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    let previousWidth = -1;
+    const observer = new ResizeObserver(([entry]) => {
+      // Height updates also notify the observer; only remeasure on width changes.
+      if (entry.contentRect.width === previousWidth) return;
+      previousWidth = entry.contentRect.width;
+      resizeTextarea();
+    });
+    observer.observe(ta);
+    return () => observer.disconnect();
+  }, [resizeTextarea]);
 
   useEffect(() => {
     const ta = textareaRef.current;
@@ -2233,7 +2250,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           e.target.value = "";
         }}
       />}
-      <div className="chat-composer-wrap" style={{ maxWidth: showHints ? undefined : "var(--chat-content-max-width, 820px)" }}>
+      <div className="chat-composer-wrap" style={{ maxWidth: "var(--chat-content-max-width, 820px)" }}>
         {workspaceUnavailable
           ? <WorkspaceUnavailableBanner workspace={workspaceUnavailable} onRecheck={onRecheckWorkspace} />
           : <ModelErrorBanner error={modelError} />}
