@@ -43,7 +43,17 @@ All local checks use isolated HOME/agent data and clear PI_OFFLINE, XDG_STATE_HO
 - Existing option-controls E2E fixture remains skipped from main; distinct-basename regression does not cover duplicate basename navigation. No weakened assertions or timeout inflation added.
 - Prior main /session stats failure and cancelled Linux setup are not proof this merge regresses or passes. Report this revision's real evidence.
 
-## Final chat-side safety integration
+## Superseded chat-side safety integration (not the final feature set)
 - Reuse upstream createChatWorkspaceExtension for folder-chat side read/grep/find/ls with no named-file grants, no skills or external extensions, and noContextFiles. The side view stays within its own chat folder even when the parent is unlocked or later relocked. Legacy-chat side and all recap sessions remain tool-free; project side keeps the previous read-only behavior.
 - This deliberately narrower side scope prevents a fork-only secondary execution path from bypassing the new upstream permission promise. Pure question/answer and in-folder inspection remain; no unrelated project policy changes.
 - New actual SDK tool-pipeline regression exercises in-folder reads, absolute/relative traversal and symlink denial, unlock/relock stability, empty context/external-extension loading, legacy and recap tool absence, and unchanged project read behavior.
+
+## Final user-requested scope: remove fork side conversations
+The user subsequently requested deletion of the fork side feature. The previously prepared side-boundary implementation was not published on a sync branch or PR. This final tree removes SideChatPanel, ChatWindow/AppShell side overlay and inert state, side/btw slash registration/parser, side request/follow-up/heartbeat paths and all three locale side keys. The ephemeral API accepts only recap; per-item only DELETE cancellation remains. Recap generation, cancellation, lifecycle/race guards, draft retention and historical branch snapshots remain. Chat-derived recap still has no tools, context files or external extensions.
+
+Side-only tests are removed because the feature is removed, not weakened to disguise a failure. New tests assert absence of side UI/commands and server rejection of side/btw; renamed recap.local.spec.ts preserves recap pending/cancel/error/draft/history/parent-JSONL assertions. docs/recap.md documents the remaining feature. No main push or merge authorized.
+
+### Removal revision validation
+- TypeScript and lint passed after removal (21 unchanged warnings).
+- Full unit run: 3285/3286 passed; unchanged MCP stdio crash-status integration case observed transient connecting instead of failed. No assertion/timeout change made; focused retry and exact PR CI determine final outcome. Earlier pre-removal full run was 3281/3281.
+- New UI/server removal-focused checks passed (9 client and 13 server). Visual evidence remains pending CI artifacts, not local Chromium.

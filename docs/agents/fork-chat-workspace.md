@@ -240,14 +240,9 @@ shares its parent's folder, so deleting one of them keeps the folder. Archiving 
   Chats section, project separation, pagination, and path-safe search labels.
 
 
-## Fork side conversations retain the chat boundary
+## Temporary recap isolation
 
-A folder chat's `/side` / `/btw` keeps read, grep, find and ls, guarded by the
-same `createChatWorkspaceExtension` path checks as the main chat. It can read
-only that chat's folder, not outside paths or escaping symlinks. This temporary
-view deliberately does not inherit the parent's unlock, named-file grants, or
-skills; locking the parent again cannot leave an already-open side with wider
-access. Legacy chats have no private folder, so their side conversations are
-transcript-only. All chat-derived temporary sessions disable context files and
-external extensions. Recap remains tool-free for every workspace. Project side
-conversations retain their existing read-only file tools.
+The fork no longer provides side conversations. Recap remains a transcript-only,
+tool-free temporary session for every workspace. Chat-derived recaps disable
+context files; external extensions, skills and prompt templates remain disabled.
+The parent's unlock cannot grant recap any file tools.

@@ -6,14 +6,13 @@ import { randomUUID } from "node:crypto";
 import { getRpcSession } from "./rpc-manager";
 import { resolveSessionPath } from "./session-reader";
 import { normalizeToolCalls } from "./normalize";
-import { isChatFolderPath, isChatWorkspacePath } from "./chat-workspace";
-import { createChatWorkspaceExtension } from "./chat-workspace-policy";
+import { isChatWorkspacePath } from "./chat-workspace";
 import type { AgentMessage } from "./types";
 
-export type EphemeralKind = "side" | "recap";
+export type EphemeralKind = "recap";
 export const EPHEMERAL_IDLE_MS = 5 * 60_000;
 export const EPHEMERAL_PROMPT_MS = 2 * 60_000;
-export const SIDE_BOUNDARY = "You are in a temporary, read-only side conversation. Everything before this boundary is inherited reference material. The parent task is being handled separately. Do not continue or execute the parent task. Answer only the question and follow-up instructions after this boundary. You may inspect files using the available read-only tools.";
+export const RECAP_BOUNDARY = "You are generating a temporary summary. Everything before this boundary is inherited reference material. The parent task is being handled separately. Do not continue or execute the parent task. Summarize only the inherited conversation; no tools are available.";
 export const RECAP_PROMPT = "Summarize the inherited conversation concisely in the same language as the conversation. Use only relevant, non-empty sections from: Goal, Completed, Current state, Important decisions, Files discussed or modified, Open issues, Next steps. Do not continue the work. Report only supported information and do not claim an exact current Git diff.";
 
 type RecordState = {
@@ -72,10 +71,11 @@ function owned(id: string, ownerId: string) {
 }
 
 export async function createEphemeral(input: { id?: string; parentId: string; ownerId: string; leafId?: string; kind: EphemeralKind; signal?: AbortSignal }) {
+  if (input.kind !== "recap") throw new Error("Only recap is supported");
   if (!validEphemeralToken(input.ownerId) || (input.id !== undefined && !validEphemeralToken(input.id))) throw new Error("Invalid owner or temporary ID");
   const id = input.id ?? randomUUID();
   if (closed().has(id) || input.signal?.aborted) throw new Error("Temporary conversation was cancelled");
-  if (registry().has(id) || [...registry().values()].some(record => record.ownerId === input.ownerId && record.kind === input.kind)) throw new Error(`${input.kind === "side" ? "Side chat" : "Recap"} already active`);
+  if (registry().has(id) || [...registry().values()].some(record => record.ownerId === input.ownerId && record.kind === input.kind)) throw new Error("Recap already active");
   // Reserve ownership before the first await, including disk resolution and SDK initialization.
   const record: RecordState = { id, ownerId: input.ownerId, parentId: input.parentId, kind: input.kind, controller: new AbortController(), busy: true };
   registry().set(id, record);
@@ -103,14 +103,9 @@ export async function createEphemeral(input: { id?: string; parentId: string; ow
     const identity = live?.model ?? (change?.type === "model_change" ? { provider: change.provider, id: change.modelId } : undefined);
     if (!identity) throw new Error("The parent model could not be determined");
     const manager = SessionManager.inMemory(source.getCwd(), { id: randomUUID() }, entries as FileEntry[]);
-    manager.appendCustomMessageEntry("pi-web-ephemeral-boundary", SIDE_BOUNDARY, false);
+    manager.appendCustomMessageEntry("pi-web-ephemeral-boundary", RECAP_BOUNDARY, false);
     record.inheritedIds = new Set(manager.getEntries().map(entry => entry.id));
     const chat = isChatWorkspacePath(source.getCwd());
-    const chatFolder = isChatFolderPath(source.getCwd());
-    // Side chats never inherit an unlock: keeping the folder boundary also makes
-    // an already-open side safe if its parent is locked again. Legacy chats have
-    // no private folder and remain transcript-only.
-    const sideTools = !chat || chatFolder ? ["read", "grep", "find", "ls"] : [];
     const settings = SettingsManager.create(source.getCwd(), getAgentDir());
     const services = await createAgentSessionServices({
       cwd: source.getCwd(), agentDir: getAgentDir(), modelRuntimeSignal: record.controller.signal,
@@ -118,15 +113,8 @@ export async function createEphemeral(input: { id?: string; parentId: string; ow
       resourceLoaderOptions: {
         noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true,
         ...(chat ? { noContextFiles: true } : {}),
-        ...(chatFolder ? {
-          extensionFactories: [createChatWorkspaceExtension({
-            getCwd: () => manager.getCwd(),
-            getSkills: () => [],
-            folder: true,
-          })],
-        } : {}),
         // Survives SDK compaction without changing the parent's prompt or transcript.
-        appendSystemPromptOverride: base => [...base, SIDE_BOUNDARY],
+        appendSystemPromptOverride: base => [...base, RECAP_BOUNDARY],
       },
     });
     checkOpen(record);
@@ -134,7 +122,7 @@ export async function createEphemeral(input: { id?: string; parentId: string; ow
     if (!model) throw new Error(`Parent model is unavailable without extensions: ${identity.provider}/${identity.id}`);
     const { session } = await createAgentSessionFromServices({
       services, sessionManager: manager, model,
-      ...(input.kind === "recap" ? { thinkingLevel: "low" as const, tools: [] } : { tools: sideTools }),
+      thinkingLevel: "low", tools: [],
     });
     record.session = session;
     if (record.controller.signal.aborted) { session.dispose(); record.session = undefined; checkOpen(record); }
@@ -188,8 +176,6 @@ export async function promptEphemeral(id: string, ownerId: string, text: string,
   }
 }
 
-export function heartbeatEphemeral(id: string, ownerId: string) { touch(owned(id, ownerId)); }
-
 export async function closeEphemeral(id: string, ownerId: string): Promise<void> {
   if (!validEphemeralToken(id) || !validEphemeralToken(ownerId)) return;
   const record = registry().get(id);
@@ -214,9 +200,4 @@ export async function runRecap(input: { id?: string; parentId: string; ownerId: 
   const created = await createEphemeral({ ...input, kind: "recap" });
   try { return await promptEphemeral(created.id, input.ownerId, RECAP_PROMPT, input.signal); }
   finally { await closeEphemeral(created.id, input.ownerId); }
-}
-
-export async function promptSideEphemeral(id: string, ownerId: string, text: string, signal?: AbortSignal) {
-  if (owned(id, ownerId).kind !== "side") throw new Error("Recap does not accept follow-up messages");
-  return promptEphemeral(id, ownerId, text, signal);
 }
