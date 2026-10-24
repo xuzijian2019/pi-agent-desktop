@@ -37,6 +37,8 @@ import { findChatScrollAnchor, type ChatScrollPosition } from "@/lib/chat-scroll
 import { captureScrollDistance, getVisibleRenderWindow, isScrollAtTail, restoreScrollTop, VISIBLE_PAGE_SIZE } from "@/lib/chat-lazy-load";
 import { sessionVisibleCounts } from "@/lib/scroll-memory";
 import { isImeComposing } from "@/lib/ime";
+import { useChatAccess } from "@/hooks/useChatAccess";
+import { ChatConfirmDialog } from "./ChatConfirmDialog";
 import { assignMessageKeys, createMessageKeyTracker } from "@/lib/message-keys";
 
 interface Props {
@@ -319,7 +321,7 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
     dismissModelScopeWarnings,
     handleRecallQueue,
     handleBuiltinSlashCommand, retryLoad,
-    handleToolPresetChange, handleThinkingLevelChange, handleSetDefaultModel, handleSetDefaultThinkingLevel, loadSlashCommands, scrollToBottom,
+    handleToolPresetChange, handleChatAccessRebuilt, handleThinkingLevelChange, handleSetDefaultModel, handleSetDefaultThinkingLevel, loadSlashCommands, scrollToBottom,
   } = useAgentSession({
     chatWorkspace: chatOnly,
     session, sessionRunning, newSessionCwd, newSessionDraftKey, onAttentionNeeded, onAgentEnd: wrappedOnAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed,
@@ -328,6 +330,18 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
     deferInitialScroll: Boolean(pendingScrollRestore), onScrollPositionChange,
   });
   const sessionBusy = agentRunning || bashRunning;
+  // A chat's folder and whether it may use the computer; the server owns both.
+  const chatAccess = useChatAccess(session?.id, chatOnly && Boolean(session) && !isNew, handleChatAccessRebuilt);
+  const [chatUnlockDialog, setChatUnlockDialog] = useState<"unlock" | "lock" | null>(null);
+  const handleToggleChatUnlocked = useCallback((nextUnlocked: boolean) => {
+    if (sessionBusy) {
+      addNotice({ type: "error", message: t("chat.chatUnlockBusy") });
+      return;
+    }
+    setChatUnlockDialog(nextUnlocked ? "unlock" : "lock");
+  }, [addNotice, sessionBusy, t]);
+  // The desktop window stays hidden until the conversation it opens on is
+  // loaded (or its load failed and the error is what the user will see).
   useReportDesktopReady(!loading, "chat");
   const ephemeral = useEphemeralConversation(session?.id ?? sessionIdRef.current ?? null, session?.cwd ?? newSessionCwd ?? undefined, snapshotLeaf);
   const { side, recap, recapBusy, recapError, closeSide, cancelRecap, handleLocalCommand } = ephemeral;
@@ -1316,6 +1330,8 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
       projectOptions={chatOnly ? [] : projectOptions}
       onProjectChange={chatOnly ? undefined : onProjectChange}
       chatOnly={chatOnly}
+      chatAccess={chatAccess}
+      onToggleChatUnlocked={handleToggleChatUnlocked}
       contextUsage={contextUsage}
       sessionStats={sessionStats}
     />
@@ -1640,6 +1656,22 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
 
       {side && <SideChatPanel messages={side.messages} busy={side.busy} error={side.error} ready={side.ready} parentRunning={agentRunning || bashRunning} cwd={session?.cwd ?? undefined} onSend={ephemeral.sendSide} onStop={returnToMain} onClose={returnToMain} />}
       {!side && commandDialog && <ChatCommandDialog kind={commandDialog} stats={sessionStats} sessionId={session?.id ?? sessionIdRef.current ?? null} choices={forkChoices} onClose={() => setCommandDialog(null)} onFork={id => { setCommandDialog(null); void handleFork(id); }} />}
+      {chatUnlockDialog && chatAccess && (
+        <ChatConfirmDialog
+          title={t(chatUnlockDialog === "unlock" ? "chat.chatUnlockTitle" : "chat.chatLockTitle")}
+          body={t(chatUnlockDialog === "unlock" ? "chat.chatUnlockBody" : "chat.chatLockBody")}
+          confirmLabel={t(chatUnlockDialog === "unlock" ? "chat.chatUnlockConfirm" : "chat.chatLockConfirm")}
+          cancelLabel={t("chat.chatConfirmCancel")}
+          busy={chatAccess.busy}
+          error={chatAccess.error}
+          onCancel={() => { chatAccess.clearError(); setChatUnlockDialog(null); }}
+          onConfirm={() => {
+            void chatAccess.setUnlocked(chatUnlockDialog === "unlock").then((ok) => {
+              if (ok) setChatUnlockDialog(null);
+            });
+          }}
+        />
+      )}
     </div>
   );
 }

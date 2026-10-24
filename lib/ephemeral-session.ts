@@ -6,6 +6,8 @@ import { randomUUID } from "node:crypto";
 import { getRpcSession } from "./rpc-manager";
 import { resolveSessionPath } from "./session-reader";
 import { normalizeToolCalls } from "./normalize";
+import { isChatFolderPath, isChatWorkspacePath } from "./chat-workspace";
+import { createChatWorkspaceExtension } from "./chat-workspace-policy";
 import type { AgentMessage } from "./types";
 
 export type EphemeralKind = "side" | "recap";
@@ -103,12 +105,26 @@ export async function createEphemeral(input: { id?: string; parentId: string; ow
     const manager = SessionManager.inMemory(source.getCwd(), { id: randomUUID() }, entries as FileEntry[]);
     manager.appendCustomMessageEntry("pi-web-ephemeral-boundary", SIDE_BOUNDARY, false);
     record.inheritedIds = new Set(manager.getEntries().map(entry => entry.id));
+    const chat = isChatWorkspacePath(source.getCwd());
+    const chatFolder = isChatFolderPath(source.getCwd());
+    // Side chats never inherit an unlock: keeping the folder boundary also makes
+    // an already-open side safe if its parent is locked again. Legacy chats have
+    // no private folder and remain transcript-only.
+    const sideTools = !chat || chatFolder ? ["read", "grep", "find", "ls"] : [];
     const settings = SettingsManager.create(source.getCwd(), getAgentDir());
     const services = await createAgentSessionServices({
       cwd: source.getCwd(), agentDir: getAgentDir(), modelRuntimeSignal: record.controller.signal,
       settingsManager: SettingsManager.inMemory({ ...settings.getGlobalSettings(), ...settings.getProjectSettings(), packages: [], extensions: [], skills: [], prompts: [], themes: [] }),
       resourceLoaderOptions: {
         noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true,
+        ...(chat ? { noContextFiles: true } : {}),
+        ...(chatFolder ? {
+          extensionFactories: [createChatWorkspaceExtension({
+            getCwd: () => manager.getCwd(),
+            getSkills: () => [],
+            folder: true,
+          })],
+        } : {}),
         // Survives SDK compaction without changing the parent's prompt or transcript.
         appendSystemPromptOverride: base => [...base, SIDE_BOUNDARY],
       },
@@ -118,7 +134,7 @@ export async function createEphemeral(input: { id?: string; parentId: string; ow
     if (!model) throw new Error(`Parent model is unavailable without extensions: ${identity.provider}/${identity.id}`);
     const { session } = await createAgentSessionFromServices({
       services, sessionManager: manager, model,
-      ...(input.kind === "recap" ? { thinkingLevel: "low" as const, tools: [] } : { tools: ["read", "grep", "find", "ls"] }),
+      ...(input.kind === "recap" ? { thinkingLevel: "low" as const, tools: [] } : { tools: sideTools }),
     });
     record.session = session;
     if (record.controller.signal.aborted) { session.dispose(); record.session = undefined; checkOpen(record); }

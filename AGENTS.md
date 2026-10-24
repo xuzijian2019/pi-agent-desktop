@@ -209,7 +209,7 @@ Each one undid a real regression; the linked note has the reasoning.
 - After an SDK bump run `npm run desktop:prepare && npm run desktop:verify`; never hard-code a nested staging destination; keep all three Windows `node_modules` guards. ([fork-desktop](docs/agents/fork-desktop.md))
 - Layout: the center column contains topbar and chat; the right-panel block is a full-height sibling inside the outer row; no `paddingLeft: sidebarResizer.width` on the topbar. Pinned by `AppShell.right-panel-row.test.mjs`. ([fork-ui](docs/agents/fork-ui.md))
 - `SettingsPanel` keeps the `onBusyChange` guard so a desktop update cannot be dismissed mid-install. ([fork-ui](docs/agents/fork-ui.md))
-- Chats use a server-owned hidden cwd and `workspaceKind`; never derive that path in the browser, group it with projects, or expose it to project trust / worktrees / files / terminals. Server policy must keep chats off the shell and editing, off every extension tool the user has not allowed, `read` limited to skills, saved files and files the user named in their own message, writes limited to `save_to_downloads`, and context-file-free, even for persisted sessions. ([fork-chat-workspace](docs/agents/fork-chat-workspace.md))
+- Chats own a server-created folder under the chat root (a new chat is requested with the root, never a path built in the browser); `workspaceKind` / `chatFolder` come from the server, and chats stay out of project trust / worktrees / project files / terminals / the right panel. Server policy keeps a chat off the shell, with file tools confined to its folder, `read` also opening skills and files the user named in their own message (read-only), MCP tools limited to those their server marks read-only, no extension tool the user has not allowed, and context-file-free, even for persisted sessions. Only the per-chat unlock (`pi-web:chat-unlock`, never on a network-exposed server) lifts that. Legacy chats (the old shared `chat-workspace` cwd) keep their old policy. ([fork-chat-workspace](docs/agents/fork-chat-workspace.md))
 
 ---
 
@@ -272,3 +272,13 @@ changes to shared choices also run `node e2e/option-controls.mjs`.
 --accent --user-bg --tool-bg
 --font-mono
 ```
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

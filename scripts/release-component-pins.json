@@ -1,7 +1,7 @@
 {
   "pi": {
-    "version": "1.3.0",
-    "reason": "Merged upstream/main ee23e581 with pi 1.3.0; see .agents/notes/upstream-merge-20261016-handoff.md for integration and verification."
+    "version": "1.4.0",
+    "reason": "Merged desktop upstream 845a7ec1 with pi 1.4.0; integration and verification are recorded in .agents/notes/upstream-merge-20261024-handoff.md."
   },
   "pi-web": {
     "version": "0.10.0",

@@ -25,9 +25,9 @@
   "driftedUpstreamFiles": {
     "components/SessionSidebar.tsx": {
       "risk": "high",
-      "drift": 4033,
+      "drift": 4069,
       "reason": "~500 lines were MOVED OUT into components/ProjectPicker.tsx and components/path-ui.tsx, which do not exist upstream. git merge does not track cross-file moves: an upstream edit to the project-picker block can merge back cleanly and silently resurrect a second copy.",
-      "structuralDrift": 3326,
+      "structuralDrift": 3362,
       "disposition": "accepted"
     },
     "components/AppShell.tsx": {
@@ -60,9 +60,9 @@
     },
     "components/ChatWindow.tsx": {
       "risk": "high",
-      "drift": 1495,
+      "drift": 1530,
       "reason": "Redesigned empty state \u2014 the new-session branding header (app icon + PRODUCT_NAME) is removed and only the update chip remains. Overlay composer, recap and side chat stay fork-owned. Kept deliberately.",
-      "structuralDrift": 1307,
+      "structuralDrift": 1340,
       "disposition": "accepted"
     },
     "hooks/useTheme.ts": {
@@ -74,9 +74,9 @@
     },
     "components/ChatInput.tsx": {
       "risk": "high",
-      "drift": 2507,
+      "drift": 2547,
       "reason": "Composer chrome restyle. Phase 3 stream H2 and Phase 4 part C together replaced 134 of the 136 inline style objects with classes in app/native-theme.css; the 2 that remain carry a measured popover position. Structural drift is 1044 against 1002 on main: +5 from the part C checkpoint (the per-tone banner colour constant and the queued-message recall button's pointer handlers), +3 from diff realignment across the remaining conversions, and +34 from dropping the onMouseEnter/onMouseLeave colour hacks on the composer controls, which the classifier scores as structural because it deletes upstream lines. That last 34 is isolated in a single commit. Saved-draft restoration adds 4 structural lines, bringing the current measured structural drift to 1015. Upstream changed this file in v0.8.1, and components/ChatInput*.test.mjs plus tests/e2e/workbench.spec.ts cover it.",
-      "structuralDrift": 1727,
+      "structuralDrift": 1762,
       "disposition": "accepted"
     },
     "components/MessageView.tsx": {
@@ -102,9 +102,9 @@
     },
     "lib/rpc-manager.ts": {
       "risk": "high",
-      "drift": 598,
+      "drift": 697,
       "reason": "Small fork edit in a file upstream changes often. Workbench activity tracking was removed on 2026-09-25, which dropped structural drift back under the high threshold. Upstream/main 26eb188 (2026-10-04 merge, round 1) added running-state broadcasts and the built-in MCP extension on the desktop side, which pi-web 96966e5 does not have; measured against that baseline this lifts structural drift to 269. Still accepted.",
-      "structuralDrift": 598,
+      "structuralDrift": 697,
       "disposition": "accepted"
     },
     "components/BranchNavigator.tsx": {
@@ -144,8 +144,8 @@
     },
     "app/api/cwd/validate/route.ts": {
       "risk": "medium",
-      "drift": 40,
-      "structuralDrift": 40,
+      "drift": 43,
+      "structuralDrift": 43,
       "disposition": "accepted",
       "reason": "Routes homedir() through userHome() so Next's file tracer stops folding it into a build-time glob of the whole user profile \u2014 the walk that made every Windows build fail. One import plus call swaps; conflicts here would be textual."
     },
@@ -158,9 +158,9 @@
     },
     "hooks/useAgentSession.ts": {
       "risk": "high",
-      "drift": 811,
+      "drift": 839,
       "reason": "Fork session lifecycle guards plus editable composer outbox submission, queue events and per-message edit/send/delete. Restoring an edited pending message must target the original session draft and preserve current input. Never replace with upstream direct followUp submission.",
-      "structuralDrift": 811,
+      "structuralDrift": 839,
       "disposition": "accepted"
     },
     "next.config.ts": {
