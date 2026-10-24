@@ -96,12 +96,11 @@ test("chat access uses flex option rows with readable, viewport-bounded menu geo
   const css = readFileSync(new URL("../app/native-theme.css", import.meta.url), "utf8");
   const input = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
   assert.match(input, /composer-dropdown-panel is-tools is-chat-access/);
-  assert.match(input, /composer-chat-access-anchor\$\{isNarrow/);
+  assert.match(input, /className="composer-anchor composer-chat-access-anchor"/);
   assert.match(css, /\.composer-option-row\s*\{[^}]*display: flex;/);
-  assert.match(css, /\.composer-dropdown-panel\.is-chat-access\s*\{[^}]*width: 360px;[^}]*min-width: 0;[^}]*max-width: min\(360px, calc\(100vw - 32px\)\);/);
-  assert.match(css, /\.chat-composer-controls:has\(\.composer-chat-access-anchor\.is-narrow\)\s*\{[^}]*position: relative;/);
-  assert.match(css, /\.composer-chat-access-anchor\.is-narrow\s*\{[^}]*position: static;/);
-  assert.match(css, /\.composer-chat-access-anchor\.is-narrow \.is-chat-access\s*\{[^}]*max-width: min\(360px, 100%, calc\(100vw - 32px\)\);/);
+  assert.match(css, /\.composer-dropdown-panel\.is-chat-access\s*\{[^}]*width: 360px;[^}]*min-width: 0;[^}]*max-width: min\(360px, 100%, calc\(100vw - 32px\)\);[^}]*left: 0;[^}]*right: auto;/);
+  assert.match(css, /\.chat-composer-controls:has\(\.composer-chat-access-anchor\)\s*\{[^}]*position: relative;/);
+  assert.match(css, /\.composer-chat-access-anchor\s*\{[^}]*position: static;/);
   assert.match(css, /\.is-chat-access \.composer-menu-scroll\s*\{[^}]*gap: var\(--menu-row-gap\);/);
   assert.match(css, /\.is-chat-access \.chat-access-row\s*\{[^}]*white-space: normal;[^}]*overflow-wrap: anywhere;/);
   assert.match(css, /\.is-chat-access \.chat-access-summary\s*\{[^}]*flex-direction: column;/);

@@ -2890,7 +2890,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </div>
             )}
             {chatOnly && (
-              <div ref={toolDropdownRef} className={`composer-anchor composer-chat-access-anchor${isNarrow ? " is-narrow" : ""}`}>
+              <div ref={toolDropdownRef} className="composer-anchor composer-chat-access-anchor">
                 <button
                   type="button"
                   className={`native-toolbar-button composer-toolbar-chip${toolDropdownOpen ? " is-open" : ""}`}

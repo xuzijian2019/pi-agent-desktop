@@ -11322,21 +11322,19 @@ html.native-desktop :is(
 .composer-dropdown-panel.is-chat-access {
   width: 360px;
   min-width: 0;
-  max-width: min(360px, calc(100vw - 32px));
+  max-width: min(360px, 100%, calc(100vw - 32px));
+  left: 0;
+  right: auto;
 }
 
-/* On narrow composers anchor to the whole controls row, not the small chip,
-   so a readable menu cannot extend beyond the viewport's left edge. */
-.chat-composer-controls:has(.composer-chat-access-anchor.is-narrow) {
+/* Anchor to the whole controls row at every width: the chip's right edge
+   can place a readable menu behind the sidebar, even on desktop. */
+.chat-composer-controls:has(.composer-chat-access-anchor) {
   position: relative;
 }
 
-.composer-chat-access-anchor.is-narrow {
+.composer-chat-access-anchor {
   position: static;
-}
-
-.composer-chat-access-anchor.is-narrow .is-chat-access {
-  max-width: min(360px, 100%, calc(100vw - 32px));
 }
 
 .is-chat-access .composer-menu-scroll {
