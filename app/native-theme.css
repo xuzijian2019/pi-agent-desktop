@@ -11318,6 +11318,53 @@ html.native-desktop :is(
 
 /* Chat folder and computer access: the switch in the composer's run menu, and the checkbox in
    the chat confirmation dialog (which borrows the trust dialog's frame). */
+/* Chat access is descriptive, not the compact project tool-preset list. */
+.composer-dropdown-panel.is-chat-access {
+  width: 360px;
+  min-width: 0;
+  max-width: min(360px, calc(100vw - 32px));
+}
+
+/* On narrow composers anchor to the whole controls row, not the small chip,
+   so a readable menu cannot extend beyond the viewport's left edge. */
+.chat-composer-controls:has(.composer-chat-access-anchor.is-narrow) {
+  position: relative;
+}
+
+.composer-chat-access-anchor.is-narrow {
+  position: static;
+}
+
+.composer-chat-access-anchor.is-narrow .is-chat-access {
+  max-width: min(360px, 100%, calc(100vw - 32px));
+}
+
+.is-chat-access .composer-menu-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: var(--menu-row-gap);
+}
+
+.is-chat-access .chat-access-row {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  border-radius: var(--menu-row-radius);
+}
+
+.is-chat-access .chat-access-summary {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  cursor: default;
+  background: none;
+}
+
+.chat-access-description {
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .chat-access-switch {
   position: relative;
   flex: 0 0 auto;

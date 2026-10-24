@@ -91,6 +91,13 @@ for (const theme of ["light", "dark"] as const) {
       const toggle = await openAccessMenu(page);
       await expect(page.getByRole("menuitem", { name: "Show chat folder", exact: true })).toHaveAttribute("title", current.cwd);
       await fitsViewport(page.locator(".composer-dropdown-panel.is-tools"), width);
+      const accessMenu = page.locator(".composer-dropdown-panel.is-tools");
+      expect((await accessMenu.boundingBox())!.width).toBeGreaterThanOrEqual(280);
+      const switchBox = await toggle.locator(".chat-access-switch").boundingBox();
+      expect(switchBox).not.toBeNull();
+      expect(switchBox!.width).toBeGreaterThanOrEqual(26);
+      expect(switchBox!.height).toBeGreaterThanOrEqual(15);
+      await expect(toggle).toHaveCSS("display", "flex");
       await page.screenshot({ path: info.outputPath(`076-access-${theme}-${width}.png`), animations: "disabled" });
       await toggle.click();
       const dialog = page.getByRole("dialog", { name: "Let this chat use your computer?", exact: true });

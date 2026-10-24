@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, {
@@ -84,4 +85,25 @@ test("the confirm dialog offers its checkbox, a danger button and the error", ()
   assert.match(html, /type="checkbox"[^>]*checked/);
   assert.match(html, /is-primary is-danger/);
   assert.match(html, /role="alert"[^>]*>boom/);
+});
+
+
+test("chat access uses flex option rows with readable, viewport-bounded menu geometry", () => {
+  const html = render(React.createElement(ChatAccessRows, { access: access({}), onToggleUnlocked() {} }));
+  assert.equal((html.match(/class="composer-option-row chat-access-row/g) ?? []).length, 3);
+  assert.match(html, /class="chat-access-description"/);
+  assert.doesNotMatch(html, /class="composer-menu-row"/);
+  const css = readFileSync(new URL("../app/native-theme.css", import.meta.url), "utf8");
+  const input = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
+  assert.match(input, /composer-dropdown-panel is-tools is-chat-access/);
+  assert.match(input, /composer-chat-access-anchor\$\{isNarrow/);
+  assert.match(css, /\.composer-option-row\s*\{[^}]*display: flex;/);
+  assert.match(css, /\.composer-dropdown-panel\.is-chat-access\s*\{[^}]*width: 360px;[^}]*min-width: 0;[^}]*max-width: min\(360px, calc\(100vw - 32px\)\);/);
+  assert.match(css, /\.chat-composer-controls:has\(\.composer-chat-access-anchor\.is-narrow\)\s*\{[^}]*position: relative;/);
+  assert.match(css, /\.composer-chat-access-anchor\.is-narrow\s*\{[^}]*position: static;/);
+  assert.match(css, /\.composer-chat-access-anchor\.is-narrow \.is-chat-access\s*\{[^}]*max-width: min\(360px, 100%, calc\(100vw - 32px\)\);/);
+  assert.match(css, /\.is-chat-access \.composer-menu-scroll\s*\{[^}]*gap: var\(--menu-row-gap\);/);
+  assert.match(css, /\.is-chat-access \.chat-access-row\s*\{[^}]*white-space: normal;[^}]*overflow-wrap: anywhere;/);
+  assert.match(css, /\.is-chat-access \.chat-access-summary\s*\{[^}]*flex-direction: column;/);
+  assert.match(css, /\.chat-access-switch\s*\{[^}]*flex: 0 0 auto;[^}]*width: 26px;[^}]*height: 15px;/);
 });

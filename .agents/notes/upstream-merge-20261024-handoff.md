@@ -57,3 +57,12 @@ Side-only tests are removed because the feature is removed, not weakened to disg
 - TypeScript and lint passed after removal (21 unchanged warnings).
 - Full unit run: 3285/3286 passed; unchanged MCP stdio crash-status integration case observed transient connecting instead of failed. No assertion/timeout change made; focused retry and exact PR CI determine final outcome. Earlier pre-removal full run was 3281/3281.
 - New UI/server removal-focused checks passed (9 client and 13 server). Visual evidence remains pending CI artifacts, not local Chromium.
+
+## First PR revision: CI and actual screenshot findings
+PR #41 head 7e82d19ad004fcfe285fed9e3491c1759db343f9, merge test SHA a35faa3c6f5c0abf710dbdb2cc72d998a9f50277, CI run 40101531804 completed: checks/Linux Rust/Windows Rust/E2E success. E2E 51 passed, 1 existing skip; artifact 12562354798 matches that head. Actual inspection of all 12 new chat screenshots found a merge-specific layout error: upstream ChatAccessRows referenced composer-menu-row absent from fork styles, and the fork 120px tools-menu minimum compressed the new permissions description and switch. The confirmation/chat screenshots were otherwise readable. This is NOT visual acceptance: apply a dedicated chat menu layout fix, preserve permission text, add width/switch geometry assertions, and inspect new-head screenshots again.
+
+Audit job success is not clean audit: npm audit exited 1 under continue-on-error. Existing undici 8.11.0 / nested 8.10.2 GHSA-xjj6-f33q-929c is reachable via provider discovery global fetch; synthetic local HTTP response reproduced unhandled Readable error / Node exit despite fetch catch. Same versions as main; >=8.12.2 required. No dependency patch without explicit risk-scope approval. Next image optimizer disabled with sharp 0.35.5 workaround; no use-cache/Server Actions entry found. Draft retained pending risk disposition and final UI evidence.
+
+### Chat access layout correction
+- Dedicated 360px chat menu, narrow-screen anchoring to the full composer controls row, fork flex rows and menu tokens, readable wrapped description and 26x15 switch. Ordinary project tools menus unchanged.
+- 59 focused component/style tests passed. E2E now asserts menu width >=280 and actual 26x15 switch geometry in addition to viewport containment; next exact-head CI/screenshots required.

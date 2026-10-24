@@ -28,21 +28,20 @@ export function ChatAccessRows({
   return (
     <>
       <div
-        className="composer-menu-row"
+        className="composer-option-row chat-access-row chat-access-summary"
         role="menuitem"
         aria-disabled="true"
-        data-active="true"
         title={description}
       >
         <span style={{ flex: 1 }}>{unlocked ? t("chat.chatUnlocked") : t("chat.chatWorkspace")}</span>
-        <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: 8, whiteSpace: "normal", maxWidth: 260 }}>
+        <span className="chat-access-description">
           {description}
         </span>
       </div>
       {folder && (
         <button
           type="button"
-          className="composer-menu-row"
+          className="composer-option-row chat-access-row"
           role="menuitem"
           onClick={() => void access?.reveal()}
           title={folder}
@@ -53,7 +52,7 @@ export function ChatAccessRows({
       {access?.state.available && (
         <button
           type="button"
-          className="composer-menu-row"
+          className="composer-option-row chat-access-row"
           role="menuitemcheckbox"
           aria-checked={unlocked}
           disabled={access.busy}
