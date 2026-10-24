@@ -4540,7 +4540,8 @@ html:not(.dark) .session-item.is-selected .session-item-time {
 
 .chat-empty-state {
   width: 100%;
-  max-width: 1200px;
+  /* The inner composer follows the configured chat column width. */
+  max-width: none;
   margin: 0 auto;
 }
 
@@ -8371,16 +8372,6 @@ span.linenumber {
   font-family: inherit;
   overflow: auto;
   resize: none;
-}
-
-/* Fresh tasks have room for a larger editor; conversations keep the compact dock. */
-.chat-empty-state .chat-composer-wrap {
-  max-width: 1200px;
-}
-
-.chat-empty-state .composer-textarea {
-  min-height: clamp(24px, calc(12dvh - 46.5px), 97.5px);
-  max-height: max(48px, min(480px, 40dvh));
 }
 
 /* Queued steering / follow-up strip ---------------------------------------- */

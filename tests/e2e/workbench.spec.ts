@@ -202,3 +202,58 @@ test("composer metadata and rounded panel remain uncluttered at desktop and phon
   })).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("panel-phone.png") });
 });
+
+test("new-task composer shares chat sizing and reflows drafts without another keystroke", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await project(page);
+  const input = page.getByRole("textbox", { name: "Message", exact: true });
+  const card = page.locator(".chat-composer");
+  await expect(page.locator(".chat-empty-state")).toBeVisible();
+  await expect.poll(() => input.evaluate(el => {
+    const style = getComputedStyle(el);
+    return [style.minHeight, style.maxHeight];
+  })).toEqual(["24px", "200px"]);
+  await expect.poll(() => card.evaluate(el => Math.abs(el.getBoundingClientRect().width - 820))).toBeLessThan(1);
+  await input.fill("A draft that must wrap when the window narrows. ".repeat(8));
+  const height = () => input.evaluate(el => el.clientHeight);
+  const wideHeight = await height();
+  await page.keyboard.press("Control+,");
+  const settings = page.locator(".settings-dialog-surface");
+  await expect(settings).toBeVisible();
+  await page.getByRole("slider", { name: "Chat content width", exact: true }).press("End");
+  await page.keyboard.press("Escape");
+  await expect.poll(() => card.evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(820);
+  await expect.poll(height).toBeLessThan(wideHeight);
+  await page.keyboard.press("Control+,");
+  await page.getByRole("button", { name: "Reset chat content width", exact: true }).click();
+  await page.getByRole("slider", { name: "Chat font size", exact: true }).press("End");
+  await page.keyboard.press("Escape");
+  await expect.poll(height).toBeGreaterThan(wideHeight);
+  await page.keyboard.press("Control+,");
+  await page.getByRole("button", { name: "Reset chat font size", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect.poll(height).toBe(wideHeight);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(height).toBeGreaterThan(wideHeight);
+  expect(await height()).toBeLessThanOrEqual(200);
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await expect.poll(height).toBe(wideHeight);
+  await input.fill("Long draft\n".repeat(60));
+  await expect.poll(height).toBe(200);
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(value => document.documentElement.classList.toggle("dark", value === "dark"), theme);
+    await page.screenshot({ path: testInfo.outputPath(`composer-sizing-long-desktop-${theme}.png`), animations: "disabled" });
+  }
+  await page.evaluate(() => document.documentElement.classList.remove("dark"));
+  await input.fill("");
+  await expect.poll(height).toBe(24);
+  await expect(page.locator(".composer-trigger-hint")).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("composer-sizing-desktop.png") });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(height).toBe(24);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(value => document.documentElement.classList.toggle("dark", value === "dark"), theme);
+    await page.screenshot({ path: testInfo.outputPath(`composer-sizing-phone-${theme}.png`), animations: "disabled" });
+  }
+});
