@@ -37,7 +37,7 @@ test("floats the scroll-to-latest button above the composer", () => {
   assert.match(anchor.slice(0, anchor.indexOf("}")), /position: absolute;[\s\S]*?bottom: 100%;[\s\S]*?justify-content: center;[\s\S]*?pointer-events: none;/);
   assert.match(cssSource, /\.chat-scroll-to-bottom\.is-visible \{[\s\S]*?pointer-events: auto;/);
   assert.match(cssSource, /\.chat-scroll-to-bottom:focus-visible \{[\s\S]*?outline: 2px solid var\(--accent\)/);
-  assert.match(block, /onClick=\{\(\) => scrollToBottom\("smooth"\)\}/);
+  assert.match(block, /onClick=\{resumeLiveFollow\}/);
 });
 
 test("keeps the visible button faint until hover or focus", () => {
@@ -68,7 +68,7 @@ test("jumps to the live tail with the shared smooth scroll helper", () => {
   const block = elementBlock();
 
   assert.match(block, /aria-label=\{t\("chat.scrollToLatest"\)\}/);
-  assert.match(source, /scrollToBottom, scrollToMessage,/);
+  assert.match(hookSource, /scrollToBottom, scrollToMessage, resumeLiveFollow,/);
 });
 
 test("exposes the detached-tail flag from the session hook without a ref read", () => {
