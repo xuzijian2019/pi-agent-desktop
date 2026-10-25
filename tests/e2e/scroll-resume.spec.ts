@@ -68,8 +68,11 @@ for (const theme of ["light", "dark"] as const) for (const width of [1280, 390])
     await expect.poll(() => scroll.evaluate(el => el.scrollTop)).toBeCloseTo(detachedTop, 0);
     await button.click();
     await expect.poll(tailGap).toBeLessThanOrEqual(8);
+    const heightBeforeMoreOutput = await scroll.evaluate(el => el.scrollHeight);
     await stream(35);
+    await expect.poll(() => scroll.evaluate(el => el.scrollHeight)).toBeGreaterThan(heightBeforeMoreOutput);
     await expect.poll(tailGap).toBeLessThanOrEqual(8);
+    await expect(page.getByText("Live streaming paragraph 34.", { exact: true })).toBeInViewport();
     // Role queries normally exclude this button once its visibility transition ends.
     const hiddenButton = page.getByRole("button", { name: "Scroll to latest", exact: true, includeHidden: true });
     await expect(hiddenButton).toHaveCount(1);
