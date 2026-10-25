@@ -18,6 +18,7 @@ import { cacheSessionPath, getLatestModelChange, getLatestResponseModel, getSess
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
 import { assertSessionToolsEditable, readSessionToolNames, saveSessionToolNames } from "./session-tools";
 import { notifySessionComplete } from "./web-push";
+import { isVerboseLogging } from "../bin/pi-web-options.js";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
 import type { AgentSession, LoadExtensionsResult, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import { PRODUCT_NAME } from "./branding";
@@ -653,7 +654,7 @@ export class AgentSessionWrapper {
         this.inner.extensionRunner.setUIContext?.(uiContext, "rpc");
       }
       this.extensionsBound = true;
-      console.log(`[pi-web] session_start dispatched to extensions for session ${this.inner.sessionId}`);
+      if (isVerboseLogging()) console.log("[pi-web] session_start dispatched to extensions");
     })().catch((err) => {
       this.extensionBindingError = err;
       throw err;
