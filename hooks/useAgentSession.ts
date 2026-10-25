@@ -678,6 +678,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     previousScrollTopRef.current = container.scrollTop;
   }, []);
 
+  // Only an explicit user request resumes follow; history/search restoration
+  // must keep using scrollToBottom without changing the reader's attachment.
+  const resumeLiveFollow = useCallback(() => {
+    isNearBottomRef.current = true;
+    setShowScrollToBottom(false);
+    scrollToBottom("smooth");
+  }, [scrollToBottom]);
+
   const currentModel = currentModelOverride ?? liveModel ?? data?.context.model ?? pendingModel ?? null;
   const displayModel = isNew
     ? (newSessionModel ?? newSessionDefaultModel)
@@ -3081,7 +3089,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     cancelEdit: editEntryId ? cancelEdit : undefined,
     setNoticePaused: setPausedNoticeId,
     handleToolPresetChange, handleChatAccessRebuilt, handleThinkingLevelChange, handleSetDefaultModel, handleSetDefaultThinkingLevel, loadTools, loadSlashCommands, setActiveLeafId, setData, setMessages, loadContext,
-    scrollToBottom, scrollToMessage,
+    scrollToBottom, scrollToMessage, resumeLiveFollow,
     dispatch, setAgentRunning, setForkingEntryId,
     bashRunning, pendingBash, summarizationRetry, automation, handleSetAutomation,
     // Subscriptions

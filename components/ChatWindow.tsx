@@ -319,7 +319,7 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
     dismissModelScopeWarnings,
     handleRecallQueue,
     handleBuiltinSlashCommand, retryLoad,
-    handleToolPresetChange, handleChatAccessRebuilt, handleThinkingLevelChange, handleSetDefaultModel, handleSetDefaultThinkingLevel, loadSlashCommands, scrollToBottom,
+    handleToolPresetChange, handleChatAccessRebuilt, handleThinkingLevelChange, handleSetDefaultModel, handleSetDefaultThinkingLevel, loadSlashCommands, scrollToBottom, resumeLiveFollow,
   } = useAgentSession({
     chatWorkspace: chatOnly,
     session, sessionRunning, newSessionCwd, newSessionDraftKey, onAttentionNeeded, onAgentEnd: wrappedOnAgentEnd, onSessionCreated, onSessionForked, onSessionRenamed,
@@ -1554,7 +1554,7 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
               className={`chat-scroll-to-bottom${showScrollToBottom ? " is-visible" : ""}`}
               title={t("chat.scrollToLatest")}
               aria-label={t("chat.scrollToLatest")}
-              onClick={() => scrollToBottom("smooth")}
+              onClick={resumeLiveFollow}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M12 5v14M5 12l7 7 7-7" />
