@@ -70,7 +70,11 @@ for (const theme of ["light", "dark"] as const) for (const width of [1280, 390])
     await expect.poll(tailGap).toBeLessThanOrEqual(8);
     await stream(35);
     await expect.poll(tailGap).toBeLessThanOrEqual(8);
-    await expect(button).not.toHaveClass(/is-visible/);
+    // Role queries normally exclude this button once its visibility transition ends.
+    const hiddenButton = page.getByRole("button", { name: "Scroll to latest", exact: true, includeHidden: true });
+    await expect(hiddenButton).toHaveCount(1);
+    await expect(hiddenButton).not.toHaveClass(/is-visible/);
+    await expect(hiddenButton).toBeHidden();
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
     await page.screenshot({ path: info.outputPath(`resumed-${theme}-${width}.png`) });
     // Repeated user intent still detaches after explicitly resuming.
