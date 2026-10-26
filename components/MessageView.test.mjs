@@ -18,6 +18,7 @@ const {
 } = await jiti.import("./MessageView.tsx");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 const { splitFinalAssistantBlocks } = await jiti.import("@/lib/message-display");
+const { clearExpandedToolCalls, setToolCallExpanded } = await jiti.import("@/lib/tool-call-expansion");
 
 function renderMessage(message, props = {}) {
   return renderToStaticMarkup(
@@ -126,6 +127,80 @@ test("keeps streamed tool input out of collapsed markup while counting it", () =
   assert.doesNotMatch(html, /secret-stream-fragment/);
   assert.equal(getToolCallInputText(block), block.rawInput);
   assert.equal(getTokenEstimateText(block), block.rawInput);
+});
+
+test("renders completed write tool content as readable file text, including aliases", () => {
+  const content = 'first line\n"quoted" café 中文\nlast line\n';
+  for (const toolName of ["write", "Write", "write_file", "fs.write", "mcp_write"]) {
+    const block = {
+      type: "toolCall", toolCallId: `call-${toolName}`, toolName,
+      input: { file_path: "src/example.ts", content },
+    };
+    clearExpandedToolCalls();
+    setToolCallExpanded(block.toolCallId, true);
+    try {
+      const html = renderMessage({ role: "assistant", content: [block] });
+      assert.ok(html.includes("src/example.ts"));
+      assert.ok(textOf(html).includes(content), toolName);
+      assert.doesNotMatch(textOf(html), /"content":/);
+      assert.equal(getToolCallInputText(block), JSON.stringify(block.input, null, 2));
+    } finally {
+      clearExpandedToolCalls();
+    }
+  }
+});
+
+test("preserves fork syntax highlighting for unambiguous path and filePath writes", () => {
+  for (const pathKey of ["path", "filePath"]) {
+    const block = {
+      type: "toolCall", toolCallId: `highlighted-write-${pathKey}`, toolName: "write",
+      input: { [pathKey]: "src/example.ts", content: 'const greeting = "café 中文";\n' },
+    };
+    clearExpandedToolCalls();
+    setToolCallExpanded(block.toolCallId, true);
+    try {
+      const html = renderMessage({ role: "assistant", content: [block] });
+      assert.match(html, /class="msg-file-path"/);
+      assert.match(html, /class="msg-file-body"/);
+      assert.match(html, /class="token"[^>]*>const<\/span>/);
+      assert.match(html, /react-syntax-highlighter-line-number/);
+      assert.ok(textOf(html).includes(block.input.content));
+      assert.ok(textOf(html).includes("src/example.ts"));
+      assert.doesNotMatch(textOf(html), /"content":/);
+    } finally {
+      clearExpandedToolCalls();
+    }
+  }
+});
+
+test("keeps generic input for extra write arguments, empty or non-text content, streaming, and other tools", () => {
+  const cases = [
+    { input: { path: "notes.md", content: "text", mode: "append" } },
+    { input: { path: "empty.txt", content: "" } },
+    { input: { path: "empty.txt", content: null } },
+    { input: { path: "long/".repeat(30) + "file.txt", content: "text" } },
+    { input: { path: "one.txt", file_path: "two.txt", content: "text" } },
+    { input: { path: "one.txt", filePath: "two.txt", content: "text" } },
+    { input: { filePath: "notes.md", content: "text", mode: "append" } },
+    { input: { filePath: "long/".repeat(30) + "file.txt", content: "text" } },
+    { input: { filePath: "a.ts", content: "partial" }, rawInput: '{"filePath":"a.ts","content":"partial' },
+    { input: { path: 42, content: "text" } },
+    { input: { content: "text" } },
+    { input: { path: "empty.txt" } },
+    { input: { path: "a.ts", content: "partial" }, rawInput: '{"path":"a.ts","content":"one\\ntwo' },
+    { toolName: "other_tool", input: { path: "notes.md", content: "text" } },
+  ];
+  for (const [index, fields] of cases.entries()) {
+    const block = { type: "toolCall", toolCallId: `call-write-fallback-${index}`, toolName: "write", ...fields };
+    clearExpandedToolCalls();
+    setToolCallExpanded(block.toolCallId, true);
+    try {
+      const html = renderMessage({ role: "assistant", content: [block] });
+      assert.ok(textOf(html).includes(getToolCallInputText(block)), String(index));
+    } finally {
+      clearExpandedToolCalls();
+    }
+  }
 });
 
 test("renders subagents as standard tool calls with only an extra session button", () => {
@@ -509,7 +584,6 @@ test("uses the unanswered truncation notice for an empty length reply", () => {
   assert.doesNotMatch(html, /follow-up/i);
 });
 
-const { setToolCallExpanded } = await jiti.import("@/lib/tool-call-expansion");
 
 function textOf(html) {
   return html.replace(/<[^>]+>/g, "").replace(/&quot;/g, "\"").replace(/&amp;/g, "&").replace(/&#x27;/g, "'");

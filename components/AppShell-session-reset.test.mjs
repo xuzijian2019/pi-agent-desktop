@@ -31,7 +31,11 @@ test("chat file links open in the file panel with session-scoped access", async 
   const start = source.indexOf("<ChatWindow");
   assert.notEqual(start, -1);
   const chatWindow = source.slice(start, source.indexOf("/>", start));
-  assert.match(chatWindow, /onOpenFile=\{isChatWorkspaceActive \? undefined : handleOpenLinkedFile\}/);
+  assert.match(chatWindow, /onOpenFile=\{handleOpenLinkedFile\}/);
+  // The shared opener preserves session provenance, but a chat may only use
+  // its server-classified own folder; legacy chats have no folder permission.
+  assert.match(source, /const chatFolderCwd = isChatWorkspaceActive && selectedSession\?\.chatFolder \? selectedSession\.cwd : null;/);
+  assert.match(source, /const handleOpenFile = useCallback\([\s\S]*?if \(isChatWorkspaceActive && !\(chatFolderCwd && isPathInside\(filePath, chatFolderCwd\)\)\) return;/);
   assert.match(source, /const handleOpenLinkedFile = useCallback\([\s\S]*?handleOpenFile\(filePath, getFileName\(filePath\), \{ sourceSessionId: selectedSession\?\.id \?\? null, page \}\)/);
 });
 

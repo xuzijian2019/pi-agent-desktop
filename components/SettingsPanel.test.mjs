@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const panelSource = (await readFile(new URL("./SettingsPanel.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const appearanceSource = (await readFile(new URL("./AppearanceSettings.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 const cssSource = (await readFile(new URL("../app/settings.css", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 const nativeCssSource = (await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 const globalCssSource = (await readFile(new URL("../app/globals.css", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
@@ -30,7 +31,7 @@ test("opens one settings panel from a single sidebar settings entry", () => {
 });
 
 test("keeps every requested configuration surface inside the settings panel", () => {
-  for (const section of ["general", "models", "skills", "agents", "plugins", "mcp"]) {
+  for (const section of ["general", "appearance", "models", "skills", "agents", "plugins", "mcp"]) {
     assert.match(panelSource, new RegExp(`id: "${section}"`));
   }
   for (const component of ["ModelsConfig", "SkillsConfig", "AgentsConfig", "PluginsConfig", "McpConfig"]) {
@@ -164,9 +165,11 @@ test("offers light, dark and system theme selection with native radios", () => {
   for (const removed of ["mist", "rose", "pine"]) {
     assert.doesNotMatch(themeOptionsSource, new RegExp(`id: "${removed}"`));
   }
-  assert.match(panelSource, /THEME_OPTIONS\.map/);
-  assert.match(panelSource, /type="radio"/);
-  assert.match(panelSource, /setThemePreference\(option\.id\)/);
+  assert.match(panelSource, /sectionHost\("appearance", <AppearanceSettings \/>\)/);
+  assert.doesNotMatch(panelSource, /THEME_OPTIONS\.map/);
+  assert.match(appearanceSource, /THEME_OPTIONS\.map/);
+  assert.match(appearanceSource, /type="radio"/);
+  assert.match(appearanceSource, /setThemePreference\(option\.id\)/);
   assert.match(themeSource, /const setThemePreference = useCallback/);
 });
 
@@ -185,24 +188,26 @@ test("General keeps one copy of each relocated group and the fork notification s
   assert.match(columns[1], /t\("common\.language"\)/);
   assert.match(columns[0], /t\("settings\.chat"\)/);
   assert.doesNotMatch(columns[0], /t\("settings\.appearance"\)/);
-  assert.match(columns[1], /t\("settings\.appearance"\)/);
+  assert.doesNotMatch(panelSource, /className="settings-theme-options"/);
+  assert.match(appearanceSource, /t\("settings\.appearance"\)/);
+  for (const marker of ['className="settings-theme-options"', "<FontSettings", 't("appSettings.customCss")']) {
+    assert.equal(appearanceSource.split(marker).length - 1, 1, marker);
+  }
   assert.match(columns[1], /<DesktopAppSection/);
   assert.match(columns[1], /t\("settings\.browserNotifications"\)/);
-  for (const marker of ['<AppUpdatesSection', '<DesktopAppSection', 'className="settings-language-options"', 'className="settings-chat-options"', 'className="settings-theme-options"', '<ChatsSettingsSection']) {
+  for (const marker of ['<AppUpdatesSection', '<DesktopAppSection', 'className="settings-language-options"', 'className="settings-chat-options"', '<ChatsSettingsSection']) {
     assert.equal(panelSource.split(marker).length - 1, 1, marker);
   }
   assert.doesNotMatch(panelSource, /setupPushSubscription|registerPush|pushRegistering|settings\.pushPermission/);
 });
 
 test("groups chat display controls together without row backgrounds", () => {
-  const appearanceStart = panelSource.indexOf('{t("settings.appearance")}');
-  const appearanceSection = panelSource.slice(appearanceStart, panelSource.indexOf("<DesktopAppSection", appearanceStart));
   const chatSection = panelSource.slice(
     panelSource.indexOf('{t("settings.chat")}'),
-    appearanceStart,
+    panelSource.indexOf("<ChatsSettingsSection />"),
   );
 
-  assert.doesNotMatch(appearanceSection, /settings-chat-content/);
+  assert.doesNotMatch(appearanceSource, /settings-chat-content/);
   assert.match(chatSection, /className="settings-chat-options"/);
   // Chat group: thinking, width, font, quote, fork's auto-title switch, the
   // per-reply usage switch, the merged send-mode radio, then the fork's

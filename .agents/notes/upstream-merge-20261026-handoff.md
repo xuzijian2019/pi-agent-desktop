@@ -1,0 +1,118 @@
+# Desktop upstream merge — 2026-10-26
+
+## Pinned inputs and scope
+- Fork main: `fcfc2cdb29acc2033b0dc80c3e341a0fe3b9a339`.
+- Desktop upstream: `56691c5a47189e2b803194e1755f345227b130eb` (0.7.7), 24 incoming commits from merge base `845a7ec1fd535a6f33bb2c4ecf4cf80508ac23e9`.
+- Actual integrated pi-web baseline: `6fcd7d44981ab51a21d6cd6eb06d361d0e3d3068` (0.10.0). Latest `agegr/pi-web/main` `e533d9b3975f8a74b378d5007c92fdf4d15d3fba` fetched for drift only, not merged.
+- Clean clone in dot's own cloud environment, native subagents; no saved coding environment or Mac task. Local backup `backup/pre-upstream-20261026-1249-fcfc2cdb`.
+- Dedicated sync branch `merge/upstream-20261026-1249-56691c5a`. True `merge --no-ff --no-commit`, first parent fork and second parent desktop upstream. No main push/auto-merge/rebase/squash/release/tag authorized.
+- Open fork PR list was empty at preflight. Existing completed logging task was not restarted.
+
+## Integrated from upstream
+Appearance/background/font controls and settings layout, responsive conversation navigation, chat-owned generated-file browsing, conservative readable Write rendering, startup failure diagnostics, 0.7.7 metadata, E2E home/environment isolation, and opt-in verbose web logs. App notice snapshot, logging and previous fork contributions are retained without duplicating implementations.
+
+## Kept from the fork
+Project tree/full-height file panel and toolbar, AppSelect/menu primitives, simplified composer and attachment geometry, recap (no side chat), IndexedDB drafts/session race guards, tail-follow and scroll restoration, custom radius tokens, browser notifications/auto-title, class-based TabBar, and the primary Playwright suite. pi/SDK stays 1.4.0; pi-web stays 0.10.0; no package-lock regeneration required. No dependency or unrelated CI changes.
+
+## Notable resolutions and semantic review
+Eleven textual conflicts: `app/native-theme.css`, `components/AppShell.chat-workspace.test.mjs`, `components/AppShell.tsx`, `components/ChatWindow.tsx`, `components/FileTreeResizer.test.mjs`, `components/SettingsPanel.test.mjs`, `components/SettingsPanel.tsx`, `e2e/composer-geometry.mjs`, `lib/i18n/locale-plugins.ts`, `package.json`, `scripts/fork-ownership.json`.
+
+- Appearance moved out of General; retained General's desktop initialization (otherwise a clean-merge runtime crash), notification/auto-title controls, existing AppSelect, and fork geometry. Excluded obsolete queue and first-line attachment styling rather than resurrecting declined UI. Three-language keys retained and tested.
+- Chat-owned folders can browse/open files, but old/root chats cannot; guarded opener checks server-classified chat folder, `isPathInside` and session provenance. Terminal/mentions/project switching remain disabled for chats. Missing-cwd guard retained. Old tests prohibiting all chat files were updated to assert the new scoped behavior, not dropped.
+- Navigator uses actual content width and is hidden while the panel opens; clean FileViewer merge reviewed with tab restoration/closing behavior.
+- Auto-merged MessageView's highlighted branch bypassed upstream rejection of ambiguous/extra/partial Write args. Gate it through the conservative validator. Preserve fork path/filePath highlighting and line numbers; snake-case plaintext still works. Keep original fallback assertions and add extra aliases/modes/long paths/streaming and actual token rendering regressions.
+- Appearance/font routes preserve unrelated settings and authenticated desktop enumeration. Fixed execFile commands, bounded timeout/output and font normalization reviewed. Rust startup timeout/error changes source-reviewed only.
+- Upstream release workflow difference is release-note text only; no unrelated CI/release modifications. Cargo/package/component manifest align at desktop0.7.7; release pins valid.
+- globals.css/settings.css remain byte-identical to desktop upstream; CSS baseline refreshed to56691c5a. Ownership paths merged additively, all measured shared-file drift/risk numbers refreshed against actual6fcd7d4, thresholds unchanged.
+
+## Verification
+- Fresh isolated-HOME npm ci succeeded. TypeScript `tsc --noEmit` passed. Lint passed:0 errors/21 warnings, unchanged count from previous handoff.
+- First full unit run3314/3315; only stale all-chat-files-disabled assertion failed. Replaced with stronger scoped/provenance checks; focused11/11 pass. Final full rerun3315/3315 passed, zero failures/skips.
+- Focused new/existing appearance/font/API/CSS/i18n checks87 passed; MessageView37 passed; chat structural checks20 passed; environment/logging/theme preflight22 passed (overlap not added into a misleading unique total).
+- Actual `npm run web -- --no-open -p30427` using isolated HOME/agent/config/cache/dist started and returned HTTP200 for `/` and `/api/appearance`. This is a dev-server HTTP smoke, NOT production-packaged runtime acceptance. Generated tsconfig paths were removed from changes.
+- Local Chromium preflight blocked by socket EPERM. No bypass and no claim of local pixel validation. Added8 real-data Playwright cases for appearance and scoped chat files across1280/390 light/dark, long content/fonts, persistence/reset/navigation and screenshots. Exact-head GitHub CI and real artifact pixel inspection remain required; PR stays draft until evidence is reviewed.
+- Latest CI covers TS/lint/unit, full Playwright, Linux/Windows Rust. Do not duplicate full Rust/Playwright locally. Queued/skipped/no-check is not success.
+
+## Known pre-existing issues and unverified boundaries
+21 lint warnings; npm peer/deprecation warnings unchanged. Existing advisory dependency audit does not imply zero vulnerabilities. No Mac binary rebuild, native/Tauri/AppKit/OS font/dialog/signing/packaged-runtime acceptance is performed under the user's2026-10-20 boundary. Rust CI placeholder resources are not packaged-runtime evidence. Main integration requires separate explicit approval for this PR.
+
+## Reviewed changed paths
+All incoming paths and fork overlap were distributed across appearance/chat/runtime reviewers; merge owner reviewed resulting changes and cross-file contracts. The list below records final changed tracked paths (test and bookkeeping additions included):
+
+- `.github/workflows/release.yml`
+- `Casks/pi-agent.rb`
+- `app/api/appearance/fonts/route.test.mjs`
+- `app/api/appearance/fonts/route.ts`
+- `app/api/appearance/route.test.mjs`
+- `app/api/appearance/route.ts`
+- `app/api/desktop/fonts/route.test.mjs`
+- `app/api/desktop/fonts/route.ts`
+- `app/layout.tsx`
+- `app/native-theme.css`
+- `components/AppShell-session-reset.test.mjs`
+- `components/AppShell.chat-workspace.test.mjs`
+- `components/AppShell.tsx`
+- `components/AppearanceSettings.tsx`
+- `components/ChatWindow.chat-folder-files.test.mjs`
+- `components/ChatWindow.tsx`
+- `components/ConversationNavigator.tsx`
+- `components/FileTreeResizer.test.mjs`
+- `components/FileViewer.tsx`
+- `components/FontSettings.tsx`
+- `components/MessageView.test.mjs`
+- `components/MessageView.tsx`
+- `components/ModelsConfig.tsx`
+- `components/SettingsPanel.test.mjs`
+- `components/SettingsPanel.tsx`
+- `components/TerminalPanel.tsx`
+- `components/desktop/DesktopAppSection.tsx`
+- `docs/agents/fork-chat-workspace.md`
+- `docs/agents/fork-ui.md`
+- `docs/native-theme.md`
+- `docs/native-theme.zh-CN.md`
+- `docs/ui-menu-audit.md`
+- `e2e/README.md`
+- `e2e/appearance.fixture.jsx`
+- `e2e/appearance.mjs`
+- `e2e/composer-geometry.mjs`
+- `e2e/conversation-navigator.fixture.tsx`
+- `e2e/conversation-navigator.mjs`
+- `e2e/file-panel.mjs`
+- `e2e/fonts.mjs`
+- `e2e/run.mjs`
+- `e2e/settings-controls.fixture.jsx`
+- `e2e/settings-controls.mjs`
+- `e2e/themes.mjs`
+- `hooks/useBackground.ts`
+- `hooks/useFonts.ts`
+- `lib/app-prefs.ts`
+- `lib/background-settings.ts`
+- `lib/backgrounds.ts`
+- `lib/desktop-api-contract.test.mjs`
+- `lib/desktop-native.ts`
+- `lib/file-links.ts`
+- `lib/font-preferences.test.mjs`
+- `lib/font-preferences.ts`
+- `lib/font-settings.ts`
+- `lib/i18n/locale-plugins.ts`
+- `lib/installed-fonts.test.mjs`
+- `lib/installed-fonts.ts`
+- `lib/settings-navigation.test.mjs`
+- `lib/settings-navigation.ts`
+- `lib/system-fonts.ts`
+- `lib/theme.test.mjs`
+- `lib/theme.ts`
+- `package.json`
+- `public/THIRD_PARTY_NOTICES.txt`
+- `scripts/e2e-server-env.mjs`
+- `scripts/e2e-server-env.test.mjs`
+- `scripts/fork-ownership.json`
+- `scripts/upstream-css-baseline.json`
+- `src-tauri/Cargo.lock`
+- `src-tauri/Cargo.toml`
+- `src-tauri/pi-agent-desktop-package.json`
+- `src-tauri/resources/component-versions.json`
+- `src-tauri/src/lib.rs`
+- `tests/e2e/upstream-076-chats.spec.ts`
+- `tests/e2e/upstream-appearance.local.spec.ts`
+- `tests/e2e/upstream-chat-files.local.spec.ts`
