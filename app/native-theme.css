@@ -1697,9 +1697,9 @@ select {
 /* WebKitGTK does not always project the textarea's line-height onto the
    ::placeholder pseudo-element, so the composer placeholder renders with a
    smaller line box and its glyphs get clipped (upstream #64). Make it
-   explicit; matches the line-height on `.chat-composer textarea` below. */
+   explicit using the same responsive line box as the actual textarea below. */
 .chat-composer textarea::placeholder {
-  line-height: 1.55;
+  line-height: var(--composer-line-height);
   color: var(--text-dim);
 }
 
@@ -4565,8 +4565,7 @@ html.dark {
   font-size: var(--composer-font-size) !important;
   line-height: var(--composer-line-height) !important;
 }
-.chat-composer .chat-input-textarea::placeholder {
-  line-height: var(--composer-line-height);
+.chat-composer textarea::placeholder {
   white-space: nowrap;
 }
 

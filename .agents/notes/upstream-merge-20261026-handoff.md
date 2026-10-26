@@ -124,3 +124,11 @@ All incoming paths and fork overlap were distributed across appearance/chat/runt
 - Real artifact12656139931 downloaded and inspected. All four chat-file screenshots viewed at1280/390 light/dark: readable contrast, panel/header within viewport, long content wraps, desktop draft/composer retained. Two existing desktop-long-dark/mobile-light composer screenshots inspected: simplified toolbar/attachment placement and input geometry intact. Dev-only Next indicator is visible; not a packaged-runtime artifact.
 - User explicitly authorized merging PR44 at2026-10-26 13:59:41UTC, contingent on completing CI/web verification; no additional approval needed for this PR. No merge occurred while checks were failing/pending.
 - All8 appearance screenshots and2 related Settings screenshots actually viewed: desktop/narrow light/dark, long-family ellipsis and wrapping intact; no horizontal clipping/unusable controls. Desktop shots are scrolled and crop part of the color-mode group, which is fully visible in narrow shots. Additional4 composer screenshots reviewed (long desktop and empty narrow in both themes), no overlap or overflow.
+
+## Second CI follow-up
+Run40337745231 on9d97d7db again passed checks/Rust/advisories; E2E62 pass/2 fail/1 prior skip. Responsive navigator fix passed. Two further precise corrections:
+- New upstream placeholder selector targeted `.chat-input-textarea`, not fork `.composer-textarea`; fixed actual textarea placeholder to share dynamic `--composer-line-height` (including mobile font clamp). Added source regression; browser geometry assertion remains unchanged.
+- Slash fixture trace proved `/session` was entered while `/name`'s awaited session reload still held `aria-busy=true`: title update completed before loadSession, no get_session_stats POST was sent, and input retained `/session`. Command helper now waits for actual ready state before dispatch, without extra delay/retry/timeouts or removing stats/fork/export assertions. This is deterministic synchronization, not classifying an unexplained failure as flaky.
+Latest CI on the follow-up head remains the final gate; no failing/pending run is treated as pass.
+
+- Full local unit rerun after placeholder fix:3316/3316 passed, zero failures/skips; changed tests lint/syntax clean.
