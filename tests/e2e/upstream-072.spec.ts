@@ -5,6 +5,9 @@ import path from "node:path";
 import { SESSIONS_DIR, WORK_ROOT } from "./sandbox";
 
 test("navigator reaches earlier rendered turns and its preview card is clickable", async ({ page, request }) => {
+  // The navigator now requires both a >=1024px scrollport and a real text
+  // gutter. Account for the open sidebar rather than forcing it into text.
+  await page.setViewportSize({ width: 1600, height: 900 });
   const id = randomUUID();
   const cwd = path.join(WORK_ROOT, `navigator-${id}`);
   await mkdir(cwd, { recursive: true });
@@ -39,6 +42,12 @@ test("navigator reaches earlier rendered turns and its preview card is clickable
   const track = page.getByRole("slider", { name: "Conversation navigation" });
   await expect(track).toBeVisible();
   await expect(page.locator('[data-conversation-turn="0"]')).toHaveCount(0);
+  // Responsive hiding is intentional; returning to a wide layout must revive
+  // the observer and preserve the functional navigation checks below.
+  await page.setViewportSize({ width: 1000, height: 900 });
+  await expect(track).toHaveCount(0);
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await expect(track).toBeVisible();
   const box = (await track.boundingBox())!;
   await track.click({ position: { x: box.width / 2, y: 1 } });
   const first = page.locator('[data-conversation-turn="0"]');

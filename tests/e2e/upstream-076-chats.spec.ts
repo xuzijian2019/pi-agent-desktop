@@ -85,7 +85,9 @@ for (const theme of ["light", "dark"] as const) {
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
       const composer = page.getByRole("textbox", { name: "Message", exact: true });
       await expect(composer).toBeEditable();
-      await expect(page.locator(".right-panel-toggle-button")).toHaveCount(0);
+      // Own-folder chats can inspect generated files, without granting shell access.
+      await expect(page.locator(".right-panel-toggle-button")).toBeVisible();
+      await expect(page.locator(".file-tab-add")).toHaveCount(0);
       await composer.fill("Unsent draft stays in this chat through permission changes.");
 
       const toggle = await openAccessMenu(page);

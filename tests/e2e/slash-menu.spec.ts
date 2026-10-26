@@ -6,7 +6,14 @@ import {AGENT_DIR,SESSIONS_DIR,WORK_ROOT} from './sandbox';
 
 const input=(page:Page)=>page.locator('.chat-composer textarea');
 const menu=(page:Page)=>page.getByRole('listbox',{name:'Commands',exact:true});
-async function command(page:Page,text:string){await input(page).fill(text); await input(page).press('Enter');}
+async function command(page:Page,text:string){
+ // /name updates the title before its awaited session refresh completes. The
+ // composer intentionally ignores another command while that work is pending.
+ // Wait before submitting, not afterwards: the newer-draft test deliberately
+ // types while its rename request remains in flight.
+ await expect(page.locator('.chat-input-shell')).not.toHaveAttribute('aria-busy','true');
+ await input(page).fill(text); await input(page).press('Enter');
+}
 async function project(page:Page){const cwd=path.join(WORK_ROOT,randomUUID());await mkdir(cwd,{recursive:true});await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);await expect(input(page)).toBeEditable();return cwd;}
 test.beforeAll(async()=>{
  await mkdir(path.join(AGENT_DIR,'extensions'),{recursive:true});

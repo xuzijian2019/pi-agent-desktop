@@ -17,7 +17,7 @@ import { parseCompactionSummary } from "@/lib/compaction-summary";
 import { getAssistantErrorMessage, getThinkingPreview, hasAssistantAnswer, isAssistantTruncated, isDisplayableAssistantBlock } from "@/lib/message-display";
 import { parseUnifiedPatch, type SplitDiffCell, type SplitDiffFile } from "@/lib/patch";
 import { applyPatchPreviewToFiles, applyPatchResultHasFailures, extractApplyPatchPaths, getApplyPatchInputText, parseApplyPatchInput } from "@/lib/apply-patch";
-import { isApplyPatchToolName, isEditToolName } from "@/lib/tool-names";
+import { isApplyPatchToolName, isEditToolName, isWriteToolName } from "@/lib/tool-names";
 import { isToolCallExpanded, setToolCallExpanded } from "@/lib/tool-call-expansion";
 import { isThinkingExpandedByDefault, THINKING_EXPANDED_EVENT } from "@/lib/thinking-expansion-preference";
 import { TurnWrittenFiles } from "./TurnWrittenFiles";
@@ -1041,10 +1041,12 @@ function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOp
     setToolCallExpanded(block.toolCallId, next);
     setExpanded(next);
   };
-  const inputStr = getToolCallInputText(block);
+  const writtenFileText = getWrittenFileText(block);
+  const inputStr = writtenFileText ?? getToolCallInputText(block);
   const isStreamingInput = block.rawInput !== undefined;
   const isEditTool = isEditToolName(block.toolName);
-  const writtenFile = getWrittenFile(block.toolName, block.input);
+  // Highlight only when the compact view cannot hide additional arguments.
+  const writtenFile = writtenFileText !== null ? getWrittenFile(block.toolName, block.input) : null;
   const resultDiff = result && !result.isError ? getResultDiff(result) : null;
   const patchFiles = getApplyPatchFiles(block, result);
   const patchLabel = isApplyPatchToolName(block.toolName)
@@ -1780,6 +1782,24 @@ function safeJson(value: unknown): string {
 
 export function getToolCallInputText(block: ToolCallContent): string {
   return block.rawInput ?? JSON.stringify(block.input, null, 2);
+}
+
+const WRITE_VIEW_KEYS = new Set(["path", "file_path", "filePath", "content"]);
+
+// A write's file text in place of its JSON. Streamed input is still incomplete
+// JSON, and any other argument (a mode, a title) would vanish from this view,
+// so those calls, and an empty file, keep the generic view.
+function getWrittenFileText(block: ToolCallContent): string | null {
+  if (block.rawInput !== undefined || !isWriteToolName(block.toolName)) return null;
+  const { content } = block.input;
+  if (typeof content !== "string" || content === "") return null;
+  const paths = ["path", "file_path", "filePath"].filter((key) => Object.hasOwn(block.input, key));
+  // The header shows only one path, truncated to 120 characters. Keep JSON when
+  // replacing it with content would hide any path information.
+  if (paths.length !== 1) return null;
+  const path = block.input[paths[0]];
+  if (typeof path !== "string" || path.length > 120) return null;
+  return Object.keys(block.input).every((key) => WRITE_VIEW_KEYS.has(key)) ? content : null;
 }
 
 function formatCustomType(type: string): string {

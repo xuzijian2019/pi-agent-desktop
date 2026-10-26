@@ -32,6 +32,8 @@ import { ProjectTrustDialog, type ProjectTrustFailure } from "./ProjectTrustDial
 import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { UpdateReminder } from "./UpdateReminder";
 import { useTheme } from "@/hooks/useTheme";
+import { useBackground } from "@/hooks/useBackground";
+import { useFonts } from "@/hooks/useFonts";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useMenuNavigation } from "@/hooks/useMenuNavigation";
@@ -43,6 +45,7 @@ import { isTauriDesktop, setCloseQuitsNative } from "@/lib/desktop-native";
 import { useNativeContextMenu } from "@/hooks/useNativeContextMenu";
 import { DomContextMenuHost } from "./DomContextMenuHost";
 import { getFileName } from "@/lib/file-paths";
+import { isPathInside } from "@/lib/file-links";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
 import { PRODUCT_NAME } from "@/lib/branding";
 import { hasForks } from "@/lib/session-forks";
@@ -111,6 +114,8 @@ export function AppShell() {
   // into the desktop config while the settings dialog is closed. The sidebar's
   // sun/moon toggle was removed — theme selection lives in Settings → General.
   useTheme();
+  useBackground();
+  useFonts();
   const { locale, t: translate } = useI18n();
   const isMobile = useIsMobile();
   useViewportHeight();
@@ -674,9 +679,14 @@ export function AppShell() {
     return newSessionWorkspaceKind;
   })();
   const isChatWorkspaceActive = activeWorkspaceKind === "chat";
-  // Project-scoped chrome (trust, pickers, file tree, window title) must never
+  // Project-scoped chrome (trust, pickers, window title) must never
   // receive the hidden chat workspace path.
   const visibleProjectCwd = isChatWorkspaceActive ? null : activeCwd;
+  // A chat that owns a folder shows that folder (file tree + viewer) in the right
+  // panel so what it made can be opened. Terminals, trust and the rest of the
+  // workbench stay project-only, so they keep using visibleProjectCwd.
+  const chatFolderCwd = isChatWorkspaceActive && selectedSession?.chatFolder ? selectedSession.cwd : null;
+  const workbenchCwd = visibleProjectCwd ?? chatFolderCwd;
   const projectPickerStartCwd = isChatWorkspaceActive
     ? null
     : selectedSession?.cwd ?? newSessionCwd ?? activeCwd;
@@ -688,14 +698,21 @@ export function AppShell() {
       && initialNavigation.requestedCwd
       && initialNavigation.requestedCwd !== chatWorkspaceCwd,
   );
+  const selectedChatSessionId = selectedSession?.id ?? null;
   useEffect(() => {
     if (!isChatWorkspaceActive) return;
-    setRightPanelOpen(false);
-    setRightPanelExpanded(false);
-    setFileTreeOpen(false);
-    setFileTabs([]);
-    setActiveFileTabId(null);
-  }, [isChatWorkspaceActive]);
+    const resetPanel = () => {
+      setRightPanelOpen(false);
+      setRightPanelExpanded(false);
+      setFileTreeOpen(false);
+      setFileTabs([]);
+      setActiveFileTabId(null);
+    };
+    resetPanel();
+    // A chat's files belong to its own folder: they never follow into another
+    // chat or a project.
+    return resetPanel;
+  }, [isChatWorkspaceActive, selectedChatSessionId]);
   // True once the initial ?session= URL param has been resolved (or confirmed absent)
   const [initialSessionRestored, setInitialSessionRestored] = useState<boolean>(() => !initialSessionId);
   // sessionStorage is empty during SSR. Applying the tab's remembered session
@@ -1407,7 +1424,7 @@ export function AppShell() {
     fileName: string,
     options?: { sourceSessionId?: string | null; modeHint?: "diff"; page?: number },
   ) => {
-    if (isChatWorkspaceActive) return;
+    if (isChatWorkspaceActive && !(chatFolderCwd && isPathInside(filePath, chatFolderCwd))) return;
     const sourceSessionId = options?.sourceSessionId;
     const modeHint = options?.modeHint;
     const page = options?.page;
@@ -1424,12 +1441,11 @@ export function AppShell() {
     setRightPanelOpen(true);
     // On mobile the file panel is full-screen; close the drawer so it shows.
     if (isMobile) setSidebarOpen(false);
-  }, [isChatWorkspaceActive, isMobile]);
+  }, [chatFolderCwd, isChatWorkspaceActive, isMobile]);
 
   const handleOpenLinkedFile = useCallback((filePath: string, page?: number) => {
-    if (isChatWorkspaceActive) return;
     handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id ?? null, page });
-  }, [handleOpenFile, isChatWorkspaceActive, selectedSession?.id]);
+  }, [handleOpenFile, selectedSession?.id]);
 
   const handleOpenTerminal = useCallback((cwd: string) => {
     if (isChatWorkspaceActive) return;
@@ -1827,7 +1843,7 @@ export function AppShell() {
   };
 
   // Scheduled keeps the mobile workspace toggle reachable; an open panel always has an exit.
-  const showFilePanelToggle = !isChatWorkspaceActive && (isMobile || !scheduledOpen || rightPanelOpen);
+  const showFilePanelToggle = (!isChatWorkspaceActive || Boolean(chatFolderCwd)) && (isMobile || !scheduledOpen || rightPanelOpen);
 
   return (
     <>
@@ -2118,12 +2134,13 @@ export function AppShell() {
               workspaceUnavailable={unavailableWorkspace}
               onRecheckWorkspace={recheckWorkspace}
               chatInputRef={chatInputRef}
+              conversationNavigatorEnabled={!rightPanelOpen}
               onBranchDataChange={isChatWorkspaceActive ? undefined : handleBranchDataChange}
               onOpenSettings={openSettingsSection}
               onSelectProject={desktopMode && !isChatWorkspaceActive ? () => void handleSelectProjectFromComposer() : undefined}
               projectOptions={selectedSession || isChatWorkspaceActive ? [] : availableProjectRoots}
               onProjectChange={selectedSession || isChatWorkspaceActive ? undefined : handleProjectChangeFromComposer}
-              onOpenFile={isChatWorkspaceActive ? undefined : handleOpenLinkedFile}
+              onOpenFile={handleOpenLinkedFile}
               onOpenModelsConfig={() => setSettingsSection("models")}
               onAppCommand={handleAppCommand}
               onOpenSession={handleOpenSession}
@@ -2300,7 +2317,7 @@ export function AppShell() {
             />
           </div>
           <div className="file-workbench-actions">
-            {visibleProjectCwd && !activeCwdMissing && (
+            {workbenchCwd && !activeCwdMissing && (
               <button
                 type="button"
                 className={`file-workbench-icon-button file-tree-toggle${fileTreeShown ? " is-active" : ""}`}
@@ -2449,15 +2466,15 @@ export function AppShell() {
                   initialState={activeFileTab.viewerState}
                   watchEnabled={rightPanelOpen}
                   onStateChange={state => handleFileViewerStateChange(activeFileTab.id, activeFileTab.viewerRevision ?? 0, state)}
-                  onAtMention={handleAtMention}
+                  onAtMention={isChatWorkspaceActive ? undefined : handleAtMention}
                   filePath={activeFileTab.filePath}
-                  cwd={activeCwd ?? undefined}
+                  cwd={workbenchCwd ?? undefined}
                   sourceSessionId={activeFileTab.sourceSessionId}
                   gitRefreshKey={explorerRefreshKey}
                   controlsSlot={viewerControlsSlot}
                   initialDisplayMode={activeFileTab.initialDisplayMode}
                   onReviewDiff={() => handleOpenFile(activeFileTab.filePath!, activeFileTab.label, { modeHint: "diff" })}
-                  onMentionLines={rightPanelOpen ? handleFileLineMention : undefined}
+                  onMentionLines={rightPanelOpen && !isChatWorkspaceActive ? handleFileLineMention : undefined}
                   initialPage={activeFileTab.page}
                   onOpenFile={(filePath, page) => handleOpenFile(
                     filePath,
@@ -2473,7 +2490,7 @@ export function AppShell() {
                     </svg>
                   </span>
                   <strong>{translate("files.noneOpen")}</strong>
-                  {activeCwd && !fileTreeShown && (
+                  {workbenchCwd && !activeCwdMissing && !fileTreeShown && (
                     <button type="button" className="right-panel-empty-action" onClick={handleFileTreeToggle}>
                       {translate("contextPanel.showFileList")}
                     </button>
@@ -2496,7 +2513,7 @@ export function AppShell() {
         </div>
 
         {/* Explorer column — always-on project file tree */}
-          {visibleProjectCwd && !activeCwdMissing && fileTreeShown && (
+          {workbenchCwd && !activeCwdMissing && fileTreeShown && (
             <>
               <div
                 {...fileTreeResizer.separatorProps}
@@ -2568,12 +2585,12 @@ export function AppShell() {
               <div className="file-panel-tree-scroll">
                 <FileExplorer
                   ref={fileExplorerRef}
-                  cwd={visibleProjectCwd}
+                  cwd={workbenchCwd}
                   onOpenFile={handleOpenFile}
                   refreshKey={explorerRefreshKey}
                   searchQuery={fileExplorerQuery}
-                  onAtMention={handleAtMention}
-                  onAtMentions={handleAtMentions}
+                  onAtMention={isChatWorkspaceActive ? undefined : handleAtMention}
+                  onAtMentions={isChatWorkspaceActive ? undefined : handleAtMentions}
                   onUploadBusyChange={setExplorerUploadBusy}
                   changesCollapsed={changesCollapsed}
                   onChangesCountChange={setChangesCount}
