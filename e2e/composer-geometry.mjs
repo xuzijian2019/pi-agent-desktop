@@ -10,20 +10,31 @@ export async function checkComposerGeometry(page) {
   const heights = [];
   try {
     // Empty placeholder, entered text and the first line of a tall draft must
-    // stay centered on the SVG, across the supported font-size range.
+    // stay readable across the supported font-size range. The fork deliberately
+    // keeps attachment controls below the card, not beside the first text line.
     for (const size of [12, 14, 20, 24]) {
       await card.evaluate((el, size) => el.style.setProperty('--chat-content-font-size', `${size}px`), size);
       for (const draft of ['', '给 Pi 发消息…', 'First line\nSecond line\nThird line']) {
         await input.fill(draft);
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
         const alignment = await card.evaluate(el => {
-          const text = el.querySelector('textarea'), svg = el.querySelector('.composer-attach-button svg');
-          const style = getComputedStyle(text), box = text.getBoundingClientRect(), icon = svg.getBoundingClientRect();
-          return { delta: icon.y + icon.height / 2 - (box.y + parseFloat(style.paddingTop) + parseFloat(style.lineHeight) / 2),
+          const text = el.querySelector('textarea');
+          const shell = el.closest('.chat-input-shell');
+          const attach = shell.querySelector('.composer-attach-button svg');
+          const style = getComputedStyle(text), box = text.getBoundingClientRect();
+          const outer = el.getBoundingClientRect(), icon = attach.getBoundingClientRect();
+          return {
+            attachOutsideCard: !el.contains(attach), attachTop: icon.top, cardBottom: outer.bottom,
+            textLeft: box.left, textRight: box.right, cardLeft: outer.left, cardRight: outer.right,
+            fontSize: parseFloat(style.fontSize),
             placeholderLine: parseFloat(getComputedStyle(text, '::placeholder').lineHeight), line: parseFloat(style.lineHeight),
-            overflow: text.scrollHeight - text.clientHeight };
+            overflow: text.scrollHeight - text.clientHeight,
+          };
         });
-        assert.ok(Math.abs(alignment.delta) < 0.6, `Attach and first line must align at ${size}px: ${JSON.stringify(alignment)}`);
+        assert.equal(alignment.attachOutsideCard, true, 'Fork attachment control belongs below the input card');
+        assert.ok(alignment.attachTop >= alignment.cardBottom, `Attachment control must not overlap text: ${JSON.stringify(alignment)}`);
+        assert.ok(alignment.textLeft >= alignment.cardLeft && alignment.textRight <= alignment.cardRight, `Text must fit inside its card: ${JSON.stringify(alignment)}`);
+        assert.equal(alignment.fontSize, page.viewportSize().width <= 640 ? Math.max(16, size) : size, 'Requested font size must actually apply');
         assert.ok(Math.abs(alignment.placeholderLine - alignment.line) < 0.1, 'Placeholder must use the actual text line height');
         if (!draft) assert.ok(alignment.overflow <= 1, `Empty input must not have a vertical scrollbar at ${size}px / ${page.viewportSize().width}px: ${JSON.stringify(alignment)}`);
         if (size === 14) {

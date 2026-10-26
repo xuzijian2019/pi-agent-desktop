@@ -116,3 +116,11 @@ All incoming paths and fork overlap were distributed across appearance/chat/runt
 - `tests/e2e/upstream-076-chats.spec.ts`
 - `tests/e2e/upstream-appearance.local.spec.ts`
 - `tests/e2e/upstream-chat-files.local.spec.ts`
+
+## First published CI and browser evidence (2026-10-26)
+- Draft PR: https://github.com/xuzijian2019/pi-agent-desktop/pull/44 . Published true merge head `eee65779c7f7fe6df041e9c0a9c6d6ed69d56f0f` has exact tested tree `5917659e61a323032da528498daf1de05f96ac7e`; connector authorship changes the commit SHA from the local merge, not its tree/parents.
+- GitHub run40334125553 checked head above / synthetic merge6304b1a4. checks, Linux+Windows Rust, advisory audit and demo-drift succeeded. E2E was62 passed /2 failed /1 pre-existing skip, NOT an all-green run. Both new appearance and chat-files four-case matrices passed.
+- Failures exposed old fixture assumptions: navigator expected visible with insufficient new responsive gutter; upstream geometry helper incorrectly assumed the attachment button lives inside the input card, while the fork intentionally places it in the toolbar below. Compatibility corrections retain functional navigation/preview and geometry assertions; no timeout increase or skip is introduced. Latest PR status and CI artifacts are authoritative for their rerun.
+- Real artifact12656139931 downloaded and inspected. All four chat-file screenshots viewed at1280/390 light/dark: readable contrast, panel/header within viewport, long content wraps, desktop draft/composer retained. Two existing desktop-long-dark/mobile-light composer screenshots inspected: simplified toolbar/attachment placement and input geometry intact. Dev-only Next indicator is visible; not a packaged-runtime artifact.
+- User explicitly authorized merging PR44 at2026-10-26 13:59:41UTC, contingent on completing CI/web verification; no additional approval needed for this PR. No merge occurred while checks were failing/pending.
+- All8 appearance screenshots and2 related Settings screenshots actually viewed: desktop/narrow light/dark, long-family ellipsis and wrapping intact; no horizontal clipping/unusable controls. Desktop shots are scrolled and crop part of the color-mode group, which is fully visible in narrow shots. Additional4 composer screenshots reviewed (long desktop and empty narrow in both themes), no overlap or overflow.
