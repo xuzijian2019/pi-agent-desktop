@@ -99,6 +99,7 @@ for (const theme of ["light", "dark"] as const) {
       const chatBox = (await page.locator(".chat-window").boundingBox())!;
       expect(menuBox.x).toBeGreaterThanOrEqual(chatBox.x);
       expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(chatBox.x + chatBox.width + 1);
+      await expect.poll(() => accessMenu.evaluate(el => el.getAnimations({ subtree: true }).every(animation => animation.playState === "finished"))).toBe(true);
       const switchBox = await toggle.locator(".chat-access-switch").boundingBox();
       expect(switchBox).not.toBeNull();
       expect(switchBox!.width).toBeGreaterThanOrEqual(26);

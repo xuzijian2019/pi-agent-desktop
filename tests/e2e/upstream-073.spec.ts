@@ -77,6 +77,10 @@ test("cross-project worktree actions keep project identity and honor cancel and 
   const firstId = await fixture(first, "Alpha merge review");
   const secondId = await fixture(second, "Beta merge review");
   await refresh(request, secondId);
+  // Session discovery and the file-access cache refresh independently.
+  for (const cwd of [first, second]) {
+    await expect.poll(async () => (await request.get(`/api/worktrees?cwd=${encodeURIComponent(cwd)}`)).status(), { timeout: 15_000 }).toBe(200);
+  }
   await page.goto(`/?session=${firstId}`);
   await expect(page.getByRole("textbox", { name: "Message", exact: true })).toBeEditable();
   await expect(projectGroup(page, first).locator(".sidebar-project-tree-name")).toContainText("alpha");

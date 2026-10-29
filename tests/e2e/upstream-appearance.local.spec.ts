@@ -18,11 +18,10 @@ async function section(page: Page, name: string, narrow: boolean) {
 
 for (const width of [1280, 390]) {
   for (const theme of ["light", "dark"] as const) {
-    test(`appearance persists fonts/background and fits ${width}px ${theme}`, async ({ page, request }, testInfo) => {
+    test(`appearance persists fonts/theme with a neutral canvas at ${width}px ${theme}`, async ({ page, request }, testInfo) => {
       const cwd = path.join(WORK_ROOT, `appearance-${randomUUID()}`);
       await mkdir(cwd, { recursive: true });
       expect((await request.put("/api/appearance/fonts", { data: { fonts: { ui: "", mono: "" } } })).ok()).toBe(true);
-      expect((await request.put("/api/appearance", { data: { background: "rex" } })).ok()).toBe(true);
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);
       await expect(page.getByRole("textbox", { name: "Message", exact: true })).toBeEditable();
@@ -34,10 +33,8 @@ for (const width of [1280, 390]) {
       await expect(appearance).toBeVisible();
       await appearance.locator(`.settings-theme-option:has(input[value="${theme}"])`).click();
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-      await appearance.locator('.settings-background-option:has(input[value="mist"])').click();
-      await expect(page.locator("html")).toHaveAttribute("data-background", "mist");
-      await expect.poll(async () => (await (await request.get("/api/appearance")).json()).background).toBe("mist");
-      await expect(appearance.locator('input[name="background"]')).toHaveCount(5);
+      await expect(appearance.locator('input[name="background"]')).toHaveCount(0);
+      expect(await page.locator(".settings-dialog-surface").evaluate(el => getComputedStyle(el).backgroundImage)).toBe("none");
       await expect(appearance.locator('input[name="theme"]')).toHaveCount(3);
       await page.evaluate(async () => { await document.fonts.ready; });
       await page.screenshot({ path: testInfo.outputPath(`appearance-${width}-${theme}.png`), animations: "disabled" });
@@ -69,7 +66,6 @@ for (const width of [1280, 390]) {
       await page.keyboard.press("Control+,");
       await section(page, "Appearance", width < 640);
       await expect(picker).toContainText(family);
-      await expect(page.locator("html")).toHaveAttribute("data-background", "mist");
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
       await appearance.getByRole("button", { name: "Reset fonts", exact: true }).click();
       await expect(picker).toHaveText("Default");

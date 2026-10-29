@@ -94,7 +94,7 @@
   background: var(--text);
 }
 .conversation-navigator-track:focus-visible {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 .conversation-navigator-preview {
@@ -186,7 +186,7 @@
 .sidebar-project-tree::-webkit-scrollbar { width: 7px; }
 .sidebar-project-tree::-webkit-scrollbar-thumb {
   background: transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 .sidebar-project-tree.is-scrolling::-webkit-scrollbar-thumb { background: var(--border); }
  .sidebar-project-tree-header {
@@ -218,7 +218,7 @@
   height: 26px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
   background: transparent;
   cursor: pointer;
@@ -235,7 +235,7 @@
   min-width: 0;
   min-height: 34px;
   padding: 2px 10px 2px 16px;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
 }
 .sidebar-project-tree-row:hover,
 .sidebar-project-tree-group.is-active > .sidebar-project-tree-row {
@@ -297,12 +297,12 @@
   min-width: 17px;
   height: 17px;
   padding: 0 4px;
-  border-radius: 9px;
+  border-radius: var(--radius-md);
   font-size: var(--fs-micro);
   font-weight: 650;
 }
 .sidebar-project-tree-chip.is-running { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
-.sidebar-project-tree-chip.is-unread { color: #0891b2; background: color-mix(in srgb, #0891b2 12%, transparent); }
+.sidebar-project-tree-chip.is-unread { color: var(--menu-selection-color); background: color-mix(in srgb, var(--menu-selection-color) 12%, transparent); }
 .sidebar-project-tree-row-actions {
   display: flex;
   flex-direction: row-reverse;
@@ -323,7 +323,7 @@
   width: 168px;
   padding: 4px;
   border: var(--hairline) solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--bg);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
 }
@@ -332,7 +332,7 @@
   width: 100%;
   padding: 8px 10px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--text);
   background: transparent;
   font-size: var(--fs-small);
@@ -422,7 +422,7 @@
   flex-direction: column;
   gap: 6px;
   padding: 6px 8px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--danger) 6%, transparent);
   color: var(--text);
   font-size: var(--fs-caption);
@@ -438,7 +438,7 @@
   box-sizing: border-box;
   padding: 5px 8px;
   border: var(--hairline) solid var(--accent);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   outline: none;
   background: var(--bg);
   color: var(--text);
@@ -511,7 +511,7 @@
   color: var(--text);
   background: var(--bg-hover);
   border: var(--hairline) solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: background 0.12s ease, border-color 0.12s ease;
 }
@@ -606,7 +606,7 @@
   height: 28px;
   background: transparent;
   border-left: none;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   color: var(--text-muted);
   transition: color 120ms ease, background 120ms ease;
 }
@@ -672,7 +672,7 @@
   max-width: none;
   height: min(700px, calc(100dvh - 96px));
   max-height: none;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
 }
 
 /* Wide dialogs: split the sections into two explicit columns so the General
@@ -718,7 +718,7 @@
    unlabeled twin of the Version & Updates section below it. */
 .settings-general-overview {
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--bg-panel);
 }
 
@@ -782,7 +782,7 @@
   min-height: 20px;
   padding: 1px 6px;
   border: var(--hairline) solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--bg-subtle);
   color: var(--text);
   font-family: var(--font-mono);
@@ -805,7 +805,7 @@
   justify-content: space-between;
   gap: 10px 16px;
   padding: 12px 14px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--bg-panel);
 }
 
@@ -895,7 +895,7 @@
   width: 100%;
   max-width: none;
   background: var(--bg-panel);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .settings-option-list,
@@ -916,7 +916,7 @@
 
 .settings-option + .settings-option,
 .settings-chat-option + .settings-chat-option {
-  border-top: var(--hairline) solid var(--border);
+  border-top: var(--hairline) solid var(--separator);
 }
 
 /* The Send key choice does not shrink (its labels are nowrap), so on a phone
@@ -1024,22 +1024,25 @@
      Palette attribution and license: public/THIRD_PARTY_NOTICES.txt.
      Small labels use a darker shade of the same gray so
      they stay readable on selected rows and the tinted sidebar. */
-  --bg: #eceef4;
-  --bg-panel: #eceef4;
+  --bg: #f0f0f1;
+  --bg-panel: #f0f0f1;
   --bg-hover: rgba(0, 0, 0, 0.04);
   --bg-selected: rgba(0, 0, 0, 0.07);
   --sidebar-selected: #ffffff;
-  --border: rgba(0, 0, 0, 0.07);
-  --separator: rgba(0, 0, 0, 0.06);
+  /* Two edge tiers: --border outlines a surface (cards, inputs, code blocks);
+     --separator divides rows inside one. A hairline is 0.5px on retina, so
+     both sit well above the 7% a full pixel would need. */
+  --border: rgba(0, 0, 0, 0.12);
+  --separator: rgba(0, 0, 0, 0.08);
   --surface: #ffffff;
   /* Card colors form Pi's continuous reading surface. */
   --workbench-bg: #ffffff;
   --surface-muted: rgba(255, 255, 255, 0.64);
   --surface-elevated: #ffffff;
   --text: #1d1d1f;
-  --text-muted: #60606b;
-  --text-dim: #73737e;
-  --text-meta: #60606b;
+  --text-muted: #5f5f63;
+  --text-dim: #6e6e73;
+  --text-meta: #5f5f63;
   --accent: #1d1d1f;
   --accent-hover: #3a3a3c;
   --accent-contrast: #ffffff;
@@ -1056,7 +1059,11 @@
   --assistant-bg: transparent;
   --tool-bg: rgba(0, 0, 0, 0.04);
   --bg-subtle: rgba(0, 0, 0, 0.04);
-  --scroll-thumb: rgba(110, 110, 120, 0.3);
+  --scroll-thumb: rgba(110, 110, 110, 0.3);
+  /* Syntax colours (lib/code-theme.ts): one muted blue, one muted warm tone. */
+  --code-accent: #3f5f8f;
+  --code-warm: #8a5a2e;
+  --code-comment: #8e8e93;
 
   /* Typography. "Noto Sans SC" backstops CJK on Linux builds (deb target in
      release.yml), which this stack otherwise has no CJK fallback for once it
@@ -1087,13 +1094,13 @@
   --radius-xl: var(--radius-lg);
   --control-height-sm: 28px;
   --control-height: 32px;
-  --shadow-control: 0 1px 2px rgba(15, 23, 42, 0.045);
-  --shadow-composer: 0 1px 2px rgba(15, 23, 42, 0.06),
-    0 12px 32px rgba(15, 23, 42, 0.08);
-  --shadow-popover: 0 16px 44px rgba(15, 23, 42, 0.14),
-    0 2px 8px rgba(15, 23, 42, 0.06);
-  --shadow-dialog: 0 28px 80px rgba(15, 23, 42, 0.22),
-    0 4px 16px rgba(15, 23, 42, 0.08);
+  --shadow-control: 0 1px 2px rgba(0, 0, 0, 0.045);
+  --shadow-composer: 0 1px 2px rgba(0, 0, 0, 0.06),
+    0 12px 32px rgba(0, 0, 0, 0.08);
+  --shadow-popover: 0 16px 44px rgba(0, 0, 0, 0.14),
+    0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-dialog: 0 28px 80px rgba(0, 0, 0, 0.22),
+    0 4px 16px rgba(0, 0, 0, 0.08);
   --ease-native: cubic-bezier(0.2, 0.75, 0.25, 1);
   /* Two durations: colour/hover feedback is immediate, anything that moves or
      resizes gets long enough to be read as motion rather than a jump. */
@@ -1104,24 +1111,24 @@
 
 html.dark {
   color-scheme: dark;
-  --bg: #141418;
-  --bg-panel: #141418;
+  --bg: #19191a;
+  --bg-panel: #19191a;
   --bg-hover: rgba(255, 255, 255, 0.05);
   --bg-selected: rgba(255, 255, 255, 0.10);
   --sidebar-selected: rgba(255, 255, 255, 0.10);
-  --border: rgba(255, 255, 255, 0.08);
-  --separator: rgba(255, 255, 255, 0.07);
-  --surface: #232328;
-  --workbench-bg: #232328;
-  --surface-muted: rgba(35, 35, 40, 0.72);
-  --surface-elevated: #232327;
-  --text: #ececf0;
-  --text-muted: #a9a9b4;
-  --text-dim: #83838f;
-  --text-meta: #a9a9b4;
-  --accent: #ececf0;
+  --border: rgba(255, 255, 255, 0.14);
+  --separator: rgba(255, 255, 255, 0.09);
+  --surface: #242424;
+  --workbench-bg: #242424;
+  --surface-muted: rgba(36, 36, 36, 0.72);
+  --surface-elevated: #262626;
+  --text: #ececec;
+  --text-muted: #a8a8ad;
+  --text-dim: #8a8a8e;
+  --text-meta: #a8a8ad;
+  --accent: #ececec;
   --accent-hover: #ffffff;
-  --accent-contrast: #161618;
+  --accent-contrast: #161616;
   --accent-soft: rgba(245, 245, 247, 0.14);
   --accent-border: rgba(245, 245, 247, 0.3);
   --menu-selection-color: #6b93ff;
@@ -1135,7 +1142,10 @@ html.dark {
   --assistant-bg: transparent;
   --tool-bg: rgba(255, 255, 255, 0.06);
   --bg-subtle: rgba(255, 255, 255, 0.06);
-  --scroll-thumb: rgba(169, 169, 180, 0.3);
+  --scroll-thumb: rgba(169, 169, 169, 0.3);
+  --code-accent: #8fb0dc;
+  --code-warm: #cfa77c;
+  --code-comment: #8a8a8e;
   --shadow-control: 0 1px 2px rgba(0, 0, 0, 0.24);
   --shadow-composer: 0 1px 2px rgba(0, 0, 0, 0.28),
     0 14px 36px rgba(0, 0, 0, 0.3);
@@ -2142,7 +2152,7 @@ pre, code {
   padding: 0 8px;
   background: transparent;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text);
   font-size: var(--fs-small);
   text-align: left;
@@ -2206,7 +2216,7 @@ pre, code {
   height: auto;
   padding: 0 8px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-muted);
   font-size: var(--fs-body);
@@ -2295,8 +2305,8 @@ pre, code {
 }
 
 .sidebar-project-tree-chip.is-unread {
-  color: #0891b2;
-  background: color-mix(in srgb, #0891b2 14%, transparent);
+  color: var(--menu-selection-color);
+  background: color-mix(in srgb, var(--menu-selection-color) 14%, transparent);
 }
 
 /* Project header: folder + name at rest; "+" and "…" fade in over the row's
@@ -2480,12 +2490,15 @@ pre, code {
 /* Session rows match the view-switcher tab height (28px).
    Horizontal inset (10px) matches the view switcher and search box. */
 .session-item {
+  --session-row-height: 28px;
+  --session-row-radius: 8px;
+  --session-action-inset: var(--choice-row-gap);
   width: calc(100% - 20px);
-  height: 28px !important;
+  height: var(--session-row-height) !important;
   margin: 2px 10px;
-  padding-right: 7px !important;
+  padding-right: 0 !important;
   border-left: 0 !important;
-  border-radius: var(--radius-sm);
+  border-radius: var(--session-row-radius);
 }
 
 /* Session rows are treeitems, but the native div does not expose a focus
@@ -2541,7 +2554,7 @@ html:not(.dark) .session-item.is-selected .session-item-time {
 
 .message-meta,
 .message-assistant-model {
-  color: var(--text-dim) !important;
+  color: var(--text-meta) !important;
 }
 
 .file-tree {
@@ -4195,7 +4208,7 @@ html.dark {
 .settings-dialog-close {
   width: 28px;
   height: 28px;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   transition:
     color 140ms ease,
     background 140ms ease;
@@ -4284,8 +4297,8 @@ html.dark {
     min-width: 64px;
     height: 52px;
     padding: 0 8px;
-    border-radius: 7px;
-    font-size: 11px;
+    border-radius: var(--radius-md);
+    font-size: var(--fs-caption);
     transition:
       color 140ms ease,
       background 140ms ease;
@@ -4320,7 +4333,7 @@ html.dark {
   width: 40px;
   height: 20px;
   border-color: var(--text-muted);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: transparent;
 }
 
@@ -4355,7 +4368,7 @@ html.dark {
 :root[data-platform="windows"] .settings-dialog-surface .config-switch.is-small {
   width: 30px;
   height: 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 :root[data-platform="windows"] .settings-dialog-surface .config-switch.is-small .config-switch-knob {
@@ -4379,7 +4392,7 @@ html.dark {
     grid-template-columns: 208px minmax(0, 1fr);
     grid-template-rows: 48px minmax(0, 1fr);
     width: min(1120px, calc(100vw - 64px));
-    border-radius: 8px;
+    border-radius: var(--radius-md);
   }
 
   :root[data-platform="windows"] .settings-dialog-header,
@@ -4392,7 +4405,7 @@ html.dark {
     grid-area: 1 / 1;
     align-self: center;
     padding-left: 20px;
-    font-size: 13px;
+    font-size: var(--fs-body);
     font-weight: 600;
   }
 
@@ -4416,7 +4429,7 @@ html.dark {
     width: auto;
     padding: 0 12px;
     border-radius: var(--choice-row-radius);
-    font-size: 13px;
+    font-size: var(--fs-body);
     transition:
       color 120ms ease,
       background 120ms ease;
@@ -4959,7 +4972,7 @@ html.dark {
 .markdown-table-wrap > table { width: auto; }
 .markdown-body th, .markdown-body td {
   border: 0;
-  border-bottom: var(--hairline) solid var(--border);
+  border-bottom: var(--hairline) solid var(--separator);
   padding: 6px 10px;
   text-align: left;
   vertical-align: top;
@@ -5060,7 +5073,7 @@ html.dark {
 .compaction-file-details {
   margin-top: 10px;
   padding-top: 8px;
-  border-top: var(--hairline) solid var(--border);
+  border-top: var(--hairline) solid var(--separator);
   color: var(--text-muted);
   font-size: var(--fs-small);
 }
@@ -5101,7 +5114,7 @@ html.dark {
 .markdown-code-block {
   position: relative;
   margin: 6px 0;
-  border: var(--hairline) solid color-mix(in srgb, var(--border) 55%, transparent);
+  border: var(--hairline) solid var(--border);
   border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--bg);
@@ -5110,7 +5123,7 @@ html.dark {
 .markdown-code-header {
   padding: 5px 10px;
   background: var(--bg-panel);
-  border-bottom: var(--hairline) solid color-mix(in srgb, var(--border) 55%, transparent);
+  border-bottom: var(--hairline) solid var(--separator);
   color: var(--text-dim);
   font-size: var(--fs-caption);
   display: flex;
@@ -5151,6 +5164,54 @@ html.dark {
 .markdown-code-action.is-active {
   background: var(--bg-selected);
   color: var(--text);
+}
+.markdown-code-body.is-folded {
+  max-height: 26em;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 3.5em), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 3.5em), transparent);
+}
+.markdown-code-body.is-wrapped pre,
+.markdown-code-body.is-wrapped code {
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.markdown-code-fold {
+  display: block;
+  width: 100%;
+  padding: 5px 10px;
+  border: 0;
+  border-top: var(--hairline) solid color-mix(in srgb, var(--border) 55%, transparent);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-caption);
+}
+.markdown-code-fold:hover {
+  color: var(--text);
+}
+
+/* GitHub alerts (`> [!NOTE]`), see remarkGithubAlerts in lib/markdown.ts. */
+.markdown-body .markdown-alert {
+  --alert-color: var(--accent);
+  margin: 8px 0;
+  padding: 7px 12px;
+  border-left: 3px solid var(--alert-color);
+  border-radius: 0 6px 6px 0;
+  background: color-mix(in srgb, var(--alert-color) 8%, var(--bg));
+  color: var(--text);
+}
+.markdown-body .markdown-alert-tip { --alert-color: #22a06b; }
+.markdown-body .markdown-alert-important { --alert-color: #8b5cf6; }
+.markdown-body .markdown-alert-warning { --alert-color: #d29922; }
+.markdown-body .markdown-alert-caution { --alert-color: #e5484d; }
+.markdown-body .markdown-alert > :last-child { margin-bottom: 0; }
+.markdown-body .markdown-alert-title {
+  margin: 0 0 4px;
+  color: var(--alert-color);
+  font-weight: 650;
 }
 .artifact-inline-open {
   display: inline-flex;
@@ -5254,7 +5315,7 @@ html.dark {
   height: var(--control-height-sm);
   padding: 0 10px;
   border: var(--hairline) solid var(--separator);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   box-shadow: var(--shadow-control);
   color: var(--text);
@@ -5278,7 +5339,7 @@ html.dark {
   height: var(--control-height-sm);
   padding: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -5304,7 +5365,7 @@ html.dark {
   max-width: 440px;
   margin: 8px 0;
   padding: 8px 12px 8px 8px;
-  border: var(--hairline) solid var(--separator);
+  border: var(--hairline) solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
   box-shadow: var(--shadow-control);
@@ -6332,9 +6393,10 @@ span.linenumber {
 
 .app-notice-shelf {
   position: fixed;
-  top: 14px;
+  top: calc(60px + env(safe-area-inset-top, 0px));
   right: 16px;
-  z-index: 1200;
+  /* Keep the toolbar reachable and let menus/dialogs cover background notices. */
+  z-index: 650;
   display: flex;
   width: min(420px, calc(100vw - 24px));
   flex-direction: column;
@@ -6343,16 +6405,33 @@ span.linenumber {
 }
 
 .app-notice-item {
+  --notice-color: var(--accent);
   position: relative;
   display: flex;
   min-height: 48px;
   max-height: 460px;
-  align-items: flex-start;
-  gap: 9px;
-  margin-bottom: 7px;
+  align-items: center;
+  gap: var(--choice-inset);
+  margin-bottom: var(--choice-inset);
   overflow: hidden;
-  padding: 10px 9px 10px 13px;
+  padding: var(--choice-inset);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-lg);
   pointer-events: auto;
+}
+
+.app-notice-item.is-error { --notice-color: var(--danger); }
+.app-notice-item.is-warning { --notice-color: var(--warning); }
+.app-notice-item.is-success { --notice-color: var(--success); }
+
+.app-notice-item .notice-shelf-indicator {
+  width: 6px;
+  height: 6px;
+  margin: 0 4px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  color: var(--notice-color);
+  background: currentColor;
 }
 
 .app-notice-item.is-exiting {
@@ -6377,7 +6456,7 @@ span.linenumber {
   flex: 0 0 auto;
   min-height: 26px;
   border: 1px solid var(--separator);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   color: var(--text-muted);
   cursor: pointer;
   background: transparent;
@@ -6387,7 +6466,7 @@ span.linenumber {
 .app-notice-action {
   padding: 0 10px;
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 650;
 }
 
@@ -6869,7 +6948,7 @@ span.linenumber {
   font-size: 13px;
   transition: border-color var(--dur-fast) var(--ease-native), background var(--dur-fast) var(--ease-native), box-shadow var(--dur-fast) var(--ease-native);
   border: var(--hairline) solid var(--separator);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface-muted);
   outline: none !important;
   font-size: var(--fs-body);
@@ -6982,7 +7061,7 @@ span.linenumber {
    quiet chip at rest, the same --bg-hover highlight for hover and open state. */
 .main-file-toggle {
   border: none;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-muted);
   transition: color 120ms ease, background 120ms ease;
@@ -7575,7 +7654,6 @@ span.linenumber {
 
 .sidebar-session-menu-button:hover,
 .sidebar-session-menu-button.is-open {
-  background: var(--bg-selected);
   color: var(--text);
 }
 
@@ -8815,7 +8893,7 @@ span.linenumber {
 .composer-controls-group.is-narrow {
   position: absolute;
   right: 0;
-  bottom: 0;
+  bottom: calc(100% + 4px);
   z-index: 60;
   display: none;
   width: max-content;
@@ -9835,7 +9913,7 @@ span.linenumber {
   height: 24px;
   padding: 0 8px;
   border: var(--hairline) solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--bg);
   color: var(--text);
   font-size: var(--fs-caption);
@@ -9845,7 +9923,7 @@ span.linenumber {
   height: 24px;
   padding: 0 8px;
   border: var(--hairline) solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--bg);
   color: var(--text-muted);
   font-size: var(--fs-caption);
@@ -9885,7 +9963,7 @@ span.linenumber {
 .nonchat-models-group {
   margin-bottom: 10px;
   border: var(--hairline) solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 .nonchat-models-provider {
@@ -9895,7 +9973,7 @@ span.linenumber {
   gap: 8px;
   padding: 5px 10px;
   background: var(--bg-panel);
-  border-bottom: var(--hairline) solid var(--border);
+  border-bottom: var(--hairline) solid var(--separator);
   color: var(--text);
   font-size: var(--fs-small);
   font-weight: 600;
@@ -9914,7 +9992,7 @@ span.linenumber {
   padding: 5px 10px;
   font-size: var(--fs-small);
 }
-.nonchat-models-row + .nonchat-models-row { border-top: var(--hairline) solid var(--border); }
+.nonchat-models-row + .nonchat-models-row { border-top: var(--hairline) solid var(--separator); }
 .nonchat-models-name { color: var(--text); }
 .nonchat-models-id {
   min-width: 0;
@@ -9967,7 +10045,7 @@ span.linenumber {
   height: 18px;
   padding: 0 5px;
   box-sizing: border-box;
-  border-radius: 9px;
+  border-radius: var(--radius-md);
   background: var(--accent);
   color: var(--accent-contrast);
   font-size: var(--fs-caption);
@@ -10285,7 +10363,7 @@ span.linenumber {
   height: 18px;
   padding: 0 5px;
   box-sizing: border-box;
-  border-radius: 9px;
+  border-radius: var(--radius-md);
   background: var(--accent);
   color: var(--accent-contrast);
   font-size: var(--fs-caption);
@@ -10584,7 +10662,7 @@ span.linenumber {
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgba(15, 23, 42, 0.32);
+  background: rgba(0, 0, 0, 0.32);
 }
 
 .scheduled-dialog {
@@ -10744,7 +10822,7 @@ html.native-desktop :is(
 .composer-queue-recall {
   background: transparent;
   border: var(--hairline) solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   transition: background 120ms ease, border-color 120ms ease;
 }
 .composer-queue-recall:hover {
@@ -10775,27 +10853,55 @@ html.native-desktop :is(
 
 
 /* Small controls in the sidebar and topbar whose hover used to be set from JS. */
+.session-item-trailing {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: var(--session-row-height);
+  height: 100%;
+  flex-shrink: 0;
+}
 .session-item-more {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 100%;
+  height: 100%;
   padding: 0;
   flex-shrink: 0;
   background: none;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--session-row-radius);
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
+  transition: color 120ms ease;
 }
-.session-item-more:hover,
-.session-item-more.is-open {
+.session-item-more-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: calc(var(--session-row-height) - 2 * var(--session-action-inset));
+  height: calc(var(--session-row-height) - 2 * var(--session-action-inset));
+  border-radius: calc(var(--session-row-radius) - var(--session-action-inset));
+  transition: background 120ms ease;
+}
+.session-item-more-icon svg { display: block; flex: none; }
+.session-item-more:hover .session-item-more-icon,
+.session-item-more.is-open .session-item-more-icon,
+.session-item-more:focus-visible .session-item-more-icon {
   background: var(--bg-selected);
 }
 .session-item-more:hover {
   color: var(--text);
+}
+.session-item-more:focus-visible { outline: none; }
+.session-item-more:focus-visible .session-item-more-icon {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 0;
+}
+.session-item-trailing .session-item-time {
+  padding-inline-end: var(--session-action-inset) !important;
 }
 
 .worktree-remove-button {
@@ -10809,7 +10915,7 @@ html.native-desktop :is(
   flex-shrink: 0;
   background: none;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--text-dim);
   cursor: pointer;
   transition: color 120ms ease, background 120ms ease;
@@ -10933,7 +11039,7 @@ html.native-desktop :is(
   margin-top: 10px;
   overflow: hidden;
   border: var(--hairline) solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--surface) 48%, transparent);
 }
 
@@ -11020,12 +11126,12 @@ html.native-desktop :is(
   justify-content: center;
   gap: 10px;
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 .right-panel-empty-action {
   padding: 4px 12px;
   border: var(--hairline) solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-muted);
   font: inherit;
@@ -11065,7 +11171,7 @@ html.native-desktop :is(
   flex-shrink: 0;
   padding: 0 4px;
   border-radius: 3px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   line-height: 15px;
 }
 .models-spec-unsaved {
@@ -11079,7 +11185,7 @@ html.native-desktop :is(
 .models-override-notice {
   margin-top: 8px;
   padding: 6px 9px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--accent-soft);
   color: var(--text-muted);
   font-size: var(--fs-caption);
@@ -11101,7 +11207,7 @@ html.native-desktop :is(
   padding: 0;
   list-style: none;
   border: var(--hairline) solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 .models-override-row {
@@ -11110,7 +11216,7 @@ html.native-desktop :is(
   gap: 4px 10px;
   padding: 6px 10px;
 }
-.models-override-row + .models-override-row { border-top: var(--hairline) solid var(--border); }
+.models-override-row + .models-override-row { border-top: var(--hairline) solid var(--separator); }
 .models-override-id {
   min-width: 0;
   overflow: hidden;
@@ -11149,7 +11255,7 @@ html.native-desktop :is(
   min-height: 24px;
   padding: 2px 4px 2px 8px;
   border: var(--hairline) solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-hover);
   color: var(--text-muted);
   font-size: var(--fs-small);
@@ -11197,7 +11303,7 @@ html.native-desktop :is(
 .message-attached-file {
   min-width: 0;
   border: var(--hairline) solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-panel);
 }
 
@@ -11235,7 +11341,7 @@ html.native-desktop :is(
   margin: 0;
   padding: 8px 10px;
   overflow: auto;
-  border-top: var(--hairline) solid var(--border);
+  border-top: var(--hairline) solid var(--separator);
   font-family: var(--font-mono);
   font-size: var(--fs-small);
   line-height: 1.5;
@@ -11274,7 +11380,7 @@ html.native-desktop :is(
   min-width: 0;
   padding: 6px 8px;
   border: var(--hairline) solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg);
   color: var(--text);
   font: inherit;
@@ -11332,7 +11438,7 @@ html.native-desktop :is(
 .composer-outbox-mark { flex: 0 0 auto; color: var(--text-dim); }
 .composer-outbox button {
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -11422,7 +11528,7 @@ html.native-desktop :is(
   margin: 6px 10px 8px;
   padding: 8px 10px;
   border: var(--hairline) solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--bg-panel);
   color: var(--text-muted);
 }
@@ -11461,7 +11567,7 @@ html.native-desktop :is(
   flex: 0 0 auto;
   padding: 4px 10px;
   border: var(--hairline) solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text);
   font-size: var(--fs-small);
@@ -11472,51 +11578,8 @@ html.native-desktop :is(
   background: var(--bg-hover);
 }
 
-/* Background washes. The preview cards and the actual canvas share the
-   same stops; mode only chooses the corresponding light or dark variant. */
-:root,
-[data-background-preview="rex"] {
-  --wash-light-stops: #ebe0f3, #f3e7f1, #f7eee4, #f6efcf;
-  --wash-light-glow: rgba(247, 220, 241, 0.75);
-  --wash-dark-stops: #17141f, #191620, #1b1916;
-  --wash-dark-glow: rgba(120, 70, 120, 0.22);
-}
-:root[data-background="mist"],
-[data-background-preview="mist"] {
-  --wash-light-stops: #e3e9f4, #ebeff6, #f1f2f3, #f2f1ec;
-  --wash-light-glow: rgba(210, 225, 248, 0.75);
-  --wash-dark-stops: #12151b, #14171d, #17181b;
-  --wash-dark-glow: rgba(70, 100, 150, 0.22);
-}
-:root[data-background="meadow"],
-[data-background-preview="meadow"] {
-  --wash-light-stops: #e2eee5, #ebf2e7, #f3f2e2, #f5f0d6;
-  --wash-light-glow: rgba(214, 240, 222, 0.75);
-  --wash-dark-stops: #111814, #141a16, #181a14;
-  --wash-dark-glow: rgba(70, 130, 95, 0.2);
-}
-:root[data-background="dusk"],
-[data-background-preview="dusk"] {
-  --wash-light-stops: #e4dbf3, #efdeee, #f6e3dc, #f7e6cf;
-  --wash-light-glow: rgba(246, 206, 222, 0.8);
-  --wash-dark-stops: #191321, #1e161e, #221a17;
-  --wash-dark-glow: rgba(150, 80, 110, 0.25);
-}
-:root[data-background="plain"],
-[data-background-preview="plain"] {
-  --wash-light-stops: #eceef4, #eceef4;
-  --wash-light-glow: transparent;
-  --wash-dark-stops: #141418, #141418;
-  --wash-dark-glow: transparent;
-}
-:root {
-  --canvas-background: linear-gradient(225deg in oklab, var(--wash-light-glow), transparent 50%),
-    linear-gradient(180deg in oklab, var(--wash-light-stops));
-}
-html.dark {
-  --canvas-background: linear-gradient(225deg in oklab, var(--wash-dark-glow), transparent 50%),
-    linear-gradient(180deg in oklab, var(--wash-dark-stops));
-}
+/* One flat, neutral canvas for the sidebar, window and Settings chrome. */
+:root { --canvas-background: var(--bg-panel); }
 
 .settings-dialog-surface { background: var(--canvas-background); }
 .settings-dialog-main { background: var(--surface-elevated); }
@@ -11550,91 +11613,6 @@ html.dark {
   min-width: 0;
 }
 .settings-appearance .settings-theme-option-label { white-space: nowrap; }
-.settings-background-grid {
-  display: grid;
-  /* Use the available content width; empty columns must not force a wrap. */
-  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
-  gap: 18px 16px;
-}
-.settings-background-option {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-  cursor: pointer;
-}
-.settings-background-swatch {
-  position: relative;
-  display: block;
-  aspect-ratio: 1.5;
-  overflow: hidden;
-  border: var(--hairline) solid var(--border);
-  border-radius: var(--radius-lg);
-  background: linear-gradient(225deg in oklab, var(--wash-light-glow), transparent 50%),
-    linear-gradient(180deg in oklab, var(--wash-light-stops));
-  box-shadow: var(--shadow-control);
-}
-html.dark .settings-background-swatch {
-  background: linear-gradient(225deg in oklab, var(--wash-dark-glow), transparent 50%),
-    linear-gradient(180deg in oklab, var(--wash-dark-stops));
-}
-.settings-background-mini-card {
-  position: absolute;
-  inset: 16% 8% -8% 25%;
-  border-radius: 8px;
-  background: var(--workbench-bg);
-}
-.settings-background-mini-sidebar {
-  position: absolute;
-  top: 31%;
-  left: 8%;
-  width: 12%;
-  height: 5px;
-  border-radius: 3px;
-  background: var(--text-dim);
-  opacity: 0.35;
-}
-.settings-background-name {
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--fs-body);
-}
-.settings-background-option:has(input:checked) .settings-background-name {
-  color: var(--text);
-  font-weight: 600;
-}
-.settings-background-option:has(input:checked) .settings-background-swatch {
-  box-shadow: inset 0 0 0 2px var(--menu-selection-color);
-}
-.settings-background-indicator {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--menu-selection-color);
-  display: none;
-  align-items: center;
-  justify-content: center;
-}
-.settings-background-indicator::after {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--workbench-bg);
-}
-.settings-background-option:has(input:checked) .settings-background-indicator { display: flex; }
-.settings-background-option:hover .settings-background-swatch {
-  border-color: var(--menu-selection-color);
-}
-.settings-background-option:has(input:focus-visible) .settings-background-swatch {
-  outline: 2px solid var(--menu-focus-ring);
-  outline-offset: 3px;
-}
-
 .settings-font-heading-row {
   display: flex;
   min-height: 32px;
@@ -11644,7 +11622,8 @@ html.dark .settings-background-swatch {
   margin-bottom: 6px;
 }
 .settings-font-heading-row .settings-general-heading { margin: 0; }
-.settings-font-option {
+.settings-font-option,
+.settings-terminal-option {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(180px, 280px);
   align-items: center;
@@ -11652,6 +11631,10 @@ html.dark .settings-background-swatch {
   padding-block: 14px;
 }
 .settings-font-control { display: grid; min-width: 0; gap: 8px; }
+.settings-terminal-option {
+  grid-template-columns: minmax(96px, 1fr) minmax(120px, 220px);
+  column-gap: 16px;
+}
 .settings-font-control .app-select-trigger { width: 100%; min-width: 0; }
 .settings-font-custom { display: flex; align-items: center; gap: 8px; }
 .settings-font-custom input {
@@ -11671,7 +11654,7 @@ html.dark .settings-background-swatch {
   display: grid;
   gap: 6px;
   padding: 16px 14px;
-  border-top: var(--hairline) solid var(--border);
+  border-top: var(--hairline) solid var(--separator);
   font-size: var(--fs-body);
   line-height: 1.6;
   overflow-wrap: anywhere;
@@ -11680,9 +11663,9 @@ html.dark .settings-background-swatch {
 .settings-font-preview code { color: var(--text-muted); white-space: pre-wrap; }
 .settings-font-status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 @media (max-width: 640px) {
-  .settings-font-option { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .settings-font-option,
+  .settings-terminal-option { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .settings-font-custom input { font-size: 16px; }
-  .settings-background-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 12px; }
   .settings-appearance .settings-theme-options { width: 100%; }
   .settings-appearance .settings-theme-option { flex: 1 1 0; padding-inline: 5px; gap: 0; }
   .settings-appearance .settings-theme-option svg { display: none; }
@@ -11773,7 +11756,7 @@ html.dark .settings-background-swatch {
   align-items: center;
   gap: 8px;
   margin-top: 12px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--text);
   cursor: pointer;
 }
@@ -11782,4 +11765,160 @@ html.dark .settings-background-swatch {
   background: var(--danger);
   border-color: var(--danger);
   color: #fff;
+}
+
+/* Accent follows the system (macOS Appearance > Accent color). The blue above
+   stays as the fallback for engines without the AccentColor keyword. */
+@supports (color: AccentColor) {
+  :root,
+  html.dark {
+    --menu-selection-color: AccentColor;
+    --focus-ring: color-mix(in srgb, AccentColor 60%, transparent);
+    --selection: color-mix(in srgb, AccentColor 26%, transparent);
+    --info: AccentColor;
+  }
+}
+
+/* Code blocks scroll sideways on long lines. Overlay scrollbars hide at rest,
+   so give the bar its own gutter and keep a slim thumb visible as the hint,
+   instead of letting it sit on the last line against the frame. */
+.markdown-code-block pre[class*="language-"] {
+  padding-bottom: 14px !important;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+.markdown-code-block pre[class*="language-"]::-webkit-scrollbar { height: 10px; }
+.markdown-code-block pre[class*="language-"]::-webkit-scrollbar-track { background: transparent; }
+.markdown-code-block pre[class*="language-"]::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--scroll-thumb);
+  background-clip: padding-box;
+}
+/* Shared conversation confirmations use the workbench's quiet danger action,
+   rather than packing a filled button into a 28px sidebar row. */
+.chat-confirm-dialog {
+  width: 400px;
+  border-radius: var(--radius-xl);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+}
+.chat-confirm-dialog .project-trust-body { padding: 20px; }
+.chat-confirm-dialog .project-trust-error {
+  padding-inline: 20px;
+  color: var(--danger);
+}
+.chat-confirm-subject {
+  margin-block-start: 12px;
+  max-height: min(180px, 30dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  color: var(--text);
+}
+.chat-confirm-dialog .project-trust-footer {
+  gap: var(--choice-inset);
+  padding: 0 20px 20px;
+  border-top: 0;
+}
+.chat-confirm-dialog .project-trust-button {
+  border-radius: var(--radius-sm);
+  font-family: var(--font-ui);
+}
+.chat-confirm-dialog .project-trust-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.chat-confirm-dialog .project-trust-button.is-danger {
+  border-color: color-mix(in srgb, var(--danger) 24%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface-elevated));
+  color: color-mix(in srgb, var(--danger) 85%, var(--text));
+}
+.chat-confirm-dialog .project-trust-button.is-danger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--border));
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface-elevated));
+}
+.terminal-panel {
+  --terminal-magenta: #9042a8;
+  --terminal-cyan: #087e8b;
+  background: var(--surface);
+  color: var(--text);
+}
+html.dark .terminal-panel {
+  --terminal-magenta: #d8a0ed;
+  --terminal-cyan: #67d5df;
+}
+.terminal-panel-header {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text-muted);
+  gap: 8px;
+}
+.terminal-panel-path { flex: 1; }
+.terminal-panel-header button {
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+.terminal-panel-header button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.terminal-panel-exit { color: var(--text-muted); }
+.terminal-panel-error {
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+  border-color: var(--border);
+  color: var(--danger);
+}
+.terminal-status-dot { background: var(--warning); }
+.terminal-status-dot.is-ready { background: var(--success); }
+.terminal-status-dot.is-exited,
+.terminal-status-dot.is-error { background: var(--danger); }
+.terminal-xterm .xterm-viewport { background-color: var(--surface); }
+/* Prism renders gutter numbers as text and already sets unprefixed user-select
+   inline. Add the WebKit-prefixed form for desktop selection compatibility;
+   scope both declarations to the gutter so code tokens remain selectable.
+   Chromium drag selection is covered by E2E; native WebKit needs desktop QA. */
+.markdown-code-block .react-syntax-highlighter-line-number {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Conversation-local find: a normal flex row outside the transcript scrollport,
+   so scrolling never moves the controls or adds searchable text to the results.
+   Match colors intentionally keep dark text on an opaque warm surface in both
+   themes; active orange distinguishes keyboard navigation from passive matches.
+   All other surfaces, focus rings and typography use the shared theme tokens. */
+.conversation-find {
+  z-index: 45;
+  flex: 0 0 auto;
+  width: min(520px, calc(100% - 24px));
+  margin: 8px 12px 0 auto;
+  padding: 6px 8px;
+  border: var(--hairline) solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-control);
+  color: var(--text);
+  font-size: var(--fs-small);
+}
+.conversation-find-row { display: flex; align-items: center; gap: 4px; }
+.conversation-find input {
+  flex: 1; min-width: 0; width: 0; padding: 5px 6px;
+  border: 0; border-radius: 5px; background: transparent; color: var(--text); font: inherit;
+}
+.conversation-find input:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.conversation-find-count { flex-shrink: 0; min-width: 42px; text-align: center; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.conversation-find button { flex-shrink: 0; border: 0; border-radius: 5px; background: transparent; color: var(--text); cursor: pointer; font: inherit; }
+.conversation-find-row button { width: 28px; height: 28px; font-size: 18px; }
+.conversation-find button:hover:not(:disabled) { background: var(--bg-hover); }
+.conversation-find button:disabled { opacity: .4; cursor: default; }
+.conversation-find button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.conversation-find-hint { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 3px 6px 0; color: var(--text-dim); font-size: var(--fs-caption); }
+.conversation-find-hint button { color: var(--accent); padding: 2px 0; }
+/* Match the app's 44px touch targets without widening desktop controls. */
+@media (pointer: coarse) {
+  .conversation-find-row button { width: 44px; height: 44px; }
+  .conversation-find input { min-height: 44px; }
 }

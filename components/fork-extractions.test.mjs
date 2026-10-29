@@ -557,7 +557,8 @@ test("fork project actions fall back when the native popup cannot open", async (
   const handler = source.slice(source.indexOf("const openProjectMenu ="), source.indexOf("// Phase A: project tree"));
   assert.match(handler, /showNativeProjectMenu[\s\S]*\.then\(\(shown\)/);
   assert.match(handler, /if \(!shown\) openDomMenu\(\)/);
-  assert.match(handler, /setProjectMenuPos\(\{ top, left \}\)/);
+  assert.match(handler, /setProjectMenuPos\(\{ top: rect\.bottom \+ 4, left \}\)/);
+  assert.match(handler, /setProjectMenuAnchor\(\{ top: rect\.top, bottom: rect\.bottom, right: rect\.right \}\)/);
 });
 
 test("sidebar Settings opens the remembered safe section directly without a redundant menu", async () => {

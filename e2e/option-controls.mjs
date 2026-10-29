@@ -154,7 +154,7 @@ try{
   const input=page.locator('textarea');await input.fill('');await input.press('ArrowUp');
   const history=page.locator('.composer-completion-popover.is-history');await history.waitFor();
   await assertForkRows(history,history.locator('.composer-history-item'),'fork input history',12);
-  await input.press('Enter');await history.waitFor({state:'hidden'});assert.equal(await input.inputValue(),'Second prompt');
+  await input.press('Tab');await history.waitFor({state:'hidden'});assert.equal(await input.inputValue(),'Second prompt');
   await input.fill('/');const commands=page.locator('.composer-completion-body.is-slash');await commands.waitFor();
   const commandRows=commands.locator('.composer-slash-item');assert.ok(await commandRows.count()>=3);
   const commandRects=await commandRows.evaluateAll(rows=>rows.map(el=>{const r=el.getBoundingClientRect();return {top:r.top,bottom:r.bottom,width:r.width,scroll:el.scrollWidth,client:el.clientWidth};}));

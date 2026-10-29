@@ -12,3 +12,8 @@ test("a chat with its own folder opens files it made; a legacy chat opens none",
   // Composer behaviour (file import, @ completion) keeps treating a chat as project-less.
   assert.match(source, /const cwd = chatOnly \? undefined : session\?\.cwd \?\? newSessionCwd;/);
 });
+
+test("code-block external opening stays inside the message workspace", async () => {
+  const markdown = await readFile(new URL("./MarkdownBody.tsx", import.meta.url), "utf8");
+  assert.match(markdown, /cwd && isPathInside\(filePath, cwd\) && isTauriDesktop\(\)/);
+});

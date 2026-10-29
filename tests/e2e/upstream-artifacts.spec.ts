@@ -27,6 +27,7 @@ test("artifact cards open in the fork panel with isolated previews and local fil
     const data = await response.json();
     return data.sessions.some((session: { id: string }) => session.id === id);
   }).toBe(true);
+  await expect.poll(async () => (await request.get(`/api/worktrees?cwd=${encodeURIComponent(cwd)}`)).status(), { timeout: 15_000 }).toBe(200);
   const renamed = await request.patch(`/api/sessions/${id}`, { data: { name: "Artifact acceptance" } });
   expect(renamed.ok(), await renamed.text()).toBeTruthy();
   const errors: string[] = [];

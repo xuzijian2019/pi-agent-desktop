@@ -7,6 +7,7 @@ import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecuti
 import { normalizeCustomPanelLines } from "@/lib/ansi";
 import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantBlocks, hasAssistantAnswer, isAssistantTruncated, isMessageGroupAnchor, splitFinalAssistantBlocks } from "@/lib/message-display";
+import { ConversationFind } from "./ConversationFind";
 import { extractTurnWrittenFiles, type WrittenFile } from "@/lib/turn-written-files";
 import { buildQuotedSelection } from "@/lib/quoted-selection";
 import { MessageView } from "./MessageView";
@@ -1373,6 +1374,28 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
         {recapError && <div role="alert" className="mb-2 text-sm text-[var(--danger)]">{recapError}</div>}
         {recap && <><div className="mb-2 text-xs text-text-muted">{t("recap.times", { snapshot: new Date(recap.snapshotAt).toLocaleTimeString(), generated: new Date(recap.generatedAt).toLocaleTimeString() })}</div><MarkdownBody>{recap.text}</MarkdownBody></>}
       </section>}
+      {/* Search owns only rendered transcript text. Reveal the local window on
+          open, but keep server history paging explicit and reuse loadContext's
+          session/request guards. A leaf switch is a new search scope too. */}
+      <ConversationFind
+        contentRef={messageContentRef}
+        scopeKey={`${lazyLoadSessionKey}:${activeLeafId}`}
+        onReveal={() => setVisibleCount((count) => Math.max(count, messages.length))}
+        hasEarlier={hasEarlierMessages}
+        busy={sessionBusy || loading}
+        onLoadEarlier={async () => {
+          if (!session?.id || !historyCursor || loadingOlderRef.current || sessionBusy) return;
+          // Share the sentinel's paging lock so search and scroll cannot prepend
+          // the same page concurrently. Do not fetch older pages during a run.
+          loadingOlderRef.current = true;
+          try {
+            const context = await loadContext(session.id, activeLeafId, historyCursor, { tail: 200 });
+            if (context) setVisibleCount((count) => count + context.messages.length);
+          } finally {
+            loadingOlderRef.current = false;
+          }
+        }}
+      />
 
       {isDragOver && (
         <div className="pointer-events-none absolute inset-0 z-50 flex animate-[drop-zone-in_0.15s_ease_both] items-center justify-center bg-[var(--accent-soft)] backdrop-blur-[1px]">

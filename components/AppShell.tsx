@@ -16,14 +16,13 @@ import { useScheduledRunNotifications } from "@/hooks/useScheduledRunNotificatio
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
 
 import { TabBar, type Tab } from "./TabBar";
+import { LazyTerminalPanel as TerminalPanel, preloadTerminalPanel } from "./LazyTerminalPanel";
 
 // Heavy, rarely-used surfaces are code-split out of the main bundle. The
 // config modals may never be opened at all; FileViewer drags in markdown +
 // syntax highlighting a second time and only matters once a file tab opens.
 const FileViewer = dynamic(() => import("./FileViewer").then((m) => m.FileViewer), { ssr: false });
 const FileExplorer = dynamic(() => import("./FileExplorer").then((m) => m.FileExplorer), { ssr: false });
-// Only mounted once opened; xterm alone is a large share of the page bundle.
-const TerminalPanel = dynamic(() => import("./TerminalPanel").then((m) => m.TerminalPanel), { ssr: false });
 const ScheduledView = dynamic(() => import("./scheduled/ScheduledView").then((m) => m.ScheduledView), { ssr: false });
 import { openFileTab, saveFileViewerState } from "./file-tab-state";
 import { SettingsPanel } from "./SettingsPanel";
@@ -32,7 +31,6 @@ import { ProjectTrustDialog, type ProjectTrustFailure } from "./ProjectTrustDial
 import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { UpdateReminder } from "./UpdateReminder";
 import { useTheme } from "@/hooks/useTheme";
-import { useBackground } from "@/hooks/useBackground";
 import { useFonts } from "@/hooks/useFonts";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -114,7 +112,6 @@ export function AppShell() {
   // into the desktop config while the settings dialog is closed. The sidebar's
   // sun/moon toggle was removed — theme selection lives in Settings → General.
   useTheme();
-  useBackground();
   useFonts();
   const { locale, t: translate } = useI18n();
   const isMobile = useIsMobile();
@@ -257,6 +254,23 @@ export function AppShell() {
   const rightPanelFullWidth = rightPanelOpen && rightPanelExpanded && !isMobile;
   // The open desktop panel runs full height, so it owns the window's top-right corner.
   const panelOwnsTopRight = rightPanelOpen && !isMobile;
+  useEffect(() => {
+    const preload = () => {
+      // A failed speculative load must not make the on-demand loader's state
+      // sticky; opening the panel below retries the same import.
+      void preloadTerminalPanel().catch(() => {});
+    };
+    if (rightPanelOpen) {
+      preload();
+      return;
+    }
+    if (typeof window.requestIdleCallback === "function") {
+      const id = window.requestIdleCallback(preload, { timeout: 2_000 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const id = window.setTimeout(preload, 1_000);
+    return () => window.clearTimeout(id);
+  }, [rightPanelOpen]);
   useEffect(() => {
     if (!rightPanelOpen || isMobile) setRightPanelExpanded(false);
   }, [rightPanelOpen, isMobile]);

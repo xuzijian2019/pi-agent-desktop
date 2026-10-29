@@ -22,6 +22,22 @@ for development.
 
 Coverage:
 
+- `node e2e/terminal-settings.mjs` checks the General terminal picker with Windows
+  and macOS lists, light/dark, English/Chinese, narrow layouts, keyboard navigation,
+  persistence, unavailable shells and load/save errors. No PTY starts on selection.
+- `node e2e/appearance.mjs` checks theme modes, the neutral canvas and responsive
+  appearance settings in light and dark modes.
+- `node e2e/sidebar-menu-placement.mjs` opens the session and project "…" menus
+  on rows near the bottom of the window and checks that they flip upward, stay
+  inside the viewport and keep their last entry reachable, in both themes and
+  languages.
+- Terminal renderer cold/preloaded opening, missing-session reconnect, light/dark
+  colors and fitting below a workspace toolbar (`node e2e/terminal-theme.mjs`).
+- Session deletion keeps sidebar rows stable and uses the shared confirmation
+  dialog. `node e2e/session-delete.mjs` covers menu and Shift entry points,
+  light/dark layouts, full names, error/retry, focus and the chat-folder checkbox.
+  It also measures the more-action highlight in hover/focus/open states across
+  three fonts: 4px top/bottom/trailing clearance, centered dots and a 28px hit area.
 - A 5,000-message session opens with exactly the last 50 entries, bounded
   detail/context responses, and no browser errors.
 - Desktop and mobile scrolling load two consecutive older pages. Each response

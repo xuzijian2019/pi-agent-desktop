@@ -1,12 +1,22 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties, type MouseEvent, type ReactNode } from "react";
-import { createElement as renderSyntaxNode, type SyntaxHighlighterProps } from "react-syntax-highlighter";
-import { SyntaxHighlighter, vs, vscDarkPlus } from "@/lib/syntax-highlighting";
-import { createPortal } from "react-dom";
+import {
+  createElement as renderSyntaxNode,
+  type SyntaxHighlighterProps,
+} from "react-syntax-highlighter";
+import { SyntaxHighlighter } from "@/lib/syntax-highlighting";
+import { calmCodeTheme } from "@/lib/code-theme";
 import ReactMarkdown from "react-markdown";
-import { useTheme } from "@/hooks/useTheme";
-import { DOCX_PREVIEW_MAX_BYTES, getFileExt, isAudioPath, isDocumentPreviewPath, isImagePath, isVideoPath } from "@/lib/file-types";
+import {
+  DOCX_PREVIEW_MAX_BYTES,
+  getFileExt,
+  isAudioPath,
+  isDocumentPreviewPath,
+  isImagePath,
+  isVideoPath,
+} from "@/lib/file-types";
+import { createPortal } from "react-dom";
 import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
 import { parsePdfPageFragment, resolveLocalFileHref, shouldOpenLocalFileInApp } from "@/lib/file-links";
 import { parseFrontmatter } from "@/lib/frontmatter";
@@ -929,7 +939,6 @@ function TextFileViewer({
   onStateChange,
   watchEnabled = true,
 }: Props) {
-  const { isDark } = useTheme();
   const { t } = useI18n();
   const [data, setData] = useState<FileData | null>(null);
   const [gitDiff, setGitDiff] = useState<GitFileDiffResponse | null>(null);
@@ -1177,7 +1186,7 @@ function TextFileViewer({
       <SyntaxHighlighter
         className={wrapLines ? "file-source-view is-wrapped" : "file-source-view"}
         language={language === "text" ? "plaintext" : language}
-        style={isDark ? vscDarkPlus : vs}
+        style={calmCodeTheme}
         showLineNumbers
         lineNumberStyle={{
           ...FILE_LINE_NUMBER_STYLE,
@@ -1207,7 +1216,7 @@ function TextFileViewer({
         {viewerContent}
       </SyntaxHighlighter>
     ),
-    [isDark, language, viewerContent, wrapLines],
+    [language, viewerContent, wrapLines],
   );
   const lightweightSourceLines = useMemo(
     () => useLightweightSource ? sourceLines.map((line, lineIndex) => (
