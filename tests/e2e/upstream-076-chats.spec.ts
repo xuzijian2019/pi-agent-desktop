@@ -107,24 +107,12 @@ for (const theme of ["light", "dark"] as const) {
       await expect(toggle).toHaveCSS("display", "flex");
       await page.screenshot({ path: info.outputPath(`076-access-${theme}-${width}.png`), animations: "disabled" });
       await toggle.click();
-      const dialog = page.getByRole("dialog", { name: "Let this chat use your computer?", exact: true });
-      await fitsViewport(dialog, width);
-      await expect(dialog).toContainText("run shell commands and read and change files");
-      await page.screenshot({ path: info.outputPath(`076-confirm-${theme}-${width}.png`), animations: "disabled" });
-      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-      await expect(dialog).toHaveCount(0);
-      expect((await access(request, current.id)).unlocked).toBe(false);
-
-      await (await openAccessMenu(page)).click();
-      await dialog.getByRole("button", { name: "Allow", exact: true }).click();
-      await expect(dialog).toHaveCount(0);
+      await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect.poll(async () => (await access(request, current.id)).unlocked).toBe(true);
       expect((await access(request, other.id)).unlocked).toBe(false);
       await expect(composer).toHaveValue("Unsent draft stays in this chat through permission changes.");
       await (await openAccessMenu(page, true)).click();
-      const lockDialog = page.getByRole("dialog", { name: "Stop this chat from using your computer?", exact: true });
-      await lockDialog.getByRole("button", { name: "Turn off", exact: true }).click();
-      await expect(lockDialog).toHaveCount(0);
+      await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect.poll(async () => (await access(request, current.id)).unlocked).toBe(false);
       expect((await access(request, other.id)).unlocked).toBe(false);
       await fitsViewport(composer, width);

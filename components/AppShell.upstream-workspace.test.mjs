@@ -129,13 +129,13 @@ test("a direct Scheduled URL survives project selection and delayed workspace re
     workspaceRestoreTokenRef: { current: 0 },
     activeProjectKeyRef: { current: "/old-project" },
     activeNewSessionDraftKeyRef: { current: null },
-    scheduledOpenRef: { current: true },
+    pageOpenRef: { current: true },
     suppressCwdBumpRef: { current: false },
     branchLeafChangeFnRef: { current: null },
     chatWorkspaceCwd: null, newSessionWorkspaceKind: "project",
     activeCwd: "/old-project", activeFileTabId: null, selectedSession: null,
     newSessionCwd: null, sessionCatalog: [], sessionKey: 0, isMobile: false,
-    scheduledOpen: true, branchTree: [], branchActiveLeafId: null, branchSwitchLocked: false,
+    workspaceView: "scheduled", branchTree: [], branchActiveLeafId: null, branchSwitchLocked: false,
     activeTopPanel: null, fileTabs: [], rightPanelOpen: false,
     newSessionDraftId: "initial", searchTarget: null, initialSessionRestored: true,
   });
@@ -144,15 +144,15 @@ test("a direct Scheduled URL survives project selection and delayed workspace re
     globalThis.navigate = { handleCwdChange, handleSelectSession };
   `, context);
   context.navigate.handleCwdChange("/project", "/project", "/project");
-  assert.equal(context.scheduledOpen, true);
+  assert.equal(context.workspaceView, "scheduled");
   assert.equal(replacements.length, 0);
   response.resolve({ ok: true, json: async () => ({ sessions: [session] }) });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(context.selectedSession.id, session.id, "the hidden workspace still restores");
-  assert.equal(context.scheduledOpen, true);
+  assert.equal(context.workspaceView, "scheduled");
   assert.equal(replacements.length, 0, "background restore must not replace ?view=scheduled");
   context.navigate.handleSelectSession(session);
-  assert.equal(context.scheduledOpen, false, "explicit session selection leaves Scheduled");
+  assert.equal(context.workspaceView, null, "explicit session selection leaves Scheduled");
   assert.equal(pushes.at(-1)[2], "?session=remembered");
 });
 
@@ -224,7 +224,7 @@ test("extracted workspace state persists browser panels without restoring the de
 test("new project navigation cannot inherit Chat workspace restrictions", () => {
   const context = withState({
     chatWorkspaceCwd: "/server-owned-chat", newSessionWorkspaceKind: "chat",
-    scheduledOpen: true, selectedSession: { id: "chat", cwd: "/server-owned-chat", workspaceKind: "chat" },
+    workspaceView: "artifacts", pageOpenRef: { current: true }, selectedSession: { id: "chat", cwd: "/server-owned-chat", workspaceKind: "chat" },
     newSessionCwd: "/server-owned-chat", newSessionDraftId: "old", sessionKey: 1,
     navigationGeneration: { current: 0 }, activeNewSessionDraftKeyRef: { current: "old" },
     branchTree: [1], branchActiveLeafId: "old", branchLeafChangeFnRef: { current: () => {} },
@@ -262,6 +262,9 @@ test("browser Back to a blank project reclassifies a previously active Chat", as
   const context = withState({
     chatWorkspaceCwd: "/server-owned-chat", newSessionWorkspaceKind: "chat",
     navigationGeneration: { current: 0 }, selectedSession: { id: "chat" },
+    workspaceView: null, pageOpenRef: { current: false },
+    parseWorkspaceView: value => value === "scheduled" || value === "artifacts" ? value : null,
+    invalidateWorkspaceRestore() {},
     newSessionCwd: "/server-owned-chat", activeCwd: "/server-owned-chat",
     URLSearchParams,
     window: {

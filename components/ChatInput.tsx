@@ -60,6 +60,8 @@ export interface AttachedImage {
 }
 
 interface Props {
+  /** Explicit user draft clearing also leaves history-edit mode; never called on send. */
+  onClearDraft?: () => void;
   onSend: (message: string, images?: AttachedImage[]) => void;
   /** Show onboarding hints only on a fresh new-task composer. */
   showInputHints?: boolean;
@@ -172,7 +174,7 @@ export interface ChatInputHandle {
   currentSetup: () => TaskSetup;
   insertText: (text: string) => void;
   insertIfEmpty: (text: string) => void;
-  replaceMessage: (message: UserMessage) => void;
+  replaceMessage: (message: UserMessage) => boolean;
   prependText: (text: string) => void;
   addImages: (files: File[]) => void;
   /** Chats only: read text files into chips that travel inside the next message. */
@@ -834,7 +836,7 @@ function DraftSavingIndicator({ loading }: { loading: boolean }) {
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
-  onSend, onAttachFiles, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, workspaceUnavailable, onRecheckWorkspace, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange, modelSwitching,
+  onClearDraft, onSend, onAttachFiles, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, workspaceUnavailable, onRecheckWorkspace, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange, modelSwitching,
   defaultModel, onSetDefaultModel,
   compactError, compactNotice, compactResult, toolPreset, onToolPresetChange,
   thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
@@ -972,6 +974,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const attachedImagesRef = useRef(attachedImages);
   const pastedTextsRef = useRef(pastedTexts);
   const pendingImageCountRef = useRef(0);
+  // Explicit clearing invalidates attachment reads already in flight, so a late
+  // image conversion/Word import cannot repopulate the cleared draft.
+  const attachmentClearVersionRef = useRef(0);
+  const attachmentClearedDraftsRef = useRef(new Map<string | undefined, number>());
   const {
     hashQuery, setHashQuery, hashMenuOpen, setHashMenuOpen, hashActiveIndex, setHashActiveIndex,
     hashMatches, hashItemRefs, sessionIndex, sessionMentionTargetsRef, updateHashQuery, applyHashCompletion,
@@ -1033,7 +1039,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     replaceMessage(message: UserMessage) {
       const ta = textareaRef.current;
       const current = ta ? ta.value : value;
-      if (!canRestoreUserMessage(current, attachedImagesRef.current.length + attachedFilesRef.current.length, pendingImageCountRef.current)) return;
+      if (!canRestoreUserMessage(current, attachedImagesRef.current.length + attachedFilesRef.current.length, pendingImageCountRef.current)) return false;
 
       // The message's attached files come back as attachments, not as markup in the text.
       const split = splitMessageForComposer(getUserMessageText(message));
@@ -1057,6 +1063,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         ta.style.height = "auto";
         ta.style.height = `${ta.scrollHeight}px`;
       });
+      return true;
     },
     prependText(text: string) {
       if (!text.trim()) return;
@@ -1212,6 +1219,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       // Reading a Word file asks the server, so the user may have moved to another chat by
       // the time it answers: the files belong to the chat they were attached in.
       const startedIn = draftKeyRef.current;
+      const clearVersion = attachmentClearVersionRef.current;
       const { accepted, rejected } = await readChatTextAttachments(files, attachedFilesRef.current, extractDocxText);
       let target = startedIn;
       const visited = new Set<string>();
@@ -1219,6 +1227,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         visited.add(target);
         target = attachmentDraftAliasesRef.current.get(target);
       }
+      if ([...visited, target].some((key) => (attachmentClearedDraftsRef.current.get(key) ?? 0) > clearVersion)) return rejected;
       const current = draftKeyRef.current === target;
       const stored = target ? getDraft(target) : undefined;
       const existing = current ? attachedFilesRef.current : stored?.files ?? [];
@@ -1277,6 +1286,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       .filter((f) => f.type.startsWith("image/") && f.size <= MAX_ATTACHED_IMAGE_BYTES)
       .slice(0, remaining);
     if (!imageFiles.length) return;
+    const clearVersion = attachmentClearVersionRef.current;
     pendingImageCountRef.current += imageFiles.length;
     try {
       const newImages = await Promise.all(
@@ -1285,7 +1295,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           previewUrl: URL.createObjectURL(file),
         }))
       );
-      appendAttachedImages(newImages);
+      if (clearVersion !== attachmentClearVersionRef.current) newImages.forEach(revokeImagePreview);
+      else appendAttachedImages(newImages);
     } finally {
       pendingImageCountRef.current -= imageFiles.length;
     }
@@ -1541,13 +1552,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (invalidDraftImages || orphanedPaste || (draftKey && hydratedDraftKey !== draftKey) || persistenceStatus === "conflict") return;
     const msg = splicePastedTexts(value, pastedTexts).trim();
     if (!msg && !attachedImages.length && !attachedFilesRef.current.length) return;
+    const clearVersion = attachmentClearVersionRef.current;
     if (await dispatchBuiltin(msg)) return;
+    if (clearVersion !== attachmentClearVersionRef.current) return;
     // A bare /mcp still reaches the handler mid-run: it opens Settings › MCP when
     // pi's built-in MCP extension owns it (useAgentSession).
     if (isStreaming && !isBareMcpCommand(msg)) return;
     if (!attachedImages.length && !attachedFilesRef.current.length && msg.startsWith("/") && onBuiltinCommand) {
       const result = await onBuiltinCommand(msg);
-      if (draftKeyRef.current !== draftKey) return;
+      if (draftKeyRef.current !== draftKey || clearVersion !== attachmentClearVersionRef.current) return;
       if (result.handled) {
         if (!result.error) clearInput();
         return;
@@ -1561,7 +1574,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     try {
       const original = JSON.stringify(snapshotRef.current());
       const prepared = await prepare();
-      if (draftKeyRef.current !== draftKey) return;
+      if (draftKeyRef.current !== draftKey || clearVersion !== attachmentClearVersionRef.current) return;
       onSend(prepared.text, prepared.images.length ? attachedImages : undefined);
       if (JSON.stringify(snapshotRef.current()) === original) clearInput();
     } catch (e) { setPreparationError(String(e)); } finally { preparingRef.current = false; }
@@ -1805,12 +1818,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (invalidDraftImages || orphanedPaste || (draftKey && hydratedDraftKey !== draftKey) || persistenceStatus === "conflict") return;
     const msg = splicePastedTexts(value, pastedTexts).trim();
     if (!msg && !attachedImages.length && !attachedFilesRef.current.length) return;
+    const clearVersion = attachmentClearVersionRef.current;
     if (await dispatchBuiltin(msg)) return;
+    if (clearVersion !== attachmentClearVersionRef.current) return;
     if (!attachedImages.length && !attachedFilesRef.current.length && onBuiltinCommand && isBareMcpCommand(msg)) {
       // Settings › MCP opens when pi's built-in MCP extension owns /mcp
       // (useAgentSession); another extension's /mcp is queued as before.
       const result = await onBuiltinCommand(msg);
-      if (draftKeyRef.current !== draftKey) return;
+      if (draftKeyRef.current !== draftKey || clearVersion !== attachmentClearVersionRef.current) return;
       if (result.handled) {
         if (!result.error) clearInput();
         return;
@@ -1821,7 +1836,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     try {
       const original = JSON.stringify(snapshotRef.current());
       const prepared = await prepare();
-      if (draftKeyRef.current !== draftKey) return;
+      if (draftKeyRef.current !== draftKey || clearVersion !== attachmentClearVersionRef.current) return;
       const streamingBehavior = mode === "steer" ? "steer" : "followUp";
       const images = prepared.images.length ? attachedImages : undefined;
       if (mode === "steer" && !attachedFilesRef.current.length && msg.startsWith("/") && onPromptWithStreamingBehavior) onPromptWithStreamingBehavior(prepared.text, streamingBehavior, images);
@@ -2672,6 +2687,21 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             rows={1}
           />
 
+          {(value.length > 0 || attachedImages.length > 0 || attachedFiles.length > 0) && (
+            <button type="button" className="composer-clear-button"
+              title={t("chat.clearDraft")} aria-label={t("chat.clearDraft")}
+              onClick={() => {
+                attachmentClearVersionRef.current += 1;
+                attachmentClearedDraftsRef.current.set(draftKeyRef.current, attachmentClearVersionRef.current);
+                clearInput();
+                onClearDraft?.();
+                textareaRef.current?.focus();
+              }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+                <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />
+              </svg>
+            </button>
+          )}
           <button
             type="button"
             className={compact ? "native-primary-button" : "native-primary-button composer-send-button"}

@@ -115,7 +115,7 @@ test("prepared composer sends remain single-shot and never clear a newer draft",
       invalidDraftImages: false, orphanedPaste: false, draftKey: "a", hydratedDraftKey: "a", persistenceStatus: "saved",
       attachedFilesRef: { current: [] }, value: "original", pastedTexts: [], attachedImages: [], isStreaming: false, workspaceUnavailable: false,
       splicePastedTexts: (text) => text, dispatchBuiltin: async () => false, onBuiltinCommand: undefined,
-      draftKeyRef, preparingRef: { current: false }, snapshotRef: { current: () => draft },
+      draftKeyRef, preparingRef: { current: false }, attachmentClearVersionRef: { current: 0 }, snapshotRef: { current: () => draft },
       setPreparationError(message) { assert.equal(message, ""); },
       prepare() { prepareCount += 1; started(); return preparation; },
       onSend(...args) { calls.push(args); }, clearInput() { clearCount += 1; },
@@ -151,8 +151,10 @@ test("async text attachments revalidate limits and follow a rekey without resurr
   const key = { current: "new" };
   const aliases = { current: new Map() };
   const stored = new Map();
+  const clearVersion = { current: 0 };
+  const clearedDrafts = { current: new Map() };
   const fn = script.runInNewContext({
-    draftKeyRef: key, attachedFilesRef: refs, attachmentDraftAliasesRef: aliases,
+    draftKeyRef: key, attachedFilesRef: refs, attachmentDraftAliasesRef: aliases, attachmentClearVersionRef: clearVersion, attachmentClearedDraftsRef: clearedDrafts,
     readChatTextAttachments: () => new Promise(resolve => pending.push(resolve)), extractDocxText() {},
     getDraft: k => stored.get(k), setDraft: (k, value) => stored.set(k, value),
     setAttachedFiles: files => { refs.current = files; },
@@ -172,4 +174,21 @@ test("async text attachments revalidate limits and follow a rekey without resurr
   pending[2]({ accepted: [file(8)], rejected: [] });
   assert.equal((await third)[0].reason, "total-too-large");
   assert.equal(refs.current.length, 1);
+
+  refs.current = [];
+  const fourth = fn([]);
+  key.current = "other";
+  clearVersion.current += 1;
+  clearedDrafts.current.set("other", clearVersion.current);
+  pending[3]({ accepted: [file(9)], rejected: [] });
+  assert.equal((await fourth).length, 0);
+  assert.equal(stored.get("session").files[0].name, "9.txt", "clearing another chat keeps the original import");
+
+  key.current = "session";
+  const fifth = fn([]);
+  clearVersion.current += 1;
+  clearedDrafts.current.set("session", clearVersion.current);
+  pending[4]({ accepted: [file(10)], rejected: [] });
+  assert.equal((await fifth).length, 0);
+  assert.equal(refs.current.length, 0, "clearing the owning chat discards its late import");
 });

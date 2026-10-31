@@ -55,6 +55,28 @@ async function assertChoiceGeometry(surface,rows,label){
  }
  return {inset:8,gap:4,radius:5};
 }
+async function checkMergedThemeStyles(page,width){
+ // CSS-only samples cover shared selectors not used by the fork's composer rows.
+ await page.evaluate(()=>{
+  const host=document.createElement('div');host.id='merge-theme-guards';
+  host.style.cssText='position:fixed;top:8px;left:8px;width:calc(100vw - 16px);max-width:360px;z-index:2000';
+  host.innerHTML='<div class="native-popover app-menu"><button class="app-default-star" type="button">☆</button></div><div class="chat-shell-prompt-wrap"><div class="chat-shell-prompt"><span class="chat-shell-prompt-text">Shell access</span><button class="chat-shell-prompt-button" type="button">Allow and continue</button></div></div>';
+  document.body.append(host);
+ });
+ try{
+  const star=page.locator('#merge-theme-guards .app-default-star');await star.hover();
+  await page.waitForFunction(()=>{const el=document.querySelector('#merge-theme-guards .app-default-star');return el?.matches(':hover')&&el.getAnimations().every(animation=>animation.playState==='finished');});
+  const starStyle=await star.evaluate(el=>{const s=getComputedStyle(el);return {border:s.borderTopWidth,bg:s.backgroundColor,shadow:s.boxShadow};});
+  assert.equal(starStyle.border,'0px');assert.equal(starStyle.bg,'rgba(0, 0, 0, 0)');assert.equal(starStyle.shadow,'none');
+  const prompt=page.locator('#merge-theme-guards .chat-shell-prompt-wrap');const bounds=await prompt.boundingBox();
+  assert.ok(bounds.x>=0&&bounds.x+bounds.width<=width,JSON.stringify({width,bounds}));
+  const button=page.locator('#merge-theme-guards .chat-shell-prompt-button');
+  const style=await button.evaluate(el=>{const s=getComputedStyle(el);return {text:s.color,bg:s.backgroundColor,height:el.getBoundingClientRect().height,touch:matchMedia('(pointer: coarse)').matches};});
+  assert.ok(style.height>=(style.touch?44:32),JSON.stringify(style));
+  const ratio=contrast(style.text,style.bg);assert.ok(ratio>=4.5,JSON.stringify({width,style,ratio}));
+  return {starStyle,promptContrast:ratio};
+ }finally{await page.locator('#merge-theme-guards').evaluate(el=>el.remove());}
+}
 try{
  for(const theme of ['dark','light'])for(const width of [1280,390,320]){
   const page=await browser.newPage({viewport:{width,height:720},hasTouch:width===320,isMobile:width===320,deviceScaleFactor:2,reducedMotion:'reduce'});await page.addInitScript(()=>Object.defineProperty(navigator,'platform',{get:()=>'Linux x86_64'}));/* the vertical Settings navigation is the Windows/Linux layout; macOS draws it as tabs */const errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -196,7 +218,8 @@ try{
    await page.keyboard.press('Escape');
   }
   await surface.locator('.settings-dialog-close').click();await surface.waitFor({state:'hidden'});
-  assert.deepEqual(errors,[]);results.push({theme,width,options:5,mcpOptions:labels.length,geometry,colors,ratios,toolGaps,states});await page.close();
+  const mergeStyles=await checkMergedThemeStyles(page,width);
+  assert.deepEqual(errors,[]);results.push({theme,width,options:5,mcpOptions:labels.length,geometry,colors,ratios,toolGaps,states,mergeStyles});await page.close();
  }
  await writeFile('test-results/ui-send/consistency-controls.json',JSON.stringify(results,null,2));
  console.log('PASS: both themes at 1280/390/320; select interaction, MCP, actual Config/reasoning/model/history and action menus; shared-menu 4px spacing and arrow focus; fork native-row geometry, checked/hovered states, Enter activation and default persistence.');

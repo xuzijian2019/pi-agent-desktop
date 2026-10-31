@@ -100,7 +100,7 @@ test("New restores the draft after session navigation and workspace auto-restore
         chatInputRef: { current: null },
         rightPanelOpen: false,
         shortcutHelpOpen: false,
-        scheduledOpenRef: { current: false },
+        pageOpenRef: { current: false },
         activeProjectKeyRef: { current: cwd },
         workspaceRestoreTokenRef: { current: 0 },
         suppressCwdBumpRef: { current: false },
@@ -188,5 +188,158 @@ test("New restores the draft after session navigation and workspace auto-restore
       assert.deepEqual(draftStore.getDraft(context.activeNewSessionDraftKeyRef.current), draft);
       draftStore.clearDraft(context.activeNewSessionDraftKeyRef.current);
     });
+  }
+});
+
+function navigationHarness(names, overrides = {}) {
+  const callbacks = names.map(callbackBody).join("\n");
+  const context = vm.createContext({ useCallback: (callback) => callback, URLSearchParams,
+    navigationGeneration: { current: 0 }, pageOpenRef: { current: false }, isMobile: false,
+    console: { error() {} }, ...overrides });
+  for (const [setter] of callbacks.matchAll(/\bset[A-Z]\w*(?=\()/g)) {
+    if (context[setter]) continue;
+    const state = setter[3].toLowerCase() + setter.slice(4);
+    context[setter] = (value) => { context[state] = typeof value === "function" ? value(context[state]) : value; };
+  }
+  vm.runInContext(stripTypeScriptTypes(callbacks + "\nglobalThis.navigate = { " + names.join(", ") + " };"), context);
+  return context;
+}
+
+test("workspace pages use native history and Back preserves the hidden conversation", async () => {
+  const tree = ts.createSourceFile("AppShell.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const parser = tree.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "parseWorkspaceView");
+  let historyEffect;
+  function visit(node) {
+    if (ts.isCallExpression(node) && node.expression.getText(tree) === "useEffect"
+      && node.arguments[0]?.getText(tree).includes('window.addEventListener("popstate"')) historyEffect = node.arguments[0].getText(tree);
+    ts.forEachChild(node, visit);
+  }
+  visit(tree);
+  assert.ok(parser && historyEffect);
+  let listener;
+  const selected = { id: "visible", cwd: "/project" };
+  const context = navigationHarness(["openWorkspaceView"], {
+    selectedSession: selected, chatWorkspaceCwd: "/chats",
+    invalidateWorkspaceRestore() {}, handleSelectSession(session) { context.selectedSession = session; },
+    window: { location: { search: "?session=visible" },
+      history: { state: { piSession: selected }, pushState(state, _, url) { this.state = state; context.window.location.search = url; } },
+      addEventListener(_, callback) { listener = callback; }, removeEventListener() {} },
+    router: { replace() { assert.fail("page navigation must not remount through Next router"); } },
+  });
+  for (const [setter] of historyEffect.matchAll(/\bset[A-Z]\w*(?=\()/g)) {
+    const state = setter[3].toLowerCase() + setter.slice(4);
+    context[setter] = (value) => { context[state] = value; };
+  }
+  const cleanup = vm.runInContext(stripTypeScriptTypes(parser.getText(tree) + "\n(" + historyEffect + ")()"), context);
+  for (const view of ["scheduled", "artifacts"]) {
+    context.navigate.openWorkspaceView(view);
+    assert.equal(context.workspaceView, view);
+    assert.equal(context.pageOpenRef.current, true);
+    assert.equal(context.window.location.search, "?view=" + view);
+    await listener();
+    assert.equal(context.selectedSession, selected, "Back to a page retains its hidden chat");
+  }
+  context.window.location.search = "?session=visible";
+  await listener();
+  assert.equal(context.workspaceView, null);
+  assert.equal(context.pageOpenRef.current, false);
+  assert.equal(context.selectedSession, selected);
+  context.window.location.search = "?cwd=%2Fproject";
+  await listener();
+  assert.equal(context.selectedSession, null);
+  assert.equal(context.activeCwd, "/project");
+  assert.equal(context.newSessionWorkspaceKind, "project");
+  assert.equal(context.parseWorkspaceView("unknown"), null);
+  cleanup();
+});
+
+test("same-session artifact jumps close the page without remounting or losing the entry target", () => {
+  const session = { id: "same", cwd: "/project", projectKey: "/project" };
+  const pushes = [];
+  const context = navigationHarness(["handleSelectSession"], {
+    selectedSession: session, activeCwd: session.cwd, activeFileTabId: null, newSessionCwd: null, chatWorkspaceCwd: null,
+    activeNewSessionDraftKeyRef: { current: null }, activeProjectKeyRef: { current: session.cwd },
+    pageOpenRef: { current: true }, workspaceView: "artifacts", sessionKey: 7,
+    workspaceKeyOf: (value) => value.projectKey ?? value.cwd, invalidateWorkspaceRestore() {},
+    window: { history: { state: {}, pushState: (...args) => pushes.push(args) } },
+  });
+  context.navigate.handleSelectSession(session, false, "artifact-entry");
+  assert.equal(context.workspaceView, null);
+  assert.equal(context.pageOpenRef.current, false);
+  assert.equal(context.sessionKey, 7);
+  assert.equal(context.searchTarget.entryId, "artifact-entry");
+  assert.equal(pushes[0][2], "?session=same");
+});
+
+test("page session opens report failure and reject late navigation", async () => {
+  const opened = [], delayed = Promise.withResolvers();
+  let calls = 0;
+  const context = navigationHarness(["handleOpenSession"], {
+    sessionCatalog: [{ id: "known", transient: false }], handleSelectSession: (...args) => opened.push(args),
+    fetch: () => { calls++; return delayed.promise; },
+  });
+  assert.equal(await context.navigate.handleOpenSession("known", "entry"), true);
+  assert.equal(calls, 0);
+  assert.equal(opened[0][2], "entry");
+  const pending = context.navigate.handleOpenSession("late", "old-entry");
+  context.navigationGeneration.current++;
+  delayed.resolve({ ok: true, json: async () => ({ info: { id: "late" } }) });
+  assert.equal(await pending, false);
+  assert.equal(opened.length, 1);
+  context.fetch = async () => ({ ok: false, status: 404, json: async () => ({ error: "gone" }) });
+  assert.equal(await context.navigate.handleOpenSession("gone"), false);
+  assert.equal(opened.length, 1);
+  assert.match(source, /onOpenInConversation=\{handleOpenSession\}/);
+});
+
+test("artifact continuation opens the fork's own metadata and drops prompts after navigation", async () => {
+  const forkResult = Promise.withResolvers(), infoResult = Promise.withResolvers(), opened = [];
+  const forkInfo = { id: "fork", cwd: "/source-project", workspaceKind: "project" };
+  const context = navigationHarness(["handleContinueArtifact"], {
+    refreshKey: 0, translate: (key) => key,
+    sendAgentCommand: async (id, command) => { assert.equal(id, "other-source"); assert.equal(command.entryId, "artifact-entry"); return forkResult.promise; },
+    fetch: async () => infoResult.promise, handleSelectSession: (info) => opened.push(info),
+  });
+  const pending = context.navigate.handleContinueArtifact("other-source", "artifact-entry", "continue prompt");
+  forkResult.resolve({ newSessionId: "fork" });
+  infoResult.resolve({ ok: true, json: async () => ({ info: forkInfo }) });
+  await pending;
+  assert.equal(opened[0], forkInfo);
+  assert.equal(context.pendingQuotePrompt.text, "continue prompt");
+  context.pendingQuotePrompt = null;
+  const nextInfo = Promise.withResolvers();
+  context.fetch = () => nextInfo.promise;
+  const stale = context.navigate.handleContinueArtifact("other-source", "artifact-entry", "must not send");
+  await new Promise((resolve) => setImmediate(resolve));
+  context.navigationGeneration.current++;
+  nextInfo.resolve({ ok: true, json: async () => ({ info: forkInfo }) });
+  await stale;
+  assert.equal(opened.length, 1);
+  assert.equal(context.pendingQuotePrompt, null);
+});
+
+
+test("delayed workspace restore and session promotion retain either visible page", async () => {
+  for (const view of ["scheduled", "artifacts"]) {
+    const response = Promise.withResolvers();
+    const session = { id: "restored", cwd: "/project", projectKey: "/project" };
+    const context = navigationHarness(["restoreWorkspaceContext", "openWorkspaceView", "handleSessionCreated"], {
+      sessionKey: 0, refreshKey: 0, sessionCatalog: [],
+      workspaceRestoreTokenRef: { current: 0 }, activeNewSessionDraftKeyRef: { current: null },
+      getLastOpenSession: () => session.id, workspaceKeyOf: (item) => item.projectKey,
+      invalidateWorkspaceRestore() {}, hydrateSelectedSession() {},
+      fetch: () => response.promise,
+      window: { location: { search: "" }, history: { state: {}, pushState(_, __, url) { context.window.location.search = url; } } },
+      router: { replace() { assert.fail("hidden restoration/promotion must not close the page"); } },
+    });
+    context.navigate.restoreWorkspaceContext("/project", "/project");
+    context.navigate.openWorkspaceView(view);
+    response.resolve({ ok: true, json: async () => ({ sessions: [session] }) });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(context.selectedSession, session);
+    assert.equal(context.workspaceView, view);
+    context.navigate.handleSessionCreated(session);
+    assert.equal(context.window.location.search, "?view=" + view);
+    assert.equal(context.workspaceView, view);
   }
 });

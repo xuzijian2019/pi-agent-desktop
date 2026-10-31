@@ -12,6 +12,7 @@ const { renderToStaticMarkup } = await jiti.import("react-dom/server");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 const { ChatAccessRows } = await jiti.import("./ChatAccessRows.tsx");
 const { ChatConfirmDialog } = await jiti.import("./ChatConfirmDialog.tsx");
+const { ChatShellPrompt } = await jiti.import("./ChatShellPrompt.tsx");
 
 const render = (element) => renderToStaticMarkup(React.createElement(I18nProvider, null, element));
 const access = (state, extra = {}) => ({
@@ -105,4 +106,12 @@ test("chat access uses flex option rows with readable, viewport-bounded menu geo
   assert.match(css, /\.is-chat-access \.chat-access-row\s*\{[^}]*white-space: normal;[^}]*overflow-wrap: anywhere;/);
   assert.match(css, /\.is-chat-access \.chat-access-summary\s*\{[^}]*flex-direction: column;/);
   assert.match(css, /\.chat-access-switch\s*\{[^}]*flex: 0 0 auto;[^}]*width: 26px;[^}]*height: 15px;/);
+});
+
+test("the shell prompt offers one button and shows an error", () => {
+  const html = render(React.createElement(ChatShellPrompt, { busy: false, error: "Send a message first", onAllow() {} }));
+  assert.match(html, /This needs a shell\. Allow this chat to use your computer\?/);
+  assert.match(html, /Allow and continue/);
+  assert.match(html, /role="alert"[^>]*>Send a message first/);
+  assert.match(render(React.createElement(ChatShellPrompt, { busy: true, error: null, onAllow() {} })), /disabled/);
 });

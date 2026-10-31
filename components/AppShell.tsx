@@ -59,6 +59,7 @@ import { AgentSessionPanel } from "./AgentSessionPanel";
 import { newTerminalTab, restoreTerminalTabs, TERMINAL_TABS_KEY, type TerminalTab } from "./terminal-tab-state";
 import { artifactPanelTab, artifactTabId, artifactTabsForSession, upsertArtifactTab, type ArtifactTab } from "./artifact-tabs";
 import { ArtifactPanel } from "./ArtifactPanel";
+import { ArtifactsView } from "./artifacts/ArtifactsView";
 import { setArtifactOpener, useArtifactTitles } from "@/lib/artifact-store";
 import { sendAgentCommand } from "@/lib/agent-client";
 import { claimExtensionAttentionNotification, shouldShowBrowserNotification, showBrowserNotification } from "@/lib/browser-notifications";
@@ -81,6 +82,12 @@ import { getLastSettingsSection, type SettingsSection } from "@/lib/settings-nav
 // session, and closes on its own when the pointer never arrives or leaves.
 const SIDEBAR_PEEK_IDLE_MS = 2600;
 const SIDEBAR_PEEK_LEAVE_MS = 420;
+
+type WorkspaceView = "scheduled" | "artifacts" | null;
+
+function parseWorkspaceView(value: string | null | undefined): WorkspaceView {
+  return value === "scheduled" || value === "artifacts" ? value : null;
+}
 const FILE_TREE_DEFAULT_WIDTH = 300;
 const AGENT_PANEL_WIDTH = 420;
 const FILE_TREE_MIN_WIDTH = 220;
@@ -155,12 +162,16 @@ export function AppShell() {
       });
     return () => controller.abort();
   }, []);
-  // The Scheduled page covers the chat area without unmounting it, so the open session keeps its state.
-  const [scheduledOpen, setScheduledOpen] = useState(() => searchParams?.get("view") === "scheduled");
+  // The Scheduled and Artifacts pages cover the chat area without unmounting
+  // it, so the open session keeps its state. At most one is open (`?view=`).
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(() => parseWorkspaceView(searchParams?.get("view")));
+  const scheduledOpen = workspaceView === "scheduled";
+  const artifactsOpen = workspaceView === "artifacts";
+  const pageOpen = workspaceView !== null;
   // Read by restoreWorkspaceContext and handleSelectSession; those identities
-  // must not change when the page opens.
-  const scheduledOpenRef = useRef(scheduledOpen);
-  scheduledOpenRef.current = scheduledOpen;
+  // must not change when a page opens.
+  const pageOpenRef = useRef(pageOpen);
+  pageOpenRef.current = pageOpen;
   const [explorerUploadBusy, setExplorerUploadBusy] = useState(false);
   const fileExplorerRef = useRef<FileExplorerHandle>(null);
   // The panel is a preview surface; keep the file index hidden until asked for.
@@ -852,9 +863,9 @@ export function AppShell() {
       // the restored session's messages.
       setSelectedSession(s);
       setSessionKey((k) => k + 1);
-      // A direct Scheduled URL can restore its hidden workspace while sessions
-      // load. That fills the chat but must not switch the visible page.
-      if (!scheduledOpenRef.current) {
+      // A direct Scheduled / Artifacts URL can restore its hidden workspace while
+      // sessions load. That fills the chat but must not switch the visible page.
+      if (!pageOpenRef.current) {
         if (new URLSearchParams(window.location.search).get("session") !== s.id) {
           router.replace(`?session=${encodeURIComponent(s.id)}`, { scroll: false });
         }
@@ -956,17 +967,21 @@ export function AppShell() {
       restoreWorkspaceContext(newProject, cwd);
     }
     // This callback also runs when the sidebar picks its default project on a
-    // direct Scheduled URL. There is no explicit navigation away from that
-    // page yet, so retain the URL that made it visible.
-    if (!scheduledOpenRef.current) {
+    // direct Scheduled / Artifacts URL. There is no explicit navigation away
+    // from that page yet, so retain the URL that made it visible.
+    if (!pageOpenRef.current) {
       router.replace(typeof window !== "undefined" ? window.location.pathname : "/", { scroll: false });
     }
   }, [chatWorkspaceCwd, activeCwd, activeFileTabId, invalidateWorkspaceRestore, newSessionCwd, router, selectedSession, restoreWorkspaceContext]);
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false, entryId?: string, blockIndex?: number) => {
     navigationGeneration.current += 1;
-    // Picking a session means leaving Scheduled; a cold-start restore must not.
-    if (!isRestore) setScheduledOpen(false);
+    // Picking a session means leaving Scheduled / Artifacts; a cold-start restore must not.
+    const wasPageOpen = pageOpenRef.current;
+    if (!isRestore) {
+      pageOpenRef.current = false;
+      setWorkspaceView(null);
+    }
     setNewSessionWorkspaceKind(
       session.workspaceKind
       ?? (chatWorkspaceCwd && session.cwd === chatWorkspaceCwd ? "chat" : "project"),
@@ -998,9 +1013,9 @@ export function AppShell() {
       const sameProject =
         workspaceKeyOf(selectedSession) === workspaceKeyOf(session);
       if (selectedSession.id === session.id && sameProject) {
-        // A workspace restored behind Scheduled is already selected. Leaving
+        // A workspace restored behind a page is already selected. Leaving
         // that page still needs the session URL, without resetting its chat.
-        if (scheduledOpenRef.current) {
+        if (wasPageOpen) {
           window.history.pushState({ ...window.history.state, piSession: session }, "", `?session=${encodeURIComponent(session.id)}`);
         }
         if (isMobile) setSidebarOpen(false);
@@ -1028,8 +1043,8 @@ export function AppShell() {
     // Tab-memory restore lands on `/` and must still write `?session=` so reload
     // and copy-link keep this session. replaceState, not router.replace: calling
     // replace in production Next.js triggers a Suspense remount loop.
-    if (isRestore && scheduledOpenRef.current) {
-      // A cold-start restore behind the Scheduled page leaves `?view=scheduled` alone.
+    if (isRestore && pageOpenRef.current) {
+      // A cold-start restore behind Scheduled / Artifacts leaves `?view=` alone.
     } else if (!isRestore) {
       window.history.pushState({ ...window.history.state, piSession: session }, "", `?session=${encodeURIComponent(session.id)}`);
     } else if (new URLSearchParams(window.location.search).get("session") !== session.id) {
@@ -1044,7 +1059,8 @@ export function AppShell() {
   ) => {
     const resolvedWorkspaceKind = workspaceKind
       ?? (chatWorkspaceCwd && cwd === chatWorkspaceCwd ? "chat" : "project");
-    setScheduledOpen(false);
+    pageOpenRef.current = false;
+    setWorkspaceView(null);
     invalidateWorkspaceRestore();
     navigationGeneration.current += 1;
     activeNewSessionDraftKeyRef.current = `new:${cwd}`;
@@ -1074,7 +1090,12 @@ export function AppShell() {
   useEffect(() => {
     const restore = async () => {
       const generation = ++navigationGeneration.current;
+      invalidateWorkspaceRestore();
       const params = new URLSearchParams(window.location.search);
+      const view = parseWorkspaceView(params.get("view"));
+      pageOpenRef.current = view !== null;
+      setWorkspaceView(view);
+      if (view) return;
       const id = params.get("session");
       if (!id) {
         setSelectedSession(null);
@@ -1096,7 +1117,7 @@ export function AppShell() {
     };
     window.addEventListener("popstate", restore);
     return () => { navigationGeneration.current += 1; window.removeEventListener("popstate", restore); };
-  }, [chatWorkspaceCwd, handleSelectSession]);
+  }, [chatWorkspaceCwd, handleSelectSession, invalidateWorkspaceRestore]);
 
   const handleProjectsChange = useCallback((projectRoots: string[]) => {
     setAvailableProjectRoots((previous) => (
@@ -1228,32 +1249,41 @@ export function AppShell() {
       .catch(() => {});
   }, []);
 
-  const handleOpenSession = useCallback(async (sessionId: string) => {
+  const handleOpenSession = useCallback(async (sessionId: string, entryId?: string): Promise<boolean> => {
+    const generation = ++navigationGeneration.current;
     // Prefer the catalogue the sidebar already delivered: selecting from it
     // avoids a full detail round trip just to obtain the SessionInfo.
     const catalogued = sessionCatalog.find((s) => s.id === sessionId);
     if (catalogued && !catalogued.transient) {
-      handleSelectSession(catalogued);
-      return;
+      handleSelectSession(catalogued, false, entryId);
+      return true;
     }
     try {
       const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" });
       const data = await response.json() as { info?: SessionInfo; error?: string };
       if (!response.ok || !data.info) throw new Error(data.error ?? `HTTP ${response.status}`);
-      handleSelectSession(data.info);
+      if (generation !== navigationGeneration.current) return false;
+      handleSelectSession(data.info, false, entryId);
+      return true;
     } catch (error) {
       console.error("[pi-web] failed to open session:", error instanceof Error ? error.message : error);
+      return false;
     }
   }, [handleSelectSession, sessionCatalog]);
 
-  const handleOpenScheduled = useCallback(() => {
-    setScheduledOpen(true);
+  const openWorkspaceView = useCallback((view: Exclude<WorkspaceView, null>) => {
+    navigationGeneration.current += 1;
+    pageOpenRef.current = true;
+    setWorkspaceView(view);
+    setActiveTopPanel(null);
     if (isMobile) setSidebarOpen(false);
-    // Skip the replace when the URL already says so (see handleSelectSession).
-    if (new URLSearchParams(window.location.search).get("view") !== "scheduled") {
-      router.replace("?view=scheduled", { scroll: false });
+    // Native history keeps the hidden conversation mounted, like session picks.
+    if (new URLSearchParams(window.location.search).get("view") !== view) {
+      window.history.pushState({ ...window.history.state }, "", `?view=${view}`);
     }
-  }, [isMobile, router]);
+  }, [isMobile]);
+  const handleOpenScheduled = useCallback(() => openWorkspaceView("scheduled"), [openWorkspaceView]);
+  const handleOpenArtifacts = useCallback(() => openWorkspaceView("artifacts"), [openWorkspaceView]);
 
   // Validated and allow-listed like any project pick, which /api/models needs for the new folder.
   const handleBrowseScheduledFolder = useCallback(
@@ -1270,7 +1300,9 @@ export function AppShell() {
     setNewSessionCwd(null);
     setSelectedSession(session);
     hydrateSelectedSession(session.id);
-    router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
+    if (!pageOpenRef.current) {
+      router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
+    }
   }, [invalidateWorkspaceRestore, router, hydrateSelectedSession]);
 
   const deliverSessionNotification = useCallback(({
@@ -1398,6 +1430,30 @@ export function AppShell() {
     setPendingQuotePrompt({ sessionId: result.newSessionId, text: prompt });
     handleSessionForked(result.newSessionId);
   }, [handleSessionForked, translate]);
+
+  // The Artifacts page's "continue in new chat": like the quote flow, a fork at
+  // the artifact's entry that sends the prompt once it opens. The source may
+  // not be the session shown, so the fork is opened from its own info.
+  const handleContinueArtifact = useCallback(async (
+    sourceSessionId: string,
+    sourceEntryId: string,
+    prompt: string,
+  ) => {
+    const generation = ++navigationGeneration.current;
+    const result = await sendAgentCommand<{ newSessionId?: string }>(sourceSessionId, {
+      type: "fork_branch",
+      entryId: sourceEntryId,
+    });
+    if (!result?.newSessionId) throw new Error(translate("chat.quoteForkFailed"));
+    setRefreshKey((k) => k + 1);
+    if (generation !== navigationGeneration.current) return;
+    const response = await fetch(`/api/sessions/${encodeURIComponent(result.newSessionId)}`, { cache: "no-store" });
+    const data = await response.json().catch(() => ({})) as { info?: SessionInfo; error?: string };
+    if (!response.ok || !data.info) throw new Error(data.error ?? translate("chat.quoteForkFailed"));
+    if (generation !== navigationGeneration.current) return;
+    setPendingQuotePrompt({ sessionId: result.newSessionId, text: prompt });
+    handleSelectSession(data.info);
+  }, [handleSelectSession, translate]);
 
   const handleInitialRestoreDone = useCallback(() => {
     setInitialSessionRestored(true);
@@ -1718,12 +1774,14 @@ export function AppShell() {
   const activeCwdName = visibleProjectCwd ? getFileName(visibleProjectCwd) || visibleProjectCwd : null;
   const topBarTitle = scheduledOpen
     ? translate("scheduled.title")
+    : artifactsOpen
+      ? translate("artifacts.page.title")
     : selectedSession
       ? selectedSession.name || selectedSession.firstMessage || translate("appshell.untitledTask")
       : showChat
         ? translate(isChatWorkspaceActive ? "sidebar.newChatTitle" : "appshell.newTask")
         : PRODUCT_NAME;
-  const topBarSubtitle = scheduledOpen
+  const topBarSubtitle = pageOpen
     ? ""
     : isChatWorkspaceActive
       ? translate("workspace.chatTitle")
@@ -1800,6 +1858,8 @@ export function AppShell() {
         onSessionsChange={handleSessionsChange}
         onOpenScheduled={handleOpenScheduled}
         scheduledOpen={scheduledOpen}
+        onOpenArtifacts={handleOpenArtifacts}
+        artifactsOpen={artifactsOpen}
         onChatWorkspaceCwdChange={setChatWorkspaceCwd}
       />
     </>
@@ -1857,7 +1917,7 @@ export function AppShell() {
   };
 
   // Scheduled keeps the mobile workspace toggle reachable; an open panel always has an exit.
-  const showFilePanelToggle = (!isChatWorkspaceActive || Boolean(chatFolderCwd)) && (isMobile || !scheduledOpen || rightPanelOpen);
+  const showFilePanelToggle = (!isChatWorkspaceActive || Boolean(chatFolderCwd)) && (isMobile || !pageOpen || rightPanelOpen);
 
   return (
     <>
@@ -2010,7 +2070,7 @@ export function AppShell() {
             <span>{topBarTitle}</span>
             <small>{topBarSubtitle}</small>
           </div>
-          {showChat && !scheduledOpen && projectTrust?.requiresTrust && !projectTrust.trusted && (
+          {showChat && !pageOpen && projectTrust?.requiresTrust && !projectTrust.trusted && (
             <button
               type="button"
               onClick={() => {
@@ -2046,7 +2106,7 @@ export function AppShell() {
               {!isMobile && <span>{translate("trust.resourcesNotLoaded")}</span>}
             </button>
           )}
-          {showChat && !scheduledOpen && (
+          {showChat && !pageOpen && (
             <div className="app-topbar-actions" style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
               {hasSubagentSessions && <button className="native-toolbar-button" onClick={() => toggleTopPanel("agents")}>{translate("agentSwitcher.title")}</button>}
               {!isChatWorkspaceActive && (hasForks(branchTree) || activeTopPanel === "branches") && (
@@ -2113,7 +2173,7 @@ export function AppShell() {
         {isMobile && renderProjectTrustWarning(true)}
 
         {/* Chat content */}
-        <div inert={scheduledOpen} aria-hidden={scheduledOpen || undefined} style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+        <div inert={pageOpen} aria-hidden={pageOpen || undefined} style={{ flex: 1, overflow: "hidden", position: "relative" }}>
           {showChat && activeCwdMissing && projectTrustCwd ? (
             <MissingFolderNotice
               cwd={projectTrustCwd}
@@ -2210,16 +2270,14 @@ export function AppShell() {
             projectRoots={availableProjectRoots}
             defaultCwd={isChatWorkspaceActive ? null : selectedSession?.cwd ?? newSessionCwd ?? activeCwd}
             onBrowseFolder={desktopMode ? handleBrowseScheduledFolder : undefined}
-            onOpenSession={async (sessionId) => {
-              // handleOpenSession only logs a failure; this page has to tell the user.
-              const known = sessionCatalog.some((s) => s.id === sessionId && !s.transient);
-              if (!known) {
-                const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" }).catch(() => null);
-                if (!response?.ok) return false;
-              }
-              await handleOpenSession(sessionId);
-              return true;
-            }}
+            onOpenSession={handleOpenSession}
+          />
+        )}
+        {artifactsOpen && (
+          <ArtifactsView
+            runningCount={runningSessionIds.size}
+            onOpenInConversation={handleOpenSession}
+            onContinueInNewChat={handleContinueArtifact}
           />
         )}
       </div>

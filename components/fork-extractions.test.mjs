@@ -335,7 +335,19 @@ const FORK_FEATURES = [
     file: "components/AppShell.tsx",
     // The page covers the chat without unmounting it. Picking a session or starting a
     // new one must close it, and the cold-start restore must not.
-    markers: ["ScheduledView", "scheduledOpen", "scheduledOpenRef", "handleOpenScheduled", "setScheduledOpen(false)", "useScheduledRunNotifications"],
+    markers: ["ScheduledView", "scheduledOpen", "pageOpenRef", "handleOpenScheduled", "setWorkspaceView(null)", "useScheduledRunNotifications"],
+  },
+  {
+    name: "Artifacts entry in the sidebar",
+    file: "components/SessionSidebar.tsx",
+    markers: ["ArtifactsSidebarRow", "onOpenArtifacts"],
+  },
+  {
+    name: "Artifacts page in AppShell",
+    file: "components/AppShell.tsx",
+    // Shares `?view=` with Scheduled; "Show in conversation" reuses the search
+    // jump (handleOpenSession with an entry id) to scroll to the version.
+    markers: ["<ArtifactsView", "handleOpenArtifacts", "parseWorkspaceView", "onOpenInConversation={handleOpenSession}"],
   },
   {
     name: "scheduled runs are tagged in the session list",
@@ -400,6 +412,24 @@ const FORK_FEATURES = [
  * a second entry point back. See docs/ui-refresh-plan.md decisions 7 and 8.
  */
 const REMOVED_UPSTREAM_UI = [
+  {
+    name: "declined sidebar explorer, picker and windowing",
+    file: "components/SessionSidebar.tsx",
+    markers: ["<FileExplorer", "<DirectoryPicker", "getSessionListIndices", 'data-resize-handle="sidebar-sections"'],
+    required: ["sidebar-project-tree", "ProjectPicker"],
+  },
+  {
+    name: "declined conversation minimap",
+    file: "components/ChatWindow.tsx",
+    markers: ["ChatMinimap"],
+    required: ["ConversationNavigator", "ConversationFind"],
+  },
+  {
+    name: "duplicate topbar quick actions",
+    file: "components/AppShell.tsx",
+    markers: ["renderChatToolbarActions", "renderSessionStatsButton", "app-topbar-models", "app-topbar-skills", "app-topbar-settings"],
+    required: ["app-topbar-actions", "openSettingsAtLastSection"],
+  },
   {
     name: "redundant sidebar branch switching",
     file: "components/SessionSidebar.tsx",
@@ -542,6 +572,38 @@ for (const removal of REMOVED_UPSTREAM_UI) {
     }
   });
 }
+
+test("Artifacts conversation jumps retain the version entry id", async () => {
+  const shell = await read("components/AppShell.tsx");
+  const opener = shell.slice(shell.indexOf("const handleOpenSession ="), shell.indexOf("const handleOpenSession =") + 1600);
+  assert.match(opener, /entryId\?: string/);
+  assert.match(opener, /handleSelectSession\(catalogued, false, entryId\)/);
+  assert.match(opener, /handleSelectSession\(data\.info, false, entryId\)/);
+  assert.match(shell, /setSearchTarget\(entryId \? \{ sessionId: session\.id, entryId, blockIndex \} : null\)/);
+});
+
+test("the workbench keeps its independent surface after responsive rules", async () => {
+  const css = await read("app/native-theme.css");
+  const finalPass = css.slice(css.indexOf("/* Final workbench pass:"));
+  assert.match(finalPass, /\.right-panel-container\s*\{\s*--bg: var\(--workbench-bg\);\s*background: var\(--workbench-bg\) !important;/);
+  assert.match(css, /--choice-inset: 8px;/);
+  assert.match(css, /--choice-row-gap: 4px;/);
+  assert.match(css, /--choice-row-radius: 5px;/);
+  assert.match(css, /border-radius: calc\(var\(--composer-send-size\) \/ 2 \+ var\(--composer-inset\) \+ var\(--composer-border-width\)\) !important;/);
+});
+
+test("shell access prompt uses the fork theme contrast and safe geometry", async () => {
+  const css = await read("app/native-theme.css");
+  const wrap = css.match(/\.chat-shell-prompt-wrap\s*\{([^}]*)\}/)?.[1] ?? "";
+  const button = css.match(/\.chat-shell-prompt-button\s*\{([^}]*)\}/)?.[1] ?? "";
+  assert.match(wrap, /box-sizing: border-box/);
+  assert.match(wrap, /padding: 0 var\(--chat-column-padding, 16px\)/);
+  assert.match(button, /background: var\(--accent\)/);
+  assert.match(button, /color: var\(--accent-contrast\)/);
+  assert.match(button, /min-height: var\(--control-height\)/);
+  assert.match(css, /\.chat-shell-prompt-button:focus-visible/);
+  assert.match(css, /@media \(pointer: coarse\)\s*\{\s*\.chat-shell-prompt-button\s*\{ min-height: 44px;/);
+});
 
 test("the fork extension status line keeps upstream's opaque background", async () => {
   const composer = await read("components/ChatInput.tsx");

@@ -65,7 +65,7 @@ test("empty workspaces open the file tree and keep their mobile exit on Schedule
   await expect(showSidebar).toBeVisible();
   await showSidebar.click({ trial: true });
   await showSidebar.click();
-  await page.locator(".sidebar-scheduled-row").click();
+  await page.getByRole("button", { name: "Scheduled", exact: true }).click();
   await expect(page.locator(".scheduled-view")).toBeVisible();
   await expect(toggle).toBeVisible();
   await toggle.click();
