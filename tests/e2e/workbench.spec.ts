@@ -69,7 +69,11 @@ test("loading a remotely saved draft restores references and setup atomically", 
   await conflict.getByRole("button", { name: "Load saved version" }).click();
   await expect(composer).toHaveValue(savedDraft.value);
   await expect(page.getByRole("button", { name: "Change reasoning level", exact: true })).toHaveAttribute("title", /high/);
-  await expect(page.getByRole("button", { name: "Change tool preset", exact: true })).toHaveAttribute("title", /full/);
+  const toolPreset = page.getByRole("button", { name: "Change tool preset", exact: true });
+  await expect(toolPreset).toHaveAttribute("title", "Change tool preset: All tools");
+  await toolPreset.click();
+  await expect(page.locator(".composer-dropdown-panel.is-tools .composer-option-row.is-active")).toContainText("All tools");
+  await page.keyboard.press("Escape");
   await expect(conflict).toHaveCount(0);
 
   const readSavedDraft = () => page.evaluate(async (key) => {
@@ -96,7 +100,10 @@ test("loading a remotely saved draft restores references and setup atomically", 
   await page.getByRole("button", { name: "Change reasoning level", exact: true }).click();
   await expect(page.locator(".is-thinking .composer-option-row.is-active")).toContainText("auto");
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("button", { name: "Change tool preset", exact: true })).toHaveAttribute("title", /configured/);
+  await expect(toolPreset).toHaveAttribute("title", "Change tool preset: Settings default");
+  await toolPreset.click();
+  await expect(page.locator(".composer-dropdown-panel.is-tools .composer-option-row.is-active")).toContainText("Settings default");
+  await page.keyboard.press("Escape");
   await expect.poll(readSavedDraft).toEqual({ ...plainDraft, references: {} });
 });
 
