@@ -67,7 +67,7 @@ export function ChatAccessRows({
         </button>
       )}
       {access?.error && (
-        <div role="alert" style={{ padding: "4px 9px", fontSize: 11, color: "var(--danger)", whiteSpace: "normal", maxWidth: 320 }}>
+        <div role="alert" style={{ padding: "4px 9px", fontSize: "var(--fs-micro)", color: "var(--danger)", whiteSpace: "normal", maxWidth: 320 }}>
           {access.error}
         </div>
       )}

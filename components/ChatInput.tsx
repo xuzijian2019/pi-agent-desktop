@@ -737,12 +737,12 @@ export function WorkspaceUnavailableBanner({ workspace, onRecheck }: { workspace
             style={{
               flexShrink: 0,
               padding: "2px 8px",
-              border: "var(--hairline) solid rgba(239,68,68,0.45)",
-              borderRadius: 5,
+              border: "var(--hairline) solid color-mix(in srgb, var(--danger) 45%, transparent)",
+              borderRadius: "var(--radius-sm)",
               background: "transparent",
               color: "inherit",
               cursor: "pointer",
-              fontSize: 11,
+              fontSize: "var(--fs-micro)",
               lineHeight: 1.4,
               whiteSpace: "nowrap",
             }}
@@ -2199,9 +2199,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const chatUnlocked = chatOnly && Boolean(chatAccess?.state.unlocked);
   const toolPresetLabel = chatOnly
     ? t(chatUnlocked ? "chat.chatUnlocked" : "chat.chatWorkspace")
-    : rawToolPresetLabel === "chat-only"
-      ? t("chat.chatOnly")
-      : rawToolPresetLabel;
+    : t(`chat.toolPresetName.${rawToolPresetLabel}`);
 
   // Close dropdowns on outside click
   useMenuNavigation(toolDropdownOpen, toolDropdownRef, () => setToolDropdownOpen(false));
@@ -2294,7 +2292,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                    title={t("chat.recallTitle")}
                   className="composer-queue-recall"
                 >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="9 14 4 9 9 4" />
                     <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
                   </svg>
@@ -2409,7 +2407,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
-                  strokeWidth="1.8"
+                  strokeWidth="1.75"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   aria-hidden="true"
@@ -2697,7 +2695,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 onClearDraft?.();
                 textareaRef.current?.focus();
               }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">
                 <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />
               </svg>
             </button>
@@ -2996,7 +2994,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                    title={t("chat.changeToolPreset") + `: ${toolPresetLabel}`}
                    aria-label={t("chat.changeToolPreset")}
                 >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
                   </svg>
                   {(!isCompact || controlsMenuOpen) && <span className="composer-nowrap">{toolPresetLabel}</span>}
@@ -3022,7 +3020,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           {isActive
                             ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon"><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
                             : <span className="composer-check-spacer" />}
-                          <span className="composer-option-label">{lvl}</span>
+                          <span className="composer-option-label">{t(`chat.toolPresetName.${lvl}`)}</span>
                           <span className="composer-option-desc">{desc}</span>
                         </button>
                       );
@@ -3046,7 +3044,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 }}
                 className="composer-collapse-button"
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
