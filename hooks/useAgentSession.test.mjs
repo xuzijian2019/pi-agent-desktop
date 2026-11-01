@@ -740,6 +740,7 @@ test("trailing spacer follows the fork overlay composer height", async () => {
   assert.doesNotMatch(chatWindowSource, /setBottomComposerHeight/);
   assert.match(chatWindowSource, /spacer\.style\.height =/);
   assert.match(chatWindowSource, /new ResizeObserver\(apply\)/);
+  assert.match(chatWindowSource, /className="chat-composer-overlay absolute inset-x-0 bottom-0 z-20"/);
   assert.doesNotMatch(chatWindowSource, /promptAnchorSpacer/);
 });
 

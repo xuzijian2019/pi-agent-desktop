@@ -92,6 +92,22 @@ test("fork loading, error and empty file states retain their live status compone
   error.props.children[3].props.onClick();
   assert.equal(retried, 1);
   assert.match(source, /<FileViewerStatus kind="loading"/);
-  assert.match(source, /<FileViewerStatus kind="error" message=\{error\} onRetry=/);
+  assert.match(source, /<FileViewerStatus kind="error" message=\{describeFileError\(error, t\)\} onRetry=/);
   assert.match(source, /<FileViewerStatus kind="empty"/);
+});
+
+
+test("missing-file explanation is localized without changing other errors", () => {
+  const file = ts.createSourceFile("FileViewer.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const fn = file.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "describeFileError");
+  assert.ok(fn);
+  const { outputText } = ts.transpileModule(`${fn.getText(file)}\nreturn describeFileError;`, {});
+  const describe = new Function(outputText)();
+  const t = key => `translated:${key}`;
+  assert.equal(describe("Not found", t), "translated:files.notFound");
+  assert.equal(describe("Permission denied", t), "Permission denied");
+  for (const name of ["ImageViewer", "AudioViewer", "VideoViewer", "DocumentViewer", "TextFileViewer"]) {
+    const fn = file.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name);
+    assert.ok(fn.getText(file).includes("describeFileError(error, t)"), `${name} must explain missing files`);
+  }
 });

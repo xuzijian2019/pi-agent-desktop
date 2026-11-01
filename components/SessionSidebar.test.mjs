@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import vm from "node:vm";
 
 const source = (await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 const sessionItemSource = source.slice(source.indexOf("function SessionItem("));
@@ -163,7 +164,7 @@ test("Chats show five families at a time even when there are no projects", () =>
 
 test("Chats fold like a project and unfold back to the first five", () => {
   // Folding drops the extra pages so the next unfold starts at five again.
-  assert.match(source, /const setChatsFolded = \(folded: boolean\) => \{\s*setChatsCollapsed\(folded\);\s*if \(folded\) setChatSessionPages\(0\);/);
+  assert.match(source, /const setChatsFolded = \(folded: boolean\) => \{\s*writeChatsCollapsed\(folded\);\s*if \(folded\) setChatSessionPages\(0\);/);
   // A search lists every match regardless of the fold.
   assert.match(source, /const chatsFolded = !trimmedSessionQuery && chatsCollapsed/);
   assert.match(source, /\{!chatsFolded && \(\s*<div className="sidebar-project-tree-children sidebar-chats-list">/);
@@ -172,10 +173,21 @@ test("Chats fold like a project and unfold back to the first five", () => {
   assert.match(source, /APP_PREF_KEYS\.chatSessionPages/);
   // The fold is part of the server-rendered markup, so it must start from the
   // server default and only then read storage — otherwise hydration mismatches.
-  assert.match(source, /const \[chatsCollapsed, setChatsCollapsed\] = useState\(false\);/);
-  assert.doesNotMatch(source, /setChatsCollapsed\] = useState\(\(\) => getPref/);
-  assert.match(source, /setChatsCollapsed\(getPref\(APP_PREF_KEYS\.collapsedChats\) === "1"\)/);
-  assert.match(source, /if \(!chatsPrefReady\) return;/);
+  assert.match(source, /const serverChatsCollapsed = \(\) => false;/);
+  assert.match(source, /const storedChatsCollapsed = \(\) => getPref\(APP_PREF_KEYS\.collapsedChats\) === "1";/);
+  assert.match(source, /const chatsCollapsed = useSyncExternalStore\(subscribeChatsCollapsed, readChatsCollapsed, serverChatsCollapsed\)/);
+  assert.match(source, /chatsCollapsedListeners\.forEach\(\(cb\) => cb\(\)\)/);
+});
+
+test("the Chats fold hydrates with the server value before reading localStorage", () => {
+  // Reading the pref in a useState initializer rendered the header collapsed on
+  // the client but expanded on the server, a hydration mismatch.
+  assert.doesNotMatch(source, /useState\(\(\) => getPref\(APP_PREF_KEYS\.collapsedChats\)/);
+  assert.match(source, /const chatsCollapsed = useSyncExternalStore\(subscribeChatsCollapsed, readChatsCollapsed, serverChatsCollapsed\)/);
+  assert.match(source, /const serverChatsCollapsed = \(\) => false;/);
+  // The pref is written by the setter, never by an effect that could store the
+  // server value over the saved one on the first commit.
+  assert.doesNotMatch(source, /if \(chatsCollapsed\) setPref\(APP_PREF_KEYS\.collapsedChats/);
 });
 
 test("the Chats header shows its menu and add buttons only on hover, like Projects", () => {
@@ -396,4 +408,42 @@ test("continue-in-project uses the unclipped fork picker panel and dismisses on 
   assert.match(modal, /onDismiss=\{\(\) => setContinueChat\(null\)\}/);
   assert.match(modal, /isImeComposing\(e\)/);
   assert.match(modal, /document\.body/);
+});
+
+
+test("Chats fold remains interactive when storage writes fail", () => {
+  // Execute the actual store, not a reimplementation. Simulate a quota/blocked
+  // write and verify both directions plus recovery when storage works again.
+  const start = source.indexOf("const chatsCollapsedListeners");
+  const end = source.indexOf("\nfunction readIdSetPref", start);
+  const store = source.slice(start, end)
+    .replace("new Set<() => void>()", "new Set()")
+    .replace("cb: () => void): () => void", "cb)")
+    .replace("let volatileChatsCollapsed: boolean | undefined;", "let volatileChatsCollapsed;")
+    .replace("collapsed: boolean): void", "collapsed)");
+  let stored = null;
+  let writable = false;
+  const context = {
+    APP_PREF_KEYS: { collapsedChats: "collapsed" },
+    getPref: () => stored,
+    setPref: (_key, value) => { if (writable) stored = value; },
+    removePref: () => { if (writable) stored = null; },
+  };
+  vm.createContext(context);
+  vm.runInContext(`${store}\nglobalThis.store = { subscribeChatsCollapsed, readChatsCollapsed, writeChatsCollapsed };`, context);
+  let notifications = 0;
+  const unsubscribe = context.store.subscribeChatsCollapsed(() => notifications++);
+  context.store.writeChatsCollapsed(true);
+  assert.equal(context.store.readChatsCollapsed(), true);
+  context.store.writeChatsCollapsed(false);
+  assert.equal(context.store.readChatsCollapsed(), false);
+  writable = true;
+  context.store.writeChatsCollapsed(true);
+  assert.equal(stored, "1");
+  assert.equal(context.store.readChatsCollapsed(), true);
+  context.store.writeChatsCollapsed(false);
+  assert.equal(stored, null);
+  assert.equal(context.store.readChatsCollapsed(), false);
+  assert.equal(notifications, 4);
+  unsubscribe();
 });

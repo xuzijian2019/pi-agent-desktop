@@ -21,7 +21,7 @@ test("the overlay composer and message list share one column axis", () => {
   assert.match(source, /paddingLeft: scrollbarGutter > 0 \? scrollbarGutter : undefined/);
   assert.match(source, /paddingInline: scrollbarGutter/);
   assert.match(source, /ref=\{bottomComposerRef\}/);
-  assert.match(source, /className="absolute inset-x-0 bottom-0 z-20"/);
+  assert.match(source, /className="chat-composer-overlay absolute inset-x-0 bottom-0 z-20"/);
   assert.match(source, /scrollbarGutterProbeRef/);
   assert.doesNotMatch(
     source,

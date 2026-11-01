@@ -330,8 +330,22 @@ test("renders the read-only tool preset as the active selection", () => {
     ),
   );
 
-  assert.match(html, /title="Change tool preset: read-only"/);
-  assert.match(html, />read-only<\/span>/);
+  // The chip shows the preset's display name, not its settings id.
+  assert.match(html, /title="Change tool preset: Read-only"/);
+  assert.match(html, />Read-only<\/span>/);
+});
+
+test("disambiguates project chips without stripping parent names on narrow screens", () => {
+  const html = renderWithI18n(React.createElement(ChatInput, {
+    onSend() {}, onAbort() {}, isStreaming: false,
+    projectPath: "/work/client/app", projectOptions: ["/work/client/app", "/work/server/app"],
+    onProjectChange() {},
+  }));
+  assert.match(html, />client\/app<\/span>/);
+  const source = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
+  // The same disambiguated label is passed at every width, including phones.
+  assert.match(source, /<ComposerProjectChip[\s\S]*?label=\{projectLabel\}/);
+  assert.doesNotMatch(source, /projectLabel\.split\(/);
 });
 
 test("renders the empty tool preset as Chat only", () => {

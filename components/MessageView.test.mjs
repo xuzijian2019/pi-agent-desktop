@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
+import ts from "typescript";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, {
@@ -781,4 +783,27 @@ test("only session-scoped replies render artifact directives as cards", () => {
   const message = { role: "assistant", content: [{ type: "text", text: ':::artifact{identifier="shared" type="code" title="Scoped"}\n```js\nconsole.log("scoped");\n```\n:::' }] };
   assert.match(renderMessage(message), /:::artifact/);
   assert.doesNotMatch(renderMessage(message, { sessionId: "parent" }), /:::artifact/);
+});
+
+
+test("usage detail retains the fork preference and remains visible without hover", () => {
+  const html = renderMessage({ role: "assistant", content: [{ type: "text", text: "Done" }],
+    usage: { input: 123, output: 45, cacheRead: 20, cacheWrite: 0, cost: { total: 0.25 } }, timestamp: 1 });
+  assert.match(html, /class="message-meta msg-usage"/);
+  assert.match(html, /123 in · 45 out · 20 cache R · \$0\.2500/);
+  assert.doesNotMatch(html, /message-meta-detail/);
+});
+
+
+test("message timestamps follow the selected app language", async () => {
+  const source = await readFile(new URL("./MessageView.tsx", import.meta.url), "utf8");
+  const file = ts.createSourceFile("MessageView.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const fn = file.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "formatTime");
+  assert.ok(fn);
+  const { outputText } = ts.transpileModule(`${fn.getText(file)}\nreturn formatTime;`, {});
+  const formatTime = new Function(outputText)();
+  const stamp = new Date(2020, 9, 20, 13, 45).getTime();
+  assert.match(formatTime(stamp, "en"), /Oct/);
+  assert.match(formatTime(stamp, "zh-CN"), /10月/);
+  assert.equal((source.match(/formatTime\(message\.timestamp, locale\)/g) ?? []).length, 4);
 });

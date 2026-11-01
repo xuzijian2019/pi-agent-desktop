@@ -55,7 +55,7 @@ test("project and tool setup appear only before a conversation starts", () => {
   const fresh = renderComposer({ ...setup, showInputHints: true });
   assert.match(fresh, /chat-project-context/);
   assert.match(fresh, /aria-label="Change tool preset"/);
-  assert.match(fresh, />full<\/span>/);
+  assert.match(fresh, />All tools<\/span>/);
   const existing = renderComposer({ ...setup, showInputHints: false, sessionStats: stats });
   assert.doesNotMatch(existing, /chat-project-context|Change tool preset/);
   assert.match(existing, /context-usage-ring/);

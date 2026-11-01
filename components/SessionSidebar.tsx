@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useLayoutEffect, useState, useCallback, useRef, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useState, useCallback, useRef, useSyncExternalStore, type ReactNode } from "react";
 import type { SessionInfo, SessionWorkspaceKind } from "@/lib/types";
 import { listSessionFamilies } from "@/lib/session-family";
 import { loadExplorerOpen } from "@/lib/file-explorer-state";
@@ -252,6 +252,28 @@ function buildSessionTree(sessions: SessionInfo[]): SessionTreeNode[] {
   return roots;
 }
 
+// The Chats fold lives in localStorage, which the server cannot read. Reading it
+// in a useState initializer made the first client render differ from the
+// server HTML (hydration error on the Chats header); useSyncExternalStore
+// hydrates with the server value and then switches to the stored one.
+const chatsCollapsedListeners = new Set<() => void>();
+function subscribeChatsCollapsed(cb: () => void): () => void {
+  chatsCollapsedListeners.add(cb);
+  return () => { chatsCollapsedListeners.delete(cb); };
+}
+// Keep the fold usable in private/quota-restricted storage, as the fork's
+// state-based implementation did. A successful write returns to storage.
+let volatileChatsCollapsed: boolean | undefined;
+const storedChatsCollapsed = () => getPref(APP_PREF_KEYS.collapsedChats) === "1";
+const readChatsCollapsed = () => volatileChatsCollapsed ?? storedChatsCollapsed();
+const serverChatsCollapsed = () => false;
+function writeChatsCollapsed(collapsed: boolean): void {
+  if (collapsed) setPref(APP_PREF_KEYS.collapsedChats, "1");
+  else removePref(APP_PREF_KEYS.collapsedChats);
+  volatileChatsCollapsed = storedChatsCollapsed() === collapsed ? undefined : collapsed;
+  chatsCollapsedListeners.forEach((cb) => cb());
+}
+
 function readIdSetPref(key: Parameters<typeof getPrefJson>[0]): Set<string> {
   const stored = getPrefJson<unknown>(key);
   return Array.isArray(stored)
@@ -264,11 +286,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [chatWorkspaceCwd, setChatWorkspaceCwd] = useState<string | null>(null);
   // Same fold model as a project: folding drops the extra pages, so the next
-  // unfold starts again from the first five chats. The fold is a render input
-  // in the server HTML, and storage is empty there, so it starts unfolded and
-  // the stored preference is applied after hydration (see `chatsPrefReady`).
-  const [chatsCollapsed, setChatsCollapsed] = useState(false);
-  const [chatsPrefReady, setChatsPrefReady] = useState(false);
+  // unfold starts again from the first five chats.
+  const chatsCollapsed = useSyncExternalStore(subscribeChatsCollapsed, readChatsCollapsed, serverChatsCollapsed);
   const [chatSessionPages, setChatSessionPages] = useState(() => {
     const stored = getPrefJson<unknown>(APP_PREF_KEYS.chatSessionPages);
     return typeof stored === "number" && Number.isInteger(stored) && stored > 0 ? stored : 0;
@@ -609,8 +628,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
   useEffect(() => {
     setExplorerOpen(loadExplorerOpen());
-    setChatsCollapsed(getPref(APP_PREF_KEYS.collapsedChats) === "1");
-    setChatsPrefReady(true);
   }, []);
 
   // Persist unread markers so they survive a browser refresh before the user
@@ -627,14 +644,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     if (collapsedProjects.size === 0) removePref(APP_PREF_KEYS.collapsedProjects);
     else setPrefJson(APP_PREF_KEYS.collapsedProjects, [...collapsedProjects]);
   }, [collapsedProjects]);
-
-  useEffect(() => {
-    // Skip the first commit: it still holds the pre-hydration default and
-    // would erase the stored fold before the restore above applies it.
-    if (!chatsPrefReady) return;
-    if (chatsCollapsed) setPref(APP_PREF_KEYS.collapsedChats, "1");
-    else removePref(APP_PREF_KEYS.collapsedChats);
-  }, [chatsCollapsed, chatsPrefReady]);
 
   useEffect(() => {
     if (pinnedChats.size === 0) removePref(APP_PREF_KEYS.pinnedChats);
@@ -1388,7 +1397,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     [family.root, ...family.subagents].some((session) => unreadSessionIds.has(session.id))
   )).length;
   const setChatsFolded = (folded: boolean) => {
-    setChatsCollapsed(folded);
+    writeChatsCollapsed(folded);
     if (folded) setChatSessionPages(0);
   };
 
@@ -1854,7 +1863,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           }
         >
           <span className="sidebar-new-plus" aria-hidden="true">
-            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <line x1="6" y1="1.5" x2="6" y2="10.5" />
               <line x1="1.5" y1="6" x2="10.5" y2="6" />
             </svg>
@@ -1977,7 +1986,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               aria-expanded={chatsMenuOpen}
               onClick={toggleChatsMenu}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <circle cx="5" cy="12" r="1.6" />
                 <circle cx="12" cy="12" r="1.6" />
                 <circle cx="19" cy="12" r="1.6" />
@@ -1991,7 +2000,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               title={t("sidebar.newChatTitle")}
               aria-label={t("sidebar.newChatTitle")}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
@@ -2052,7 +2061,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               aria-expanded={projectViewMenuOpen}
               onClick={toggleProjectViewMenu}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <circle cx="5" cy="12" r="1.6" />
                 <circle cx="12" cy="12" r="1.6" />
                 <circle cx="19" cy="12" r="1.6" />
@@ -2065,7 +2074,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               title={t("sidebar.addProject")}
               aria-label={t("sidebar.addProject")}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
@@ -2345,7 +2354,7 @@ function RunningSessionIndicator() {
           <path
             d="M21 12a9 9 0 1 1-3.8-7.4"
             stroke="currentColor"
-            strokeWidth="2.8"
+            strokeWidth="2"
             strokeLinecap="round"
           />
           <animateTransform
@@ -2398,11 +2407,11 @@ function showProjectActivity(
         <span
           title={t("sidebar.agentRunning")}
           aria-label={`${t("sidebar.agentRunning")} (${activity.running})`}
-          style={{ display: "inline-flex", alignItems: "center", gap: 3, color: "var(--accent)", fontSize: 10, fontFamily: "var(--font-mono)" }}
+          style={{ display: "inline-flex", alignItems: "center", gap: 3, color: "var(--accent)", fontSize: "var(--fs-micro)", fontFamily: "var(--font-mono)" }}
         >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ display: "block" }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ display: "block" }}>
             <g>
-              <path d="M21 12a9 9 0 1 1-3.8-7.4" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" />
+              <path d="M21 12a9 9 0 1 1-3.8-7.4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
               <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.9s" repeatCount="indefinite" />
             </g>
           </svg>
@@ -2413,7 +2422,7 @@ function showProjectActivity(
         <span
           title={t("sidebar.newSessionActivity")}
           aria-label={`${t("sidebar.newSessionActivity")} (${activity.unread})`}
-          style={{ display: "inline-flex", alignItems: "center", gap: 3, color: "#0891b2", fontSize: 10, fontFamily: "var(--font-mono)" }}
+          style={{ display: "inline-flex", alignItems: "center", gap: 3, color: "#0891b2", fontSize: "var(--fs-micro)", fontFamily: "var(--font-mono)" }}
         >
           <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor", display: "inline-block" }} />
           {activity.unread}
@@ -2738,7 +2747,7 @@ function SessionItem({
               </svg>
             </span>
           ) : isSubagentChild ? (
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <rect x="5" y="7" width="14" height="11" rx="2" />
               <path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
             </svg>
@@ -2762,7 +2771,7 @@ function SessionItem({
             {title}
           </a>
           {chatActions?.pinned && (
-            <svg className="session-item-pin" aria-label={t("sidebar.unpinChat")} width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg className="session-item-pin" aria-label={t("sidebar.unpinChat")} width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" />
             </svg>
           )}
@@ -2779,7 +2788,7 @@ function SessionItem({
               title={collapsed ? "Expand forks" : "Collapse forks"}
               className={`sidebar-session-collapse${collapsed ? " is-collapsed" : ""}`}
             >
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="2 3.5 5 6.5 8 3.5" />
               </svg>
             </button>
@@ -2846,12 +2855,12 @@ function SessionItem({
                   style={{
                     display: "flex", alignItems: "center", gap: 8,
                     width: "100%", height: 30, padding: "0 8px",
-                    background: "transparent", border: 0, borderRadius: 7,
+                    background: "transparent", border: 0, borderRadius: "var(--radius-md)",
                     color: "var(--text)", cursor: "pointer",
-                    fontSize: 13, textAlign: "left",
+                    fontSize: "var(--fs-body)", textAlign: "left",
                   }}
                 >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                     <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" />
                   </svg>
                   {t(chatActions.pinned ? "sidebar.unpinChat" : "sidebar.pinChat")}
@@ -2864,12 +2873,12 @@ function SessionItem({
                   style={{
                     display: "flex", alignItems: "center", gap: 8,
                     width: "100%", height: 30, padding: "0 8px",
-                    background: "transparent", border: 0, borderRadius: 7,
+                    background: "transparent", border: 0, borderRadius: "var(--radius-md)",
                     color: "var(--text)", cursor: "pointer",
-                    fontSize: 13, textAlign: "left",
+                    fontSize: "var(--fs-body)", textAlign: "left",
                   }}
                 >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                     <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
                   </svg>
                   {t("sidebar.continueInProject")}
@@ -2882,12 +2891,12 @@ function SessionItem({
                   style={{
                     display: "flex", alignItems: "center", gap: 8,
                     width: "100%", height: 30, padding: "0 8px",
-                    background: "transparent", border: 0, borderRadius: 7,
+                    background: "transparent", border: 0, borderRadius: "var(--radius-md)",
                     color: "var(--text)", cursor: "pointer",
-                    fontSize: 13, textAlign: "left",
+                    fontSize: "var(--fs-body)", textAlign: "left",
                   }}
                 >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                     <rect x="3" y="4" width="18" height="4" rx="1" />
                     <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4" />
                   </svg>

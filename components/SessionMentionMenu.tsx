@@ -51,7 +51,7 @@ export function SessionMentionMenu({ loaded, matches, activeIndex, itemRefs, onP
               onMouseEnter={() => onHover(index)}
               className={`composer-completion-item is-session${active ? " is-active" : ""}`}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
               </svg>
               <span className="composer-ellipsis">

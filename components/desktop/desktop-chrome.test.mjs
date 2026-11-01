@@ -83,7 +83,10 @@ test("macOS traffic lights share the sidebar controls' centre line", () => {
   const header = css.match(/\.session-sidebar-header \{([^}]*)\}/)?.[1] ?? "";
   const button = css.match(/\.sidebar-chrome-button \{([^}]*)\}/)?.[1] ?? "";
   assert.match(header, /padding: 10px 6px 0 !important;/);
-  assert.match(button, /height: 28px;/);
+  // The shared token is used by the button; pin both its use and its sole
+  // definition so a future token change cannot silently break this alignment.
+  assert.match(button, /height: var\(--control-h-md\);/);
+  assert.deepEqual([...css.matchAll(/--control-h-md:\s*([^;]+);/g)].map((match) => match[1]), ["28px"]);
   assert.doesNotMatch(css, /\.session-sidebar-header--mac-inset \{[^}]*padding-top: 0 !important;/);
 });
 
