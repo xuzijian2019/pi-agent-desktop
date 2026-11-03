@@ -283,3 +283,82 @@ test("browser Back to a blank project reclassifies a previously active Chat", as
   assert.equal(context.newSessionWorkspaceKind, "chat");
   cleanup();
 });
+
+test("Tasks navigation covers the current session without unmounting it or losing history", () => {
+  const pushes = [];
+  const selectedSession = { id: "kept-session" };
+  const context = withState({
+    URLSearchParams, isMobile: true, sidebarOpen: true,
+    selectedSession, workspaceView: null, activeTopPanel: "branches",
+    pageOpenRef: { current: false }, navigationGeneration: { current: 3 },
+    window: { location: { search: "?session=kept-session" }, history: { state: {}, pushState: (...args) => pushes.push(args) } },
+  });
+  const parser = nodes.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "parseWorkspaceView");
+  run(`${parser.getText(tree)}\n${declaration("openWorkspaceView")}\n${declaration("handleOpenTasks")}\nglobalThis.openTasks = handleOpenTasks; globalThis.parseView = parseWorkspaceView;`, context);
+  assert.equal(context.parseView("tasks"), "tasks");
+  assert.equal(context.parseView("unknown"), null);
+  context.openTasks();
+  assert.equal(context.workspaceView, "tasks");
+  assert.equal(context.pageOpenRef.current, true);
+  assert.equal(context.navigationGeneration.current, 4);
+  assert.equal(context.selectedSession, selectedSession);
+  assert.equal(context.sidebarOpen, false);
+  assert.equal(context.activeTopPanel, null);
+  assert.equal(pushes[0][2], "?view=tasks");
+  assert.match(source, /\{tasksOpen && \(\s*<TasksView/);
+});
+
+test("a stale directory picker cannot restore an archive or navigate", async () => {
+  const selection = Promise.withResolvers();
+  const restored = [];
+  const started = [];
+  const context = vm.createContext({
+    useCallback: callback => callback, desktopMode: true, isChatWorkspaceActive: false,
+    navigationGeneration: { current: 0 }, projectPickerStartCwd: "/project", sessionCatalog: [],
+    selectProjectDirectoryNative: () => selection.promise,
+    archivedProjectRootFor: () => "/archived", restoreProjectRoot: root => restored.push(root),
+    handleNewSession: (...args) => started.push(args), console,
+  });
+  run(`${declaration("handleSelectProjectFromComposer")}\nglobalThis.pick = handleSelectProjectFromComposer;`, context);
+  const pending = context.pick();
+  context.navigationGeneration.current++;
+  selection.resolve("/archived/worktree");
+  await pending;
+  assert.deepEqual(restored, []);
+  assert.deepEqual(started, []);
+  await context.pick();
+  assert.deepEqual(restored, ["/archived"]);
+  assert.equal(started[0][1], "/archived/worktree");
+  assert.equal(started[0][2], "project");
+});
+
+test("new-session shortcuts reject archived projects and keep missing-folder routing", () => {
+  const notices = [], routed = [], started = [];
+  const context = withState({
+    sessionCatalog: [], activeCwd: "/archived", chatWorkspaceCwd: "/chat", isChatWorkspaceActive: false,
+    settingsSection: null, shortcutHelpOpen: false,
+    archivedProjectRootFor: cwd => cwd === "/archived" ? cwd : null,
+    getProjectDisplayName: root => root, translate: key => key,
+    appNotify: { info: notice => notices.push(notice) },
+    sidebarActionsRef: { current: { newSession: cwd => routed.push(cwd) } },
+    handleNewSession: (...args) => started.push(args),
+  });
+  run(`${declaration("blockArchivedNewSession")}\n${declaration("handleNativeMenuAction")}\nglobalThis.menu = handleNativeMenuAction;`, context);
+  const shortcuts = nodes.find(node => ts.isCallExpression(node) && node.expression.getText(tree) === "useGlobalKeyboardShortcuts");
+  const callback = shortcuts.arguments[0].properties.find(node => node.name?.getText(tree) === "onNewSession");
+  run(`globalThis.shortcut = ${callback.initializer.getText(tree)};`, context);
+  context.menu("new-session");
+  context.shortcut("/archived");
+  assert.equal(notices.length, 2);
+  assert.deepEqual(routed, []);
+  assert.deepEqual(started, []);
+  context.activeCwd = "/missing-folder";
+  context.menu("new-session");
+  context.shortcut("/missing-folder");
+  assert.deepEqual(routed, ["/missing-folder", "/missing-folder"]);
+  context.isChatWorkspaceActive = true;
+  context.menu("new-session");
+  context.shortcut("/chat");
+  assert.equal(started.length, 2);
+  assert.ok(started.every(args => args[2] === "chat"));
+});

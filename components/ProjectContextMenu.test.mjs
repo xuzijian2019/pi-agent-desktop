@@ -104,7 +104,7 @@ function propsFor(overrides = {}) {
     projectRevealError: null,
     t: (key, params) => params ? `${key}(${Object.values(params).join(",")})` : key,
     onShowWorktrees: noop, onShowNewWorktree: noop, onBackToActions: noop,
-    onOpenTerminal: noop, onReveal: noop, onArchive: noop, onFetch: noop,
+    onOpenTerminal: noop, onReveal: noop, onArchive: noop, onRestore: noop, onFetch: noop,
     onSelectWorktree: noop, onRequestRemove: noop, onConfirmRemove: noop, onCancelRemove: noop,
     onNewBranchChange: noop, onCreateWorktree: noop,
     ...overrides,
@@ -122,6 +122,15 @@ test("the sidebar actions page offers Worktrees without duplicating the composer
   }
   assert.doesNotMatch(html, /sidebar-project-context-menu--wide|sidebar\.switchBranch/);
   assert.doesNotMatch(render({ view: "branches" }), /sidebar\.switchBranch/);
+});
+
+test("an archived project's menu offers only restore and reveal", () => {
+  const html = render({ archived: true });
+  assert.ok(html.includes("sidebar.restoreProject"));
+  assert.ok(html.includes("Reveal"));
+  for (const key of ["sidebar.switchBranch", "sidebar.worktrees", "sidebar.openTerminalHere", "sidebar.archiveProject"]) {
+    assert.ok(!html.includes(key), key);
+  }
 });
 
 test("the worktree page switches, removes non-main checkouts and creates new ones", () => {
@@ -286,4 +295,18 @@ test("Worktrees retains fetch progress and callback without a separate branch-sw
 test("generic branch helpers remain opt-in for consumers that explicitly provide branch actions", () => {
   const html = render({ onShowBranches: noop, onSwitchBranch: noop });
   assert.ok(html.includes("sidebar.switchBranch"));
+});
+
+test("restoring an archived project invokes restore without offering worktree mutations", () => {
+  const calls = [];
+  const restore = control({
+    archived: true,
+    view: "worktrees",
+    onRestore: () => calls.push("restore"),
+    onArchive: () => calls.push("archive"),
+  }, (node) => node.type === "button" && node.props.children === "sidebar.restoreProject");
+  restore.props.onClick();
+  assert.deepEqual(calls, ["restore"]);
+  const html = render({ archived: true, view: "worktrees" });
+  assert.doesNotMatch(html, /worktree-remove-button|sidebar\.newWorktree|sidebar\.switchWorktree/);
 });

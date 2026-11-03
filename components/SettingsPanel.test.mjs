@@ -311,3 +311,8 @@ test("rendered General keeps the browser overview, fork switches and no completi
   assert.doesNotMatch(html, /Completion sound|completionSound|soundEnabled/);
   assert.doesNotMatch(panelSource, /useAudio|completionSound|soundEnabled/);
 });
+
+test("automatic naming has one fork preference, not conflicting client/server switches", () => {
+  assert.match(panelSource, /appSettings\.autoTitle/);
+  assert.doesNotMatch(panelSource, /<AutoTitleSettingRow/);
+});

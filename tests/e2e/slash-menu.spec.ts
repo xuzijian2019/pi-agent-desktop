@@ -69,10 +69,20 @@ test('native UI commands open existing settings, auth, trust, hotkeys and resume
 
 test('native model/thinking commands use SDK actions; invalid arguments never become prompts',async({page,request})=>{
  const p=await seed(page,request);const sent:string[]=[];page.on('request',req=>{if(req.method()==='POST'&&req.url().endsWith(`/api/agent/${p.id}`))sent.push(req.postDataJSON().type)});
- await command(page,'/model');await expect(page.locator('.composer-model-panel')).toBeVisible();await page.keyboard.press('Escape');
+ await command(page,'/model');
+ const modelPanel=page.locator('.composer-model-panel');
+ await expect(modelPanel).toBeVisible();
+ // The session's current model renders before /api/models finishes loading.
+ // Wait for the target option, not merely the popup shell, before testing a
+ // named model command; otherwise it races an empty modelList on cold starts.
+ await expect(modelPanel.getByText('fixture-b',{exact:true})).toBeVisible();
+ // Close through the existing outside-click path and focus the next command.
+ await input(page).click();
+ await expect(modelPanel).toHaveCount(0);
  await command(page,'/model local-slash/fixture-b');await expect.poll(async()=> (await (await request.get(`/api/agent/${p.id}`,{maxRetries:2})).json()).state?.model?.id).toBe('fixture-b');
  await command(page,'/thinking high');await expect.poll(async()=> (await (await request.get(`/api/agent/${p.id}`,{maxRetries:2})).json()).state?.thinkingLevel).toBe('high');
  await command(page,'/thinking impossible');await expect(page.getByRole('alert').filter({hasText:'supported thinking level'})).toBeVisible();await expect(input(page)).toHaveValue('/thinking impossible');
+ expect(sent).toContain('set_model');expect(sent).toContain('set_thinking_level');
  expect(sent).not.toContain('prompt');expect(sent).not.toContain('follow_up');
 });
 

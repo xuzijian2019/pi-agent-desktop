@@ -23,6 +23,7 @@ import { LazyTerminalPanel as TerminalPanel, preloadTerminalPanel } from "./Lazy
 // syntax highlighting a second time and only matters once a file tab opens.
 const FileViewer = dynamic(() => import("./FileViewer").then((m) => m.FileViewer), { ssr: false });
 const FileExplorer = dynamic(() => import("./FileExplorer").then((m) => m.FileExplorer), { ssr: false });
+const TasksView = dynamic(() => import("./tasks/TasksView").then((m) => m.TasksView), { ssr: false });
 const ScheduledView = dynamic(() => import("./scheduled/ScheduledView").then((m) => m.ScheduledView), { ssr: false });
 import { openFileTab, saveFileViewerState } from "./file-tab-state";
 import { SettingsPanel } from "./SettingsPanel";
@@ -77,16 +78,19 @@ import type { FileExplorerHandle } from "./FileExplorer";
 import type { FileViewerState } from "@/lib/file-viewer-state";
 import { getSessionFamily } from "@/lib/session-family";
 import { getLastSettingsSection, type SettingsSection } from "@/lib/settings-navigation";
+import { archivedProjectRootFor, restoreProjectRoot } from "@/lib/archived-projects";
+import { getProjectDisplayName } from "@/lib/project-display";
+import { appNotify } from "@/lib/notification-store";
 
 // Hover peek for the collapsed sidebar: it stays long enough to aim at a
 // session, and closes on its own when the pointer never arrives or leaves.
 const SIDEBAR_PEEK_IDLE_MS = 2600;
 const SIDEBAR_PEEK_LEAVE_MS = 420;
 
-type WorkspaceView = "scheduled" | "artifacts" | null;
+type WorkspaceView = "tasks" | "scheduled" | "artifacts" | null;
 
 function parseWorkspaceView(value: string | null | undefined): WorkspaceView {
-  return value === "scheduled" || value === "artifacts" ? value : null;
+  return value === "tasks" || value === "scheduled" || value === "artifacts" ? value : null;
 }
 const FILE_TREE_DEFAULT_WIDTH = 300;
 const AGENT_PANEL_WIDTH = 420;
@@ -165,6 +169,7 @@ export function AppShell() {
   // The Scheduled and Artifacts pages cover the chat area without unmounting
   // it, so the open session keeps its state. At most one is open (`?view=`).
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(() => parseWorkspaceView(searchParams?.get("view")));
+  const tasksOpen = workspaceView === "tasks";
   const scheduledOpen = workspaceView === "scheduled";
   const artifactsOpen = workspaceView === "artifacts";
   const pageOpen = workspaceView !== null;
@@ -1127,6 +1132,16 @@ export function AppShell() {
     ));
   }, []);
 
+  // The keyboard shortcut and the app menu start a session in the active cwd,
+  // which is an archived project while one of its sessions is open. Those stay
+  // readable; a new one waits until the project is restored (sidebar rule).
+  const blockArchivedNewSession = useCallback((cwd: string): boolean => {
+    const root = archivedProjectRootFor(cwd, sessionCatalog);
+    if (!root) return false;
+    appNotify.info({ message: translate("sidebar.projectArchivedNewSession", { name: getProjectDisplayName(root, [root]) }) });
+    return true;
+  }, [sessionCatalog, translate]);
+
   const handleProjectChangeFromComposer = useCallback((projectRoot: string) => {
     if (selectedSession || isChatWorkspaceActive) return;
     handleNewSession(`project-${Date.now()}`, projectRoot, "project");
@@ -1140,17 +1155,21 @@ export function AppShell() {
         projectPickerStartCwd,
         "",
       );
-      if (cwd && generation === navigationGeneration.current) handleNewSession(`project-${Date.now()}`, cwd, "project");
+      if (!cwd || generation !== navigationGeneration.current) return;
+      // Explicitly adding a folder restores it, but a stale picker must not mutate archive state.
+      const archivedRoot = archivedProjectRootFor(cwd, sessionCatalog);
+      if (archivedRoot) restoreProjectRoot(archivedRoot);
+      handleNewSession(`project-${Date.now()}`, cwd, "project");
     } catch (error) {
       console.error("Failed to switch project:", error);
     }
-  }, [desktopMode, handleNewSession, isChatWorkspaceActive, projectPickerStartCwd]);
+  }, [desktopMode, handleNewSession, isChatWorkspaceActive, projectPickerStartCwd, sessionCatalog]);
 
   const handleNativeMenuAction = useCallback((payload: string) => {
     if (payload === "new-session") {
       if (isChatWorkspaceActive && chatWorkspaceCwd) {
         handleNewSession(`native-menu-${Date.now()}`, chatWorkspaceCwd, "chat");
-      } else if (activeCwd) {
+      } else if (activeCwd && !blockArchivedNewSession(activeCwd)) {
         // The sidebar redirects a project whose folder has disappeared.
         sidebarActionsRef.current?.newSession(activeCwd);
       }
@@ -1161,7 +1180,7 @@ export function AppShell() {
       setActiveTopPanel(null);
       setSettingsSection(payload === "settings-general" ? "general" : "models");
     }
-  }, [activeCwd, chatWorkspaceCwd, handleNewSession, isChatWorkspaceActive]);
+  }, [activeCwd, blockArchivedNewSession, chatWorkspaceCwd, handleNewSession, isChatWorkspaceActive]);
 
   const openSettingsAtLastSection = useCallback(() => {
     setActiveTopPanel(null);
@@ -1188,7 +1207,7 @@ export function AppShell() {
   useGlobalKeyboardShortcuts({
     onNewSession: settingsSection || shortcutHelpOpen ? undefined : (cwd: string) => {
       if (isChatWorkspaceActive) handleNewSession(`kb-${Date.now()}`, cwd, "chat");
-      else sidebarActionsRef.current?.newSession(cwd);
+      else if (!blockArchivedNewSession(cwd)) sidebarActionsRef.current?.newSession(cwd);
     },
     activeCwd: isChatWorkspaceActive ? chatWorkspaceCwd : activeCwd,
     // Only while open: a closed panel must leave \ and focus alone.
@@ -1282,6 +1301,7 @@ export function AppShell() {
       window.history.pushState({ ...window.history.state }, "", `?view=${view}`);
     }
   }, [isMobile]);
+  const handleOpenTasks = useCallback(() => openWorkspaceView("tasks"), [openWorkspaceView]);
   const handleOpenScheduled = useCallback(() => openWorkspaceView("scheduled"), [openWorkspaceView]);
   const handleOpenArtifacts = useCallback(() => openWorkspaceView("artifacts"), [openWorkspaceView]);
 
@@ -1772,7 +1792,9 @@ export function AppShell() {
     }
   };
   const activeCwdName = visibleProjectCwd ? getFileName(visibleProjectCwd) || visibleProjectCwd : null;
-  const topBarTitle = scheduledOpen
+  const topBarTitle = tasksOpen
+    ? translate("tasks.title")
+    : scheduledOpen
     ? translate("scheduled.title")
     : artifactsOpen
       ? translate("artifacts.page.title")
@@ -1856,6 +1878,8 @@ export function AppShell() {
         onOpenTerminal={handleOpenTerminal}
         onRunningSessionIdsChange={handleRunningSessionIdsChange}
         onSessionsChange={handleSessionsChange}
+        onOpenTasks={handleOpenTasks}
+        tasksOpen={tasksOpen}
         onOpenScheduled={handleOpenScheduled}
         scheduledOpen={scheduledOpen}
         onOpenArtifacts={handleOpenArtifacts}
@@ -2265,6 +2289,13 @@ export function AppShell() {
           ) : null}
         </div>
 
+        {tasksOpen && (
+          <TasksView
+            sessions={sessionCatalog}
+            runningSessionIds={runningSessionIds}
+            onOpenSession={(sessionId) => void handleOpenSession(sessionId)}
+          />
+        )}
         {scheduledOpen && (
           <ScheduledView
             projectRoots={availableProjectRoots}

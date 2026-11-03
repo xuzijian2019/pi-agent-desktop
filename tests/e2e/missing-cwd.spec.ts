@@ -74,10 +74,19 @@ test("deleted project folder: the + is disabled and the chat area explains why",
   await page.goto(`/?session=${session.id}`);
   await expect(page.getByText("This folder no longer exists")).toBeVisible();
   await expect(page.getByText(cwd, { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Remove project" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Move to archive", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Pick a new folder" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveCount(0);
 
   // The whole point: no 403 leaking into the interface.
   await expect(page.getByText("Access denied")).toHaveCount(0);
+
+  // Upstream renamed the old removal action to an explicit reversible archive.
+  // It must still protect the missing directory without deleting session history.
+  await page.getByRole("button", { name: "Move to archive", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("pi-web:archived-projects") ?? "[]"))).toContain(projectRoot);
+  const listed = await request.get("/api/sessions?force=1");
+  expect(listed.ok()).toBe(true);
+  const { sessions: retained } = await listed.json() as { sessions: SessionRow[] };
+  expect(retained.some(row => row.id === session.id)).toBe(true);
 });

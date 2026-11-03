@@ -46,12 +46,24 @@ test("streams running sessions and reconnects after visibility or network change
   assert.match(source, /source\?\.close\(\)/);
 });
 
-test("re-adding a removed project clears only its sidebar marker", () => {
-  assert.match(source, /const activateProject = useCallback\(\(cwd: string\) =>/);
-  assert.match(source, /if \(!previous\.has\(projectRoot\)\) return previous;/);
-  assert.match(source, /next\.delete\(projectRoot\);/);
+test("re-adding an archived project restores it to the list", () => {
+  assert.match(source, /const activateProject = useCallback\(\(cwd: string\) => \{\s*restoreProjectRoot\(projectRootFor\(cwd\) \?\? cwd\);/);
   // The add-project dialog is the only picker left in the sidebar.
   assert.match(source, /onSelectCwd=\{\(cwd, source\) => \{\s+activateProject\(cwd\);/);
+});
+
+test("archived projects sit in a folded Archive group and need a restore before a new session", () => {
+  // New session in an archived project is refused, never a silent restore.
+  assert.match(source, /if \(archivedProjectRoots\.has\(projectRoot\)\) \{\s*appNotify\.info\([^;]*sidebar\.projectArchivedNewSession[\s\S]*?return;/);
+  // The archived row has no "+" and opens the restore menu, from "…" or a right-click.
+  assert.match(source, /\{!archived && \(\s*<button[\s\S]*?handleNewSession\(group\.projectRoot\)/);
+  assert.match(source, /onContextMenu=\{\(e\) => openProjectMenu\(e, group\.projectRoot, archived\)\}/);
+  assert.match(source, /onRestore=\{\(\) => restoreProject\(projectMenu\.root\)\}/);
+  // The group sits after the project list and unfolds for a search.
+  assert.match(source, /activeProjects\.map\(\(group\) => renderProjectGroup\(group\)\)\}\s*\{archivedProjects\.length > 0 && \(\s*<ArchivedProjectsSection/);
+  assert.match(source, /const archiveShown = archiveExpanded \|\| Boolean\(trimmedSessionQuery\)/);
+  // Unfolding an archived project must not select it (that opens a composer there).
+  assert.match(source, /if \(archived\) \{\s*setExpandedArchivedProjects\(\(prev\) => toggleId\(prev, group\.projectRoot\)\);\s*return;\s*\}/);
 });
 
 test("exposes the polled running-session set to the shell", () => {
@@ -158,7 +170,7 @@ test("Chats show five families at a time even when there are no projects", () =>
   // available when `activeProjects` is empty.
   assert.match(
     source,
-    /sidebar-chats-header[\s\S]*?\{allProjects\.length === 0 \? \(/,
+    /sidebar-chats-header[\s\S]*?\{activeProjects\.length === 0 && !\(trimmedSessionQuery && archivedProjects\.length > 0\) \? \(/,
   );
 });
 
@@ -218,7 +230,21 @@ test("chats can be pinned and archived, ordered by recency with no date groups",
   // Row menu: only chat rows (depth 0) get the actions, in both the native and DOM menus.
   assert.match(source, /chatActions=\{depth === 0 \? chatActions : undefined\}/);
   assert.match(source, /t\(chatActions\.pinned \? "sidebar\.unpinChat" : "sidebar\.pinChat"\)/);
-  assert.match(source, /t\(chatActions\.archived \? "sidebar\.unarchiveChat" : "sidebar\.archiveChat"\)/);
+  // Archive is shared with project sessions: chats bring it with their actions.
+  assert.match(source, /const archive: SessionArchiveActions \| undefined = chatActions \?\? archiveActions;/);
+  assert.match(source, /t\(archive\.archived \? "sidebar\.unarchiveChat" : "sidebar\.archiveChat"\)/);
+});
+
+test("project sessions can be archived one by one (#200)", () => {
+  assert.match(source, /APP_PREF_KEYS\.archivedSessions/);
+  // Only top-level rows get the action, in the project tree and the chronological view.
+  assert.match(source, /archiveActions=\{depth === 0 \? archiveActions : undefined\}/);
+  assert.match(source, /archiveActions=\{sessionArchiveActions\(node\.session\.id\)\}/);
+  assert.match(source, /archiveActions=\{sessionArchiveActions\(family\.root\.id\)\}/);
+  // Archived roots leave the list for a per-project fold; a search lists them in place.
+  assert.match(source, /const archivedGroupTree = trimmedSessionQuery\s*\? \[\]\s*: fullGroupTree\.filter\(\(node\) => archivedSessions\.has\(node\.session\.id\)\)/);
+  assert.match(source, /trimmedSessionQuery \|\| !archivedSessions\.has\(family\.root\.id\)/);
+  assert.match(source, /setProjectsShowingArchived\(\(current\) => toggleId\(current, group\.projectRoot\)\)/);
 });
 
 test("a chat's row menu can continue it in a project", () => {
@@ -446,4 +472,62 @@ test("Chats fold remains interactive when storage writes fail", () => {
   assert.equal(context.store.readChatsCollapsed(), false);
   assert.equal(notifications, 4);
   unsubscribe();
+});
+
+test("archived project context menus retain restore state and cursor placement through native fallback", async () => {
+  const start = source.indexOf("  const openProjectMenu = useCallback(");
+  const end = source.indexOf("\n\n  // Phase A:", start);
+  assert.ok(start >= 0 && end > start);
+  const handler = source.slice(start, end).replace(
+    "(e: React.MouseEvent<HTMLElement>, projectRoot: string, archived = false)",
+    "(e, projectRoot, archived = false)",
+  );
+  for (const native of [false, true]) {
+    const calls = [];
+    const context = {
+      useCallback: (callback) => callback,
+      window: { innerWidth: 1000 },
+      projectMenu: null,
+      closeProjectMenu: () => calls.push(["close"]),
+      hideProjectPathHint: () => calls.push(["hideHint"]),
+      resetWorktreeActions: () => {},
+      canUseNativeMenu: () => native,
+      menuPointBelow: () => ({ x: 100, y: 200 }),
+      showNativeProjectMenu: async (...args) => { calls.push(["native", ...args]); return false; },
+      setProjectMenu: (value) => calls.push(["menu", value]),
+      setProjectMenuPos: (value) => calls.push(["position", value]),
+      setProjectMenuAnchor: (value) => calls.push(["anchor", value]),
+      setProjectBranchMenu: () => {},
+      setProjectMenuView: (value) => calls.push(["view", value]),
+      setProjectRevealError: () => {},
+    };
+    vm.createContext(context);
+    vm.runInContext(`${handler}\nglobalThis.open = openProjectMenu;`, context);
+    context.open({
+      type: "contextmenu", clientX: 420, clientY: 300,
+      preventDefault: () => calls.push(["prevent"]), stopPropagation: () => {},
+      currentTarget: { getBoundingClientRect: () => ({ top: 10, bottom: 30, right: 200 }) },
+    }, "/archived/project", true);
+    await Promise.resolve();
+    const normalized = JSON.parse(JSON.stringify(calls));
+    assert.ok(normalized.some(([kind]) => kind === "prevent"));
+    assert.deepEqual(normalized.find(([kind]) => kind === "menu"), ["menu", { root: "/archived/project", archived: true }]);
+    assert.deepEqual(normalized.find(([kind]) => kind === "position"), ["position", { top: 304, left: 420 }]);
+    assert.deepEqual(normalized.find(([kind]) => kind === "view"), ["view", "actions"]);
+    if (native) assert.deepEqual(normalized.find(([kind]) => kind === "native"), ["native", "/archived/project", { x: 420, y: 300 }, true]);
+  }
+});
+
+test("sidebar activity indicators use CSS motion while retaining fork indicator styling", () => {
+  const indicators = source.slice(source.indexOf("function RunningSessionIndicator"), source.indexOf("interface SessionArchiveActions"));
+  assert.match(indicators, /className="session-running-spinner sidebar-glyph-block"/);
+  assert.match(indicators, /className="sidebar-session-indicator is-running"/);
+  assert.match(indicators, /className="session-unread-ring"/);
+  assert.doesNotMatch(indicators, /<animate(?:Transform)?\b/);
+});
+
+
+test("declined sidebar explorer leaves no dependency on the deleted explorer store", () => {
+  assert.doesNotMatch(source, /file-explorer-state|loadExplorerOpen|setExplorerOpen|explorerOpen/);
+  assert.doesNotMatch(source, /data-resize-handle="sidebar-sections"/);
 });

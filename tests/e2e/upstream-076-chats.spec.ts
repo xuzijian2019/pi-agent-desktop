@@ -35,13 +35,19 @@ async function access(request: APIRequestContext, id: string) {
 }
 
 async function openAccessMenu(page: Page, unlocked = false) {
-  const button = page.getByRole("button", { name: unlocked ? "Chat · computer" : "Chat", exact: true });
-  if (!(await button.isVisible())) {
-    await page.getByRole("button", { name: "More controls", exact: true }).click();
-  }
+  // The server may persist the permission before the browser's POST/rebuild
+  // finishes. Wait for the actual chat chip to reflect that state; an immediate
+  // visibility probe must not mistake its old label for a compact-layout menu.
+  // Chat access has its own always-visible anchor, outside More controls.
+  const button = page.locator(".composer-chat-access-anchor").getByRole("button", {
+    name: unlocked ? "Chat · computer" : "Chat", exact: true,
+  });
+  await expect(button).toBeVisible();
+  await expect(button).toBeEnabled();
   await button.click();
   const toggle = page.getByRole("menuitemcheckbox", { name: "Let this chat use my computer", exact: true });
   await expect(toggle).toHaveAttribute("aria-checked", String(unlocked));
+  await expect(toggle).toBeEnabled();
   return toggle;
 }
 
