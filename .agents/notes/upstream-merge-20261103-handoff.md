@@ -33,3 +33,11 @@ Project-tree/branch-chip/drag ordering and contextual path hints, full-height sh
 - `release:verify` includes a future-publication freshness gate and reports that 0.8.2 is already upstream's latest release; no release is being published by this sync. Local component consistency checks pass; no unrelated release configuration/version bump was added.
 - Local npm audit remains non-clean: 1 critical (Next.js) and 1 high (transitive zod), with Next.js 16.3.8 unchanged by this merge. CI audit is advisory and must be read separately from job success. These findings are not an exploitability assessment or security clearance.
 - Draft PR only; no main push, auto-merge, force-push, rebase, squash, release or tag. Main requires the user's later explicit authorization for this PR.
+
+## First exact-head CI review
+
+Head `1d8b842111575ef600e41eacf48dda4e03f034bc`, GitHub test merge `cbdc422e2bdd5e79b400daf2e4531e5d38faca7c`, run `41646717395`: checks and both Rust jobs passed; browser suite 68 passed, 8 failed, 1 pre-existing option-controls skip. The audit command exited 1 despite the advisory job success (one critical Next.js and one high zod).
+
+Real traces/screenshots showed test locators/readiness issues: mobile sidebar opening matched both the off-canvas and topbar buttons; browser session actions require the action button, while right-click is the desktop hook; the missing-folder action is now Move to archive. Tests now target the actual controls and additionally verify history retention. The model-command trace showed no set_model request: submission preceded the initial model catalog response by about 80ms. Wait for the actual requested model option before exercising the command, retaining the backend model/thinking assertions and existing time limits.
+
+Actually inspected desktop light/dark Tasks, archive menu and General/Relay/Remote-access screenshots plus long-composer desktop/light and phone/dark screenshots. Text and menus were contained and readable; no serious visual issue observed. Replacement-head CI and mobile/archive screenshots remain required. No production or native package acceptance implied.

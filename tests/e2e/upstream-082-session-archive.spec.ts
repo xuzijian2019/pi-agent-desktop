@@ -29,7 +29,7 @@ async function showSidebar(page: Page) {
   await expect(sidebar).not.toHaveClass(/sidebar-mobile-pending/);
   // Narrow layouts close the sidebar on navigation. Open it through the actual control.
   if (await sidebar.evaluate(el => el.classList.contains("sidebar-closed"))) {
-    await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
+    await page.locator(".app-main-column").getByRole("button", { name: "Show sidebar", exact: true }).click();
   }
   await expect(sidebar).toHaveClass(/sidebar-open/);
   await expect(sidebar).toHaveJSProperty("inert", false);
@@ -65,7 +65,10 @@ for (const theme of ["light", "dark"] as const) {
       if (await header.getAttribute("aria-expanded") === "false") await header.click();
       const row = group.locator(".session-item").filter({ has: page.locator(`a[href="?session=${id}"]`) });
       await expect(row).toBeVisible();
-      await row.click({ button: "right" });
+      // Browser session-row actions are exposed through the hover button;
+      // right-click is the desktop integration hook, not a web menu gesture.
+      await row.hover();
+      await row.locator(".sidebar-session-menu-button").click();
       const menu = page.locator(".session-item-menu");
       await expect(menu.getByRole("menuitem", { name: "Archive", exact: true })).toBeVisible();
       await expect.poll(() => menu.evaluate(el => el.getAnimations({ subtree: true }).every(a => !a.pending && a.playState !== "running"))).toBe(true);
@@ -85,7 +88,10 @@ for (const theme of ["light", "dark"] as const) {
       await expect(row).toBeVisible();
       await expect(group.locator(`a[href="?session=${other}"]`)).toBeVisible();
       await page.screenshot({ path: info.outputPath(`082-session-archived-${theme}-${width}.png`), animations: "disabled" });
-      await row.click({ button: "right" });
+      // Browser session-row actions are exposed through the hover button;
+      // right-click is the desktop integration hook, not a web menu gesture.
+      await row.hover();
+      await row.locator(".sidebar-session-menu-button").click();
       await menu.getByRole("menuitem", { name: "Unarchive", exact: true }).click();
       await expect(group.getByRole("button", { name: "Hide archived", exact: true })).toHaveCount(0);
       await expect(row).toBeVisible();

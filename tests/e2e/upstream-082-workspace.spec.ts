@@ -30,7 +30,11 @@ async function showSidebar(page: Page) {
   const sidebar = page.locator("#session-sidebar");
   await expect(sidebar).not.toHaveClass(/sidebar-mobile-pending/);
   if (await sidebar.evaluate(el => el.classList.contains("sidebar-closed"))) {
-    await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
+    // The off-canvas sidebar retains its own toggle; use the visible topbar control.
+    const opener = page.locator(".app-topbar").getByRole("button", { name: "Show sidebar", exact: true });
+    await expect(opener).toHaveCount(1);
+    await expect(opener).toBeVisible();
+    await opener.click();
   }
   await expect(sidebar).toHaveClass(/sidebar-open/);
   await expect(sidebar).toHaveJSProperty("inert", false);
