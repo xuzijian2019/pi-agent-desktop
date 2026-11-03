@@ -41,6 +41,8 @@ import { DesktopAppSection } from "./desktop";
 import { McpConfig } from "./McpConfig";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
 import { ArtifactsSettingRow } from "./ArtifactsSettingRow";
+import { RemoteAccessSection } from "./RemoteAccessSection";
+import { RelaySection } from "./RelaySection";
 import { ChatsSettingsSection } from "./ChatsSettingsSection";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { TerminalSettingsSection } from "./TerminalSettingsSection";
@@ -378,6 +380,10 @@ function GeneralSettings({
           </section>
 
           <DesktopAppSection />
+
+          <RelaySection />
+
+          <RemoteAccessSection />
 
           <TerminalSettingsSection />
 

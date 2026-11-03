@@ -9,6 +9,7 @@ const eslintConfig = [
       ".next-desktop/**",
       ".next-e2e/**",
       "playwright-report/**",
+      "relay-shell/dist/**",
       "test-results/**",
       "src-tauri/resources/server/**",
       "src-tauri/target/**",

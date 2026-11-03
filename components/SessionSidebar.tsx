@@ -3,7 +3,6 @@
 import { Fragment, useEffect, useLayoutEffect, useState, useCallback, useRef, useSyncExternalStore, type ReactNode } from "react";
 import type { SessionInfo, SessionWorkspaceKind } from "@/lib/types";
 import { listSessionFamilies } from "@/lib/session-family";
-import { loadExplorerOpen } from "@/lib/file-explorer-state";
 import { dispatchSessionRowContextMenu } from "@/lib/session-row-context-menu";
 import { skillExpansionToCommand } from "@/lib/slash-display";
 
@@ -45,14 +44,23 @@ import { SessionSearch } from "./SessionSearch";
 import { ProjectViewMenu, type ProjectViewMode } from "./ProjectViewMenu";
 import { ChatsSectionMenu } from "./ChatsSectionMenu";
 import { orderChatFamilies, toggleId } from "@/lib/chat-groups";
+import { ArchivedProjectsSection } from "./ArchivedProjectsSection";
 import { ScheduledSidebarRow } from "./scheduled/ScheduledSidebarRow";
 import { ArtifactsSidebarRow } from "./artifacts/ArtifactsSidebarRow";
+import { TasksSidebarRow } from "./tasks/TasksSidebarRow";
 import { isScheduledRunSession } from "@/hooks/useScheduledTasks";
 import { isImeComposing } from "@/lib/ime";
 import { prefetchSessionData, invalidateSessionData } from "@/lib/session-data-cache";
 import type { SidebarProjectActions } from "@/lib/missing-folder";
 import { resolveSidebarNewSession } from "@/lib/sidebar-new-session";
 import { appNotify } from "@/lib/notification-store";
+import {
+  archiveProjectRoot,
+  restoreProjectRoot,
+  setArchiveExpanded,
+  useArchiveExpanded,
+  useArchivedProjects,
+} from "@/lib/archived-projects";
 import { useMenuPlacement } from "@/hooks/useMenuPlacement";
 import type { MenuAnchor } from "@/lib/menu-placement";
 
@@ -94,6 +102,8 @@ interface Props {
   /** Opens the Artifacts page; the row under Scheduled is absent without it. */
   onOpenArtifacts?: () => void;
   artifactsOpen?: boolean;
+  onOpenTasks?: () => void;
+  tasksOpen?: boolean;
 }
 
 interface ProjectSelection {
@@ -281,7 +291,7 @@ function readIdSetPref(key: Parameters<typeof getPrefJson>[0]): Set<string> {
     : new Set();
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onChatWorkspaceCwdChange, onProjectsChange, actionsRef, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange, headerControls, onOpenTerminal, onOpenScheduled, scheduledOpen = false, onOpenArtifacts, artifactsOpen = false }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onChatWorkspaceCwdChange, onProjectsChange, actionsRef, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange, headerControls, onOpenTerminal, onOpenScheduled, scheduledOpen = false, onOpenArtifacts, artifactsOpen = false, onOpenTasks, tasksOpen = false }: Props) {
   const { t, locale } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [chatWorkspaceCwd, setChatWorkspaceCwd] = useState<string | null>(null);
@@ -295,6 +305,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [pinnedChats, setPinnedChats] = useState<Set<string>>(() => readIdSetPref(APP_PREF_KEYS.pinnedChats));
   const [archivedChats, setArchivedChats] = useState<Set<string>>(() => readIdSetPref(APP_PREF_KEYS.archivedChats));
   const [showArchivedChats, setShowArchivedChats] = useState(false);
+  // Project sessions archived one by one (#200). They leave their project's
+  // list for a "Show archived" fold at its end; a search still finds them.
+  const [archivedSessions, setArchivedSessions] = useState<Set<string>>(() => readIdSetPref(APP_PREF_KEYS.archivedSessions));
+  const [projectsShowingArchived, setProjectsShowingArchived] = useState<Set<string>>(() => new Set());
   const [chatsMenuOpen, setChatsMenuOpen] = useState(false);
   const [chatsMenuPos, setChatsMenuPos] = useState<{ top: number; left: number } | null>(null);
   const chatsMenuRef = useRef<HTMLDivElement>(null);
@@ -396,12 +410,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       )),
     );
   });
-  const [archivedProjectRoots, setArchivedProjectRoots] = useState<Set<string>>(() => {
-    const stored = getPrefJson<unknown>(APP_PREF_KEYS.archivedProjects);
-    return Array.isArray(stored)
-      ? new Set(stored.filter((root): root is string => typeof root === "string"))
-      : new Set();
-  });
+  const archivedProjectRoots = useArchivedProjects();
+  const archiveExpanded = useArchiveExpanded();
+  // Archived projects open folded; this holds the ones unfolded this visit.
+  const [expandedArchivedProjects, setExpandedArchivedProjects] = useState<Set<string>>(() => new Set());
   const [projectOrder, setProjectOrder] = useState<string[]>(() => {
     const stored = getPrefJson<unknown>(APP_PREF_KEYS.projectOrder);
     return Array.isArray(stored) ? [...new Set(stored.filter((root): root is string => typeof root === "string"))] : [];
@@ -420,7 +432,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [projectViewMenuAnchor, setProjectViewMenuAnchor] = useState<MenuAnchor | null>(null);
   const projectViewMenuRef = useRef<HTMLDivElement>(null);
   const projectViewMenuButtonRef = useRef<HTMLButtonElement>(null);
-  const [projectMenu, setProjectMenu] = useState<{ root: string } | null>(null);
+  const [projectMenu, setProjectMenu] = useState<{ root: string; archived?: boolean } | null>(null);
   const [projectMenuPos, setProjectMenuPos] = useState<{ top: number; left: number } | null>(null);
   // Full project path, shown on hover as a bar that extends the row past the
   // sidebar edge (replaces the browser's native title tooltip).
@@ -622,23 +634,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     };
   }, [loadSessions, refreshKey]);
 
-  // Browser storage is unavailable during server rendering. Restore the panel
-  // preference after hydration so a collapsed explorer stays collapsed on reload.
-  const [explorerOpen, setExplorerOpen] = useState(true);
-
-  useEffect(() => {
-    setExplorerOpen(loadExplorerOpen());
-  }, []);
-
   // Persist unread markers so they survive a browser refresh before the user
   // has actually opened the completed session.
   useEffect(() => {
     saveUnreadSessionIds(unreadSessionIds);
   }, [unreadSessionIds]);
-
-  useEffect(() => {
-    setPrefJson(APP_PREF_KEYS.archivedProjects, [...archivedProjectRoots]);
-  }, [archivedProjectRoots]);
 
   useEffect(() => {
     if (collapsedProjects.size === 0) removePref(APP_PREF_KEYS.collapsedProjects);
@@ -654,6 +654,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     if (archivedChats.size === 0) removePref(APP_PREF_KEYS.archivedChats);
     else setPrefJson(APP_PREF_KEYS.archivedChats, [...archivedChats]);
   }, [archivedChats]);
+
+  useEffect(() => {
+    if (archivedSessions.size === 0) removePref(APP_PREF_KEYS.archivedSessions);
+    else setPrefJson(APP_PREF_KEYS.archivedSessions, [...archivedSessions]);
+  }, [archivedSessions]);
 
   useEffect(() => {
     if (chatSessionPages === 0) removePref(APP_PREF_KEYS.chatSessionPages);
@@ -935,13 +940,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // project was previously removed from the sidebar, make it visible again
   // without touching any of the session files discovered for that directory.
   const activateProject = useCallback((cwd: string) => {
-    const projectRoot = projectRootFor(cwd) ?? cwd;
-    setArchivedProjectRoots((previous) => {
-      if (!previous.has(projectRoot)) return previous;
-      const next = new Set(previous);
-      next.delete(projectRoot);
-      return next;
-    });
+    restoreProjectRoot(projectRootFor(cwd) ?? cwd);
     setSelectedCwd(cwd);
   }, [projectRootFor]);
 
@@ -1188,16 +1187,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     });
     if (!target) return;
     const { cwd, workspaceKind } = target;
-    // Creating a session is also the activation gesture for an archived
-    // project. This keeps the archive list useful without a second step.
+    // An archived project's sessions stay readable, but a new one needs the
+    // project restored to the list first (its row menu, or "Add project").
     if (workspaceKind === "project") {
       const projectRoot = projectRootFor(cwd) ?? cwd;
       if (archivedProjectRoots.has(projectRoot)) {
-        setArchivedProjectRoots((prev) => {
-          const next = new Set(prev);
-          next.delete(projectRoot);
-          return next;
-        });
+        appNotify.info({ message: t("sidebar.projectArchivedNewSession", { name: getProjectDisplayName(projectRoot, [projectRoot]) }) });
+        return;
       }
     }
     if (cwd !== selectedCwd) setSelectedCwd(cwd);
@@ -1207,7 +1203,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       ? crypto.randomUUID()
       : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
     onNewSession?.(tempId, cwd, workspaceKind);
-  }, [selectedCwd, allSessions, recentProjects, homeDir, chatWorkspaceCwd, archivedProjectRoots, onNewSession, projectRootFor]);
+  }, [selectedCwd, allSessions, recentProjects, homeDir, chatWorkspaceCwd, archivedProjectRoots, onNewSession, projectRootFor, t]);
 
   useEffect(() => {
     if (!projectPickerOpen && !continueChat) return;
@@ -1229,12 +1225,25 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, []);
 
   const archiveProject = useCallback((projectRoot: string) => {
-    setArchivedProjectRoots((prev) => {
+    archiveProjectRoot(projectRoot);
+    closeProjectMenu();
+    // The selection must not stay on an archived project, or the next "New
+    // session" would land there. Move to the most recent project still listed.
+    if (selectedCwd && !isChatCwd(selectedCwd) && (projectRootFor(selectedCwd) ?? selectedCwd) === projectRoot) {
+      const next = recentProjects.find((root) => root !== projectRoot && !archivedProjectRoots.has(root));
+      setSelectedCwd(next ?? chatWorkspaceCwd ?? null);
+    }
+  }, [archivedProjectRoots, chatWorkspaceCwd, closeProjectMenu, isChatCwd, projectRootFor, recentProjects, selectedCwd]);
+
+  const restoreProject = useCallback((projectRoot: string) => {
+    restoreProjectRoot(projectRoot);
+    closeProjectMenu();
+    setExpandedArchivedProjects((prev) => {
+      if (!prev.has(projectRoot)) return prev;
       const next = new Set(prev);
-      next.add(projectRoot);
+      next.delete(projectRoot);
       return next;
     });
-    closeProjectMenu();
   }, [closeProjectMenu]);
 
   useEffect(() => {
@@ -1274,14 +1283,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     if (!shown) openDomProjectMenu(projectRoot, at, "worktrees");
   }, [openDomProjectMenu, requestWorktreeRemoval, resetWorktreeActions, menuSelectedCwd, selectProjectWorktree, setWorktreeError, t]);
 
-  // Desktop shell: a native popup version of the project menu, with the same
-  // items as the DOM menu below. `projectMenu` stays set while it is up (it keeps
-  // the row's "…" visible) but `projectMenuPos` stays null, so the DOM menu never renders.
-  const showNativeProjectMenu = useCallback(async (projectRoot: string, at: NativeMenuPoint): Promise<boolean> => {
-    setProjectMenu({ root: projectRoot });
+  const showNativeProjectMenu = useCallback(async (projectRoot: string, at: NativeMenuPoint, archived = false): Promise<boolean> => {
+    setProjectMenu({ root: projectRoot, archived });
     setProjectMenuPos(null);
     setProjectRevealError(null);
-    const shown = await showNativeMenu([
+    const shown = await showNativeMenu(archived ? [
+      { label: t("sidebar.restoreProject"), onSelect: () => restoreProject(projectRoot) },
+      { label: revealProjectLabel, onSelect: () => void revealProjectInFileManager(projectRoot) },
+    ] : [
       { label: t("sidebar.worktrees"), onSelect: () => void showNativeWorktreeMenu(projectRoot, at) },
       ...(onOpenTerminal
         ? [{ label: t("sidebar.openTerminalHere"), onSelect: () => onOpenTerminal(projectRoot) }]
@@ -1292,29 +1301,35 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     ], at);
     setProjectMenu((current) => (current?.root === projectRoot ? null : current));
     return shown;
-  }, [archiveProject, onOpenTerminal, revealProjectInFileManager, revealProjectLabel, showNativeWorktreeMenu, t]);
+  }, [archiveProject, restoreProject, onOpenTerminal, revealProjectInFileManager, revealProjectLabel, showNativeWorktreeMenu, t]);
 
-  const openProjectMenu = useCallback((e: React.MouseEvent<HTMLButtonElement>, projectRoot: string) => {
+  /** "…" opens the menu under the button; a right-click opens it at the cursor. */
+  const openProjectMenu = useCallback((e: React.MouseEvent<HTMLElement>, projectRoot: string, archived = false) => {
+    const atCursor = e.type === "contextmenu";
+    if (atCursor) e.preventDefault();
     e.stopPropagation();
     hideProjectPathHint();
     resetWorktreeActions();
-    if (projectMenu?.root === projectRoot) {
+    if (projectMenu?.root === projectRoot && !atCursor) {
       closeProjectMenu();
       return;
     }
     const rect = e.currentTarget.getBoundingClientRect();
     const menuWidth = 168;
-    const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
+    const anchor = atCursor
+      ? { top: e.clientY, bottom: e.clientY, right: e.clientX + menuWidth }
+      : { top: rect.top, bottom: rect.bottom, right: rect.right };
+    const left = Math.max(8, Math.min(anchor.right - menuWidth, window.innerWidth - menuWidth - 8));
     const openDomMenu = () => {
-      setProjectMenu({ root: projectRoot });
-      setProjectMenuPos({ top: rect.bottom + 4, left });
-      setProjectMenuAnchor({ top: rect.top, bottom: rect.bottom, right: rect.right });
+      setProjectMenu({ root: projectRoot, archived });
+      setProjectMenuPos({ top: anchor.bottom + 4, left });
+      setProjectMenuAnchor(anchor);
       setProjectBranchMenu(null);
       setProjectMenuView("actions");
       setProjectRevealError(null);
     };
     if (canUseNativeMenu()) {
-      void showNativeProjectMenu(projectRoot, menuPointBelow(e.currentTarget)).then((shown) => {
+      void showNativeProjectMenu(projectRoot, atCursor ? { x: e.clientX, y: e.clientY } : menuPointBelow(e.currentTarget), archived).then((shown) => {
         if (!shown) openDomMenu();
       });
       return;
@@ -1354,10 +1369,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const activeProjects = allProjects.filter((group) => !archivedProjectRoots.has(group.projectRoot));
   const activeProjectRoots = activeProjects.map((group) => group.projectRoot);
   const projectDisplayNames = getProjectDisplayNames(activeProjectRoots);
+  // A search looks inside the archive too, and unfolds it to show the matches.
+  const archivedProjects = allProjects.filter((group) => archivedProjectRoots.has(group.projectRoot));
+  const archiveShown = archiveExpanded || Boolean(trimmedSessionQuery);
   const canCollapseAllProjects = activeProjects.some((group) => !collapsedProjects.has(group.projectRoot));
   const canExpandAllProjects = activeProjects.some((group) => collapsedProjects.has(group.projectRoot));
   const timelineFamilies = projectViewMode === "timeline"
-    ? sessionFamilies.filter((family) => (
+    ? sessionFamilies.filter((family) => (trimmedSessionQuery || !archivedSessions.has(family.root.id)) && (
         !archivedProjectRoots.has(family.root.projectRoot ?? family.root.cwd)
       )).sort((a, b) => b.root.modified.localeCompare(a.root.modified))
     : [];
@@ -1429,12 +1447,27 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     );
   };
 
-  const renderProjectGroup = (group: ReturnType<typeof groupByProject>[number]) => {
-    const isCollapsed = !trimmedSessionQuery && collapsedProjects.has(group.projectRoot);
+  const sessionArchiveActions = (id: string): SessionArchiveActions => ({
+    archived: archivedSessions.has(id),
+    onToggleArchive: () => setArchivedSessions((current) => toggleId(current, id)),
+  });
+
+  const renderProjectGroup = (group: ReturnType<typeof groupByProject>[number], archived = false) => {
+    // Archived projects open folded and unfold only for this visit.
+    const isCollapsed = !trimmedSessionQuery && (archived
+      ? !expandedArchivedProjects.has(group.projectRoot)
+      : collapsedProjects.has(group.projectRoot));
     const isActive = group.projectRoot === projectRootFor(selectedCwd);
     const runningCount = group.runningIds.size;
     const unreadCount = group.unreadIds.size;
-    const groupTree = buildSessionTree(group.sessions);
+    const fullGroupTree = buildSessionTree(group.sessions);
+    const archivedGroupTree = trimmedSessionQuery
+      ? []
+      : fullGroupTree.filter((node) => archivedSessions.has(node.session.id));
+    const groupTree = archivedGroupTree.length > 0
+      ? fullGroupTree.filter((node) => !archivedSessions.has(node.session.id))
+      : fullGroupTree;
+    const showingArchived = projectsShowingArchived.has(group.projectRoot);
     const extraPages = projectSessionPages[group.projectRoot] ?? 0;
     const visibleSessionLimit = MAX_VISIBLE_PROJECT_SESSIONS * (extraPages + 1);
     let visibleGroupTree = trimmedSessionQuery
@@ -1457,6 +1490,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           ? `${group.branches[0]} +${group.branches.length - 1}`
           : null;
     const toggleCollapse = () => {
+      // Unfolding an archived project only shows its sessions: selecting it
+      // would open a new-session composer there.
+      if (archived) {
+        setExpandedArchivedProjects((prev) => toggleId(prev, group.projectRoot));
+        return;
+      }
       setCollapsedProjects((prev) => {
         const next = new Set(prev);
         if (next.has(group.projectRoot)) next.delete(group.projectRoot);
@@ -1480,7 +1519,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       <div
         key={group.projectRoot}
         data-project-root={group.projectRoot}
-        className={`sidebar-project-tree-group${isCollapsed ? " is-collapsed" : ""}${isActive ? " is-active" : ""}${draggedProject === group.projectRoot ? " is-dragging" : ""}${projectDrop?.root === group.projectRoot ? ` drop-${projectDrop.edge}` : ""}`}
+        className={`sidebar-project-tree-group${isCollapsed ? " is-collapsed" : ""}${isActive ? " is-active" : ""}${archived ? " is-archived" : ""}${draggedProject === group.projectRoot ? " is-dragging" : ""}${projectDrop?.root === group.projectRoot ? ` drop-${projectDrop.edge}` : ""}`}
         onDragOver={(e) => {
           if (!draggedProjectRef.current) return;
           e.preventDefault();
@@ -1513,7 +1552,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           endProjectDrag();
         }}
       >
-        <div className={`sidebar-project-tree-row${isMenuOpen ? " is-menu-open" : ""}`}>
+        <div className={`sidebar-project-tree-row${isMenuOpen ? " is-menu-open" : ""}`} onContextMenu={(e) => openProjectMenu(e, group.projectRoot, archived)}>
           <button
             type="button"
             className="sidebar-project-tree-row-main"
@@ -1592,6 +1631,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           {/* Hover-only overlay at the row's trailing edge: it covers the tail of a
               long name instead of reserving width the rest of the time. */}
           <div className="sidebar-project-tree-row-actions" data-no-drag>
+            {/* No new session in an archived project until it is restored. */}
+            {!archived && (
             <button
               type="button"
               className="sidebar-project-tree-action"
@@ -1606,10 +1647,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
             </button>
+            )}
               <button
               type="button"
               className="sidebar-project-tree-action sidebar-project-tree-more"
-              onClick={(e) => openProjectMenu(e, group.projectRoot)}
+              onClick={(e) => openProjectMenu(e, group.projectRoot, archived)}
               title={t("sidebar.moreActions")}
               aria-label={t("sidebar.moreActions")}
                 aria-haspopup="menu"
@@ -1639,6 +1681,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 unreadSessionIds={unreadSessionIds}
                 onSelectSession={handleSelectSessionFromList}
                 onRenamed={loadSessions}
+                archiveActions={sessionArchiveActions(node.session.id)}
                 onSessionDeleted={(id) => {
                   onSessionDeleted?.(id);
                   loadSessions();
@@ -1660,6 +1703,42 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 })}
               </button>
             )}
+            {archivedGroupTree.length > 0 && (
+              <button
+                type="button"
+                className="sidebar-project-tree-show-more sidebar-chats-archived-toggle"
+                aria-expanded={showingArchived}
+                onClick={() => setProjectsShowingArchived((current) => toggleId(current, group.projectRoot))}
+              >
+                {t(showingArchived ? "sidebar.hideArchivedChats" : "sidebar.showArchivedChats", {
+                  count: archivedGroupTree.length,
+                })}
+              </button>
+            )}
+            {showingArchived && archivedGroupTree
+              // The selected session is already listed above when it is archived.
+              .filter((node) => !visibleGroupTree.includes(node))
+              .map((node) => {
+                const nodeFamily = sessionFamilies.find((family) => family.root.id === node.session.id);
+                return (
+                  <div key={node.session.id} className="sidebar-chats-archived-row">
+                    <SessionFamilyItem
+                      node={node}
+                      familySessions={nodeFamily ? [nodeFamily.root, ...nodeFamily.subagents] : undefined}
+                      selectedSessionId={selectedSessionId}
+                      runningSessionIds={runningSessionIds}
+                      unreadSessionIds={unreadSessionIds}
+                      onSelectSession={handleSelectSessionFromList}
+                      onRenamed={loadSessions}
+                      archiveActions={sessionArchiveActions(node.session.id)}
+                      onSessionDeleted={(id) => {
+                        onSessionDeleted?.(id);
+                        loadSessions();
+                      }}
+                    />
+                  </div>
+                );
+              })}
           </div>
         )}
       </div>
@@ -1681,6 +1760,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             node={node}
             familySessions={familySessions}
             subtitle={projectName}
+            archiveActions={sessionArchiveActions(family.root.id)}
             selectedSessionId={selectedSessionId}
             runningSessionIds={runningSessionIds}
             unreadSessionIds={unreadSessionIds}
@@ -1871,6 +1951,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           {t("sidebar.newChat")}
         </button>
 
+        {onOpenTasks && <TasksSidebarRow active={tasksOpen} runningCount={runningSessionIds.size} onOpen={onOpenTasks} />}
         {onOpenScheduled && <ScheduledSidebarRow active={scheduledOpen} onOpen={onOpenScheduled} />}
         {onOpenArtifacts && <ArtifactsSidebarRow active={artifactsOpen} onOpen={onOpenArtifacts} />}
       </div>
@@ -2081,7 +2162,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             </button>
           </div>
         </div>
-        {allProjects.length === 0 ? (
+        {activeProjects.length === 0 && !(trimmedSessionQuery && archivedProjects.length > 0) ? (
           <div className="sidebar-project-tree-empty">
             {loading
               ? t("sidebar.loading")
@@ -2124,6 +2205,18 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         ) : projectViewMode === "timeline"
           ? renderTimeline()
           : activeProjects.map((group) => renderProjectGroup(group))}
+        {archivedProjects.length > 0 && (
+          <ArchivedProjectsSection
+            count={archivedProjects.length}
+            expanded={archiveShown}
+            runningCount={archivedProjects.reduce((sum, group) => sum + group.runningIds.size, 0)}
+            unreadCount={archivedProjects.reduce((sum, group) => sum + group.unreadIds.size, 0)}
+            onToggle={() => setArchiveExpanded(!archiveExpanded)}
+            t={t}
+          >
+            {archivedProjects.map((group) => renderProjectGroup(group, true))}
+          </ArchivedProjectsSection>
+        )}
       </div>
       </SessionSearch>
       {chatsMenuOpen && chatsMenuPos && (
@@ -2200,7 +2293,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             onOpenTerminal(cwd);
           } : undefined}
           onReveal={() => void revealProjectInFileManager(projectMenu.root)}
+          archived={projectMenu.archived === true}
           onArchive={() => archiveProject(projectMenu.root)}
+          onRestore={() => restoreProject(projectMenu.root)}
           onFetch={() => void worktreeActions.fetchBranches(projectMenu.root)}
           onSelectWorktree={(path) => {
             selectProjectWorktree(projectMenu.root, path, projectBranchMenu);
@@ -2268,6 +2363,7 @@ function SessionFamilyItem({
   onSessionDeleted,
   onContinueInProject,
   chatActions,
+  archiveActions,
   familySessions,
   subtitle,
 }: {
@@ -2284,6 +2380,8 @@ function SessionFamilyItem({
   onContinueInProject?: (session: SessionInfo) => void;
   /** Chats only: pin and archive, which the row menu offers beside the other actions. */
   chatActions?: ChatRowActions;
+  /** Project sessions: archive or restore this session (#200). */
+  archiveActions?: SessionArchiveActions;
   /** Cross-project context, shown by the chronological sidebar view. */
   subtitle?: string;
 }) {
@@ -2313,6 +2411,7 @@ function SessionFamilyItem({
           onDeleted={(id) => onSessionDeleted?.(id)}
           onContinueInProject={depth === 0 ? onContinueInProject : undefined}
           chatActions={depth === 0 ? chatActions : undefined}
+          archiveActions={depth === 0 ? archiveActions : undefined}
           hasChildren={hasChildren}
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed((v) => !v)}
@@ -2349,23 +2448,13 @@ function RunningSessionIndicator() {
       aria-label={t("sidebar.agentRunning")}
       className="sidebar-session-indicator is-running"
     >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="sidebar-glyph-block">
-        <g>
-          <path
-            d="M21 12a9 9 0 1 1-3.8-7.4"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-          <animateTransform
-            attributeName="transform"
-            type="rotate"
-            from="0 12 12"
-            to="360 12 12"
-            dur="0.9s"
-            repeatCount="indefinite"
-          />
-        </g>
+      <svg className="session-running-spinner sidebar-glyph-block" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M21 12a9 9 0 1 1-3.8-7.4"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
       </svg>
     </span>
   );
@@ -2381,10 +2470,7 @@ function UnreadSessionIndicator() {
     >
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" className="sidebar-glyph-block">
         <circle cx="7" cy="7" r="2.5" fill="currentColor" />
-        <circle cx="7" cy="7" r="3" stroke="currentColor" strokeWidth="1.4" opacity="0.32">
-          <animate attributeName="r" values="3;6;3" dur="1.6s" repeatCount="indefinite" />
-          <animate attributeName="opacity" values="0.32;0;0.32" dur="1.6s" repeatCount="indefinite" />
-        </circle>
+        <circle className="session-unread-ring" cx="7" cy="7" r="3" stroke="currentColor" strokeWidth="1.4" opacity="0.32" />
       </svg>
     </span>
   );
@@ -2409,11 +2495,8 @@ function showProjectActivity(
           aria-label={`${t("sidebar.agentRunning")} (${activity.running})`}
           style={{ display: "inline-flex", alignItems: "center", gap: 3, color: "var(--accent)", fontSize: "var(--fs-micro)", fontFamily: "var(--font-mono)" }}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ display: "block" }}>
-            <g>
-              <path d="M21 12a9 9 0 1 1-3.8-7.4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.9s" repeatCount="indefinite" />
-            </g>
+          <svg className="session-running-spinner" width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ display: "block" }}>
+            <path d="M21 12a9 9 0 1 1-3.8-7.4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
           </svg>
           {activity.running}
         </span>
@@ -2432,11 +2515,14 @@ function showProjectActivity(
   );
 }
 
-interface ChatRowActions {
-  pinned: boolean;
+interface SessionArchiveActions {
   archived: boolean;
-  onTogglePin: () => void;
   onToggleArchive: () => void;
+}
+
+interface ChatRowActions extends SessionArchiveActions {
+  pinned: boolean;
+  onTogglePin: () => void;
 }
 
 function SessionItem({
@@ -2449,6 +2535,7 @@ function SessionItem({
   onDeleted,
   onContinueInProject,
   chatActions,
+  archiveActions,
   hasChildren = false,
   collapsed = false,
   onToggleCollapse,
@@ -2464,6 +2551,7 @@ function SessionItem({
   onDeleted?: (id: string) => void;
   onContinueInProject?: (session: SessionInfo) => void;
   chatActions?: ChatRowActions;
+  archiveActions?: SessionArchiveActions;
   hasChildren?: boolean;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
@@ -2580,6 +2668,8 @@ function SessionItem({
     }
   }, [session.id, session.transient, onDeleted, reportActionError, t, confirmDelete, folderDeleteOpen]);
 
+  const archive: SessionArchiveActions | undefined = chatActions ?? archiveActions;
+
   // "…" menu: fixed-position portal so the sidebar's overflow/backdrop-filter can't clip it
   const MENU_WIDTH = 190;
   // Desktop shell: the same actions as the DOM menu below, as a native popup.
@@ -2596,8 +2686,8 @@ function SessionItem({
       ...(onContinueInProject
         ? [{ label: t("sidebar.continueInProject"), onSelect: () => onContinueInProject(session) }]
         : []),
-      ...(chatActions
-        ? [{ label: t(chatActions.archived ? "sidebar.unarchiveChat" : "sidebar.archiveChat"), onSelect: chatActions.onToggleArchive }]
+      ...(archive
+        ? [{ label: t(archive.archived ? "sidebar.unarchiveChat" : "sidebar.archiveChat"), onSelect: archive.onToggleArchive }]
         : []),
       { label: t("sidebar.delete"), onSelect: beginDeleteConfirmation },
       { kind: "separator" },
@@ -2612,7 +2702,7 @@ function SessionItem({
     ], at);
     setMenuOpen(false);
     return shown;
-  }, [beginDeleteConfirmation, chatActions, onContinueInProject, session, locale, startRename, t]);
+  }, [archive, beginDeleteConfirmation, chatActions, onContinueInProject, session, locale, startRename, t]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const handled = dispatchSessionRowContextMenu({
@@ -2884,10 +2974,10 @@ function SessionItem({
                   {t("sidebar.continueInProject")}
                 </button>
               )}
-              {chatActions && (
+              {archive && (
                 <button
                   role="menuitem"
-                  onClick={() => { setMenuOpen(false); chatActions.onToggleArchive(); }}
+                  onClick={() => { setMenuOpen(false); archive.onToggleArchive(); }}
                   style={{
                     display: "flex", alignItems: "center", gap: 8,
                     width: "100%", height: 30, padding: "0 8px",
@@ -2900,7 +2990,7 @@ function SessionItem({
                     <rect x="3" y="4" width="18" height="4" rx="1" />
                     <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4" />
                   </svg>
-                  {t(chatActions.archived ? "sidebar.unarchiveChat" : "sidebar.archiveChat")}
+                  {t(archive.archived ? "sidebar.unarchiveChat" : "sidebar.archiveChat")}
                 </button>
               )}
               <button

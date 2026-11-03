@@ -25,16 +25,16 @@
   "driftedUpstreamFiles": {
     "components/SessionSidebar.tsx": {
       "risk": "high",
-      "drift": 4144,
+      "drift": 4272,
       "reason": "~500 lines were MOVED OUT into components/ProjectPicker.tsx and components/path-ui.tsx, which do not exist upstream. git merge does not track cross-file moves: an upstream edit to the project-picker block can merge back cleanly and silently resurrect a second copy.",
-      "structuralDrift": 3429,
+      "structuralDrift": 3555,
       "disposition": "accepted"
     },
     "components/AppShell.tsx": {
       "risk": "high",
-      "drift": 2829,
+      "drift": 2859,
       "reason": "Top-bar redesign (toolbar consolidated into a more-menu, inline styles to classNames) plus the mount point for desktop chrome. The desktop-only parts moved to components/desktop/; the rest is the fork's own interaction design, not desktop plumbing, so this file stays high risk by design rather than by neglect. Header/More cleanup (ui-refresh decisions 7 and 8) DELETES upstream UI rather than adding fork UI — the Full history toolbar button, the Session stats more-item and the session top panel — which raises structural drift by 37 lines, because upstream still ships all of it. Numbers are the measured values from `npm run drift` against the recorded baseline. Saved-task append and chip conflict fixes bring measured structural drift to 1411. Phase 4 adds an import, one local element and one prop to fill ChatWindow's empty-state slot: 3 structural lines.",
-      "structuralDrift": 2293,
+      "structuralDrift": 2323,
       "disposition": "accepted"
     },
     "components/FileViewer.tsx": {
@@ -102,9 +102,9 @@
     },
     "lib/rpc-manager.ts": {
       "risk": "high",
-      "drift": 700,
+      "drift": 961,
       "reason": "Small fork edit in a file upstream changes often. Workbench activity tracking was removed on 2026-09-25, which dropped structural drift back under the high threshold. Upstream/main 26eb188 (2026-10-04 merge, round 1) added running-state broadcasts and the built-in MCP extension on the desktop side, which pi-web 96966e5 does not have; measured against that baseline this lifts structural drift to 269. Still accepted.",
-      "structuralDrift": 700,
+      "structuralDrift": 961,
       "disposition": "accepted"
     },
     "components/BranchNavigator.tsx": {
@@ -151,8 +151,8 @@
     },
     "components/SettingsPanel.tsx": {
       "risk": "high",
-      "drift": 554,
-      "structuralDrift": 456,
+      "drift": 558,
+      "structuralDrift": 460,
       "disposition": "accepted",
       "reason": "AppSettings was folded into General: Version & Updates and desktop window/tray switches live here (via AppUpdatesSection / DesktopAppSection). The fork's autoTitle switch and web/desktop tagline split sit in the same tab. High structural drift because the JSX tree changed."
     },
@@ -211,6 +211,48 @@
       "structuralDrift": 230,
       "disposition": "accepted",
       "reason": "Uses the fork's headless streaming adapter and coalesced preprocessing while preserving Pi's plugins and widget mapping. Incoming markdown changes must retain the static/safety fallbacks, immediate completion and stream replacement behavior."
+    },
+    "lib/web-push.ts": {
+      "risk": "medium",
+      "drift": 189,
+      "structuralDrift": 189,
+      "disposition": "accepted",
+      "reason": "Fork adds failed / waiting-for-you pushes (notifySessionEvent, sessionPushPayload), a caller-supplied session name that skips SessionManager.listAll(), and per-device test send / unsubscribe. An upstream rewrite of the notifier must keep all three event kinds, 404/410 pruning, and sendTest rethrowing delivery errors. Subscriptions made through the encrypted relay carry relayDevice and are skipped once that device is revoked (isRelayDevicePaired)."
+    },
+    "lib/push-client.ts": {
+      "risk": "medium",
+      "drift": 70,
+      "structuralDrift": 70,
+      "disposition": "accepted",
+      "reason": "Fork adds the tap-driven enable/disable/test path iOS requires (permission only from a user gesture in a Home Screen web app) and pushRegistration(), which never waits on serviceWorker.ready unbounded: dev builds and the desktop shell register no worker."
+    },
+    "lib/request-security.ts": {
+      "risk": "medium",
+      "drift": 36,
+      "structuralDrift": 36,
+      "disposition": "accepted",
+      "reason": "Admits the Settings › Remote access tailnet name only for an authorized Tailscale user, and its https Origin. A merge that drops the remoteAccess parameter fails closed (the phone loses access); one that admits the host without isRemoteAccessRequestAuthorized would open the server to the whole tailnet."
+    },
+    "components/PwaRegistration.tsx": {
+      "risk": "low",
+      "drift": 18,
+      "structuralDrift": 18,
+      "disposition": "accepted",
+      "reason": "Skips service worker registration when framed: on the relay's entry host the phone shell's tunnel worker owns the '/' scope, and registering /sw.js would replace it and cut the connection."
+    },
+    "app/api/push/subscribe/route.ts": {
+      "risk": "low",
+      "drift": 12,
+      "structuralDrift": 12,
+      "disposition": "accepted",
+      "reason": "Binds a subscription to its Tailscale login or relay device, so revoking either stops that phone's notifications."
+    },
+    "app/api/open-in-explorer/route.ts": {
+      "risk": "low",
+      "drift": 6,
+      "structuralDrift": 6,
+      "disposition": "accepted",
+      "reason": "Asks isLocalRequest() instead of trusting a loopback Host: requests replayed by the relay connector (and Tailscale Host spoofs) carry a loopback Host too."
     }
   },
   "forkOwnedPaths": [
@@ -363,6 +405,8 @@
     "2026-10-20 — Merged desktop upstream d414e9db (0.7.5) on fork da680936. Adopted Chats workspace, queue/attachments, menu controls, timeline, native reveal and security fixes; preserved fork interaction design and live file status. All recorded drift refreshed against pi-web 6fcd7d44981ab51a21d6cd6eb06d361d0e3d3068, with no risk thresholds or accepted dispositions relaxed. See .agents/notes/upstream-merge-20261020-handoff.md.",
     "2026-10-24 — User requested removal of the fork side conversation feature during the desktop 0.7.6 sync. Removed side/btw UI, commands, follow-up API and runner paths; recap remains tool-free with chat context-file isolation. Updated drift measurements against pi-web 6fcd7d4 without relaxing risk thresholds.",
     "2026-10-25 — Explicit scroll-to-latest clicks resume live-tail attachment before smooth scrolling; ordinary programmatic history/search scrolling remains detached. Preserve the fork tail/ResizeObserver interaction without prompt-top spacers or threshold changes.",
-    "2026-10-26 — Merged desktop upstream 56691c5a (0.7.7), integrating appearance/font preferences, chat-owned file browsing, environment isolation and startup failure handling. Retained fork project-tree/composer/recap/tail-follow interactions and quiet logging. Drift is measured against actual integrated pi-web 6fcd7d4, not latest unmerged pi-web main. Detailed review and evidence: .agents/notes/upstream-merge-20261026-handoff.md."
+    "2026-10-26 — Merged desktop upstream 56691c5a (0.7.7), integrating appearance/font preferences, chat-owned file browsing, environment isolation and startup failure handling. Retained fork project-tree/composer/recap/tail-follow interactions and quiet logging. Drift is measured against actual integrated pi-web 6fcd7d4, not latest unmerged pi-web main. Detailed review and evidence: .agents/notes/upstream-merge-20261026-handoff.md.",
+    "2026-11-03 — End-to-end encrypted relay (docs/remote-relay.md): PwaRegistration, push/subscribe and open-in-explorer gain small fork edits; lib/web-push.ts binds relay subscriptions. Markers in components/fork-extractions.test.mjs pin the relay wiring in proxy.ts, instrumentation-node.ts, desktop-api-auth.ts and SettingsPanel.tsx.",
+    "2026-11-01 — Remote access (PR 194): lib/web-push.ts and lib/push-client.ts carry the phone push events and the iOS tap-to-enable path; lib/request-security.ts and proxy.ts gate the Tailscale Serve hostname on Tailscale-User-Login and refuse Funnel traffic. Markers in components/fork-extractions.test.mjs pin the wiring."
   ]
 }

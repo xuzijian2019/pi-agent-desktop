@@ -70,3 +70,6 @@ pi-gui-session-preview.png
 /blob-report/
 # upstream e2e scratch files
 e2e_*.mjs
+
+# Built phone shell for the relay entry host (npm run relay:shell)
+/relay-shell/dist/
