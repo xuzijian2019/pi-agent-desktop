@@ -1,7 +1,8 @@
 # Dependency security remediation (2026-11-04)
 
 This deliberately limited update changes dependencies, generated preview-runtime
-metadata, and security regression tests, not application behavior or native code.
+metadata, and security regression tests. One JSON transport compatibility fix is
+required by patched Next; application features and native code are unchanged.
 SDK and Tauri versions stay unchanged. No forced major dependency upgrade is used.
 
 ## Fixed
@@ -61,3 +62,21 @@ results. The lockfile regression test supplements, not replaces, live advisories
   environment's Unix-socket sandbox. Native packaging is not locally verified.
 - Production-only npm audit excludes devDependencies even when a package feeds
   a bundled UI asset. These counts are not a complete runtime risk assessment.
+
+## Next 16.4 response compatibility
+
+The first exact-head CI found a real transport regression: Next 16.4.5's Node
+`sendResponse` adapter strips Content-Encoding from Route Handler Responses.
+Our former manual gzip helper therefore delivered compressed session JSON
+without its encoding header. Browser/API consumers could not parse the data.
+
+Return plain JSON at the Route Handler boundary and leave HTTP compression to
+Next's server (enabled by default). This preserves session payloads, response
+status, content type and cache headers, without patching Next or disabling its
+security fix. Tests exercise a large session list across a real local HTTP
+connection through Next's actual Node response adapter, including a client
+that accepts gzip. Do not weaken/skip E2E or raise timeouts to hide this failure.
+
+After the transport adjustment, all 3,588 local tests, lint, typecheck and the
+production build pass. A production-server HTTP smoke also parses seeded
+sessions with gzip, identity and disabled-gzip requests while retaining no-store.
