@@ -8286,6 +8286,35 @@ span.linenumber {
   font-weight: 600;
 }
 
+[data-workspace-unavailable] .composer-notice-head {
+  flex-wrap: wrap;
+}
+
+.workspace-recheck-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.workspace-recheck-button {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: var(--hairline) solid color-mix(in srgb, var(--danger) 45%, transparent);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.workspace-recheck-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 .composer-notice-body {
   overflow-wrap: anywhere;
   white-space: pre-wrap;

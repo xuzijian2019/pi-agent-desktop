@@ -74,9 +74,9 @@
     },
     "components/ChatInput.tsx": {
       "risk": "high",
-      "drift": 2564,
+      "drift": 2561,
       "reason": "Composer chrome restyle. Phase 3 stream H2 and Phase 4 part C together replaced 134 of the 136 inline style objects with classes in app/native-theme.css; the 2 that remain carry a measured popover position. Structural drift is 1044 against 1002 on main: +5 from the part C checkpoint (the per-tone banner colour constant and the queued-message recall button's pointer handlers), +3 from diff realignment across the remaining conversions, and +34 from dropping the onMouseEnter/onMouseLeave colour hacks on the composer controls, which the classifier scores as structural because it deletes upstream lines. That last 34 is isolated in a single commit. Saved-draft restoration adds 4 structural lines, bringing the current measured structural drift to 1015. Upstream changed this file in v0.8.1, and components/ChatInput*.test.mjs plus tests/e2e/workbench.spec.ts cover it.",
-      "structuralDrift": 1778,
+      "structuralDrift": 1785,
       "disposition": "accepted"
     },
     "components/MessageView.tsx": {
@@ -407,6 +407,7 @@
     "2026-10-25 — Explicit scroll-to-latest clicks resume live-tail attachment before smooth scrolling; ordinary programmatic history/search scrolling remains detached. Preserve the fork tail/ResizeObserver interaction without prompt-top spacers or threshold changes.",
     "2026-10-26 — Merged desktop upstream 56691c5a (0.7.7), integrating appearance/font preferences, chat-owned file browsing, environment isolation and startup failure handling. Retained fork project-tree/composer/recap/tail-follow interactions and quiet logging. Drift is measured against actual integrated pi-web 6fcd7d4, not latest unmerged pi-web main. Detailed review and evidence: .agents/notes/upstream-merge-20261026-handoff.md.",
     "2026-11-03 — End-to-end encrypted relay (docs/remote-relay.md): PwaRegistration, push/subscribe and open-in-explorer gain small fork edits; lib/web-push.ts binds relay subscriptions. Markers in components/fork-extractions.test.mjs pin the relay wiring in proxy.ts, instrumentation-node.ts, desktop-api-auth.ts and SettingsPanel.tsx.",
-    "2026-11-01 — Remote access (PR 194): lib/web-push.ts and lib/push-client.ts carry the phone push events and the iOS tap-to-enable path; lib/request-security.ts and proxy.ts gate the Tailscale Serve hostname on Tailscale-User-Login and refuse Funnel traffic. Markers in components/fork-extractions.test.mjs pin the wiring."
+    "2026-11-01 — Remote access (PR 194): lib/web-push.ts and lib/push-client.ts carry the phone push events and the iOS tap-to-enable path; lib/request-security.ts and proxy.ts gate the Tailscale Serve hostname on Tailscale-User-Login and refuse Funnel traffic. Markers in components/fork-extractions.test.mjs pin the wiring.",
+    "2026-11-05 — Merged desktop upstream eaf955fd; workspace recheck feedback adapted to the fork composer. ChatInput structural drift 1778 → 1785 against integrated pi-web 6fcd7d4; accepted high risk unchanged."
   ]
 }

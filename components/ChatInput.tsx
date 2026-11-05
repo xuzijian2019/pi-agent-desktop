@@ -6,7 +6,7 @@ import { WEB_SLASH_COMMANDS, parseWebSlashCommand, type ViewSlashCommand } from 
 import type { BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
 import type { SkillsResponse } from "@/lib/api-types";
 import type { ModelScopeWarning } from "@/lib/model-scope-warnings";
-import type { UnavailableWorkspace } from "@/lib/workspace-availability";
+import type { UnavailableWorkspaceNotice } from "@/lib/workspace-availability";
 import type { TextContent, UserMessage } from "@/lib/types";
 import { mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft as rekeyStoredDraft, clearDraft, getDraft, setDraft, loadDraft, subscribeDrafts, getDraftStatus, retryDraft, type ChatDraftImage } from "@/lib/draft-store";
 import { buildPasteToken, normalizePastedText, shouldChipPastedText, splicePastedTexts, type ChatDraftText, type PastedTextChip } from "@/lib/pasted-text";
@@ -82,7 +82,7 @@ interface Props {
   modelList?: { id: string; name: string; provider: string; input?: string[] }[];
   modelError?: string | null;
   /** The cwd can no longer host a run (deleted, replaced by a file, unreadable): sending is blocked and the draft stays. */
-  workspaceUnavailable?: UnavailableWorkspace | null;
+  workspaceUnavailable?: UnavailableWorkspaceNotice | null;
   /** Probe the cwd again, e.g. after the folder was restored. */
   onRecheckWorkspace?: () => void;
   /** Diagnostics from resolving `enabledModels`, e.g. a pattern that matched nothing. */
@@ -716,9 +716,10 @@ function ModelNoticeBanner({
 }
 
 /** Shown instead of the model error that a missing cwd would otherwise cause (#1061). */
-export function WorkspaceUnavailableBanner({ workspace, onRecheck }: { workspace?: UnavailableWorkspace | null; onRecheck?: () => void }) {
+export function WorkspaceUnavailableBanner({ workspace, onRecheck }: { workspace?: UnavailableWorkspaceNotice | null; onRecheck?: () => void }) {
   const { t } = useI18n();
   if (!workspace) return null;
+  const checking = workspace.recheck === "checking";
   const body = workspace.availability === "missing"
     ? t("chat.workspaceMissing", { cwd: workspace.cwd })
     : workspace.availability === "not-directory"
@@ -731,24 +732,20 @@ export function WorkspaceUnavailableBanner({ workspace, onRecheck }: { workspace
         title={t("chat.workspaceUnavailable")}
         body={body}
         action={onRecheck ? (
-          <button
-            type="button"
-            onClick={onRecheck}
-            style={{
-              flexShrink: 0,
-              padding: "2px 8px",
-              border: "var(--hairline) solid color-mix(in srgb, var(--danger) 45%, transparent)",
-              borderRadius: "var(--radius-sm)",
-              background: "transparent",
-              color: "inherit",
-              cursor: "pointer",
-              fontSize: "var(--fs-micro)",
-              lineHeight: 1.4,
-              whiteSpace: "nowrap",
-            }}
-          >
-            {t("chat.workspaceRecheck")}
-          </button>
+          <div className="workspace-recheck-actions">
+            <button
+              type="button"
+              onClick={onRecheck}
+              disabled={checking}
+              aria-busy={checking}
+              className="workspace-recheck-button"
+            >
+              {checking ? t("chat.workspaceRechecking") : t("chat.workspaceRecheck")}
+            </button>
+            {workspace.recheck === "unchanged" && (
+              <span role="status">{t("chat.workspaceRecheckUnchanged")}</span>
+            )}
+          </div>
         ) : undefined}
       />
     </div>
