@@ -7,8 +7,8 @@ import ts from "typescript";
 import { createJiti } from "jiti";
 
 const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
-const jiti = createJiti(import.meta.url);
-const draftStore = await jiti.import("../lib/draft-store.ts");
+const jiti = createJiti(import.meta.url, { tsconfigPaths: true });
+const draftStore = await jiti.import("@/lib/draft-store");
 
 function callbackBody(name) {
   const tree = ts.createSourceFile("AppShell.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);

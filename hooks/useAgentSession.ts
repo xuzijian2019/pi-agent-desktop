@@ -201,6 +201,11 @@ export type BuiltinSlashCommandResult =
   | { handled: false }
   | { handled: true; message?: string; error?: string; action?: "openSessionStats" | "openSettings" };
 
+/** How a run ended, for completion feedback: `aborted` when it was stopped rather than finished. */
+export interface AgentEndInfo {
+  aborted: boolean;
+}
+
 export interface UseAgentSessionOptions {
   session: SessionInfo | null;
   sessionRunning?: boolean;
@@ -208,7 +213,8 @@ export interface UseAgentSessionOptions {
   newSessionDraftKey: string | null;
   /** Hidden model-only workspace: always no tools and no shell commands. */
   chatWorkspace?: boolean;
-  onAgentEnd?: () => void;
+  /** A run ended; `aborted` when it was stopped rather than finished (pi's `agent_settled.aborted`). */
+  onAgentEnd?: (end: AgentEndInfo) => void;
   onAttentionNeeded?: (request: BlockingExtensionUiRequest) => void;
   onSessionCreated?: (session: SessionInfo, sourceDraftKey: string) => void;
   onSessionForked?: (newSessionId: string) => void;
@@ -344,7 +350,7 @@ export interface AttachedImage {
 }
 
 type SelectedModel = { provider: string; modelId: string };
-type ModelEntry = { id: string; name: string; provider: string };
+type ModelEntry = { id: string; name: string; provider: string; providerName?: string };
 type ModelsResponse = {
   models: Record<string, string>;
   modelList?: ModelEntry[];
@@ -1418,10 +1424,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     return wasRunning;
   }, []);
 
-  const notifyPromptStage = useCallback((runId: number) => {
+  const notifyPromptStage = useCallback((runId: number, aborted = false) => {
     if (notifiedPromptRunIdRef.current === runId) return false;
     notifiedPromptRunIdRef.current = runId;
-    onAgentEnd?.();
+    onAgentEnd?.({ aborted });
     return true;
   }, [onAgentEnd]);
 
@@ -1505,7 +1511,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (promptWasPending) {
         notifyPromptStage(runId);
       } else if (agentWasActive && wasRunning) {
-        onAgentEnd?.();
+        onAgentEnd?.({ aborted: false });
       }
       if (sid) scheduleEventStreamClose(sid);
     }
@@ -1720,7 +1726,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           void loadSession(sid);
           scheduleEventStreamClose(sid);
         }
-        if (wasRunning) onAgentEnd?.();
+        if (wasRunning) onAgentEnd?.({ aborted: event.aborted === true });
         break;
       }
       case "prompt_done":
@@ -1729,7 +1735,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           const promptWasPending = rpcPromptPendingRef.current;
           rpcPromptPendingRef.current = false;
           optimisticUserMessageKeyRef.current = null;
-          const firstNotification = notifyPromptStage(runId);
+          const firstNotification = notifyPromptStage(runId, event.aborted === true);
           if (!promptWasPending && !firstNotification) break;
 
           const sid = sessionIdRef.current;
@@ -2225,19 +2231,39 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
     const sid = sessionIdRef.current;
     if (!sid || modelSwitchPendingRef.current) return;
+    const generation = sessionGenerationRef.current;
+    const isCurrent = () => sessionHookMountedRef.current && sessionIdRef.current === sid
+      && sessionGenerationRef.current === generation;
     const target = { provider, modelId };
     const previousOverride = currentModelOverride;
     modelSwitchPendingRef.current = true;
     setCurrentModelOverride(target);
     setModelSwitching(true);
+    // C2 (upstream #1527): a switch during a run applies from the run's next
+    // model request, as the reasoning level does. Reading the file then would
+    // swap the run's messages under the stream, so take the model and level
+    // from the live state; the run's end reads the file.
+    const midRun = agentRunningRef.current || bashRunningRef.current;
+    const syncLiveState = async () => {
+      const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`).catch(() => null);
+      const d = res?.ok ? await res.json().catch(() => null) as { state?: AgentStateResponse } | null : null;
+      if (d?.state && isCurrent()) syncLiveModel(d.state);
+    };
     try {
       const selected = await sendAgentCommand<{ provider: string; id: string }>(sid, { type: "set_model", provider, modelId });
+      if (!isCurrent()) return;
       setLiveModel({ provider: selected.provider, modelId: selected.id });
-      // Pi persists model_change synchronously. Reload the canonical session so
-      // the model, thinking level, and active leaf all advance together.
       modelSwitchPendingRef.current = false;
-      await loadSession(sid);
+      if (midRun) {
+        setCurrentModelOverride(null);
+        await syncLiveState();
+      } else {
+        // Pi persists model_change synchronously. Reload the canonical session so
+        // the model, thinking level, and active leaf all advance together.
+        await loadSession(sid);
+      }
     } catch (e) {
+      if (!isCurrent()) return;
       console.error("Failed to set model:", e);
       modelSwitchPendingRef.current = false;
       setCurrentModelOverride(previousOverride);
@@ -2246,13 +2272,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         message: `Failed to switch model: ${e instanceof Error ? e.message : String(e)}`,
       });
       // A failed response can still follow a server-side write (for example, a
-      // dropped connection), so let the session file settle the displayed model.
-      await loadSession(sid, false, true);
+      // dropped connection), so let the server settle the displayed model.
+      if (midRun) await syncLiveState();
+      else await loadSession(sid, false, true);
     } finally {
-      modelSwitchPendingRef.current = false;
-      setModelSwitching(false);
+      if (isCurrent()) {
+        modelSwitchPendingRef.current = false;
+        setModelSwitching(false);
+      }
     }
-  }, [addNotice, currentModelOverride, isNew, loadSession, setNewSessionModel]);
+  }, [addNotice, currentModelOverride, isNew, loadSession, setNewSessionModel, syncLiveModel]);
 
   const handleCompact = useCallback(async () => {
     const sid = sessionIdRef.current;

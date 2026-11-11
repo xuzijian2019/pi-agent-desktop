@@ -15,7 +15,7 @@ import {
   readSessionHeader,
 } from "@/lib/session-reader";
 import { sessionPathKey } from "@/lib/session-path";
-import { abortSubagent, getRpcSession, getRpcSessionInfos } from "@/lib/rpc-manager";
+import { abortSubagent, getRpcSession, getRpcSessionInfos, getRpcStartingSessionIds } from "@/lib/rpc-manager";
 import { projectTreeForResponse, toSummaryTree } from "@/lib/project-tree";
 import { computeSessionTotalActiveMs } from "@/lib/session-timing";
 import { computeSessionStats } from "@/lib/session-stats";
@@ -29,6 +29,8 @@ import { isChatFolderPath } from "@/lib/chat-workspace";
 import { samePath } from "@/lib/paths";
 import { moveFolderToTrash } from "@/lib/trash";
 import { replaceFileAtomicSync } from "@/lib/atomic-file";
+import { getLiveSubagentStatus, hasUnsettledSubagentRun } from "@/lib/subagent-runtime";
+import { forgetSessionUiState } from "@/lib/session-ui-state";
 
 export async function GET(
   req: Request,
@@ -228,6 +230,7 @@ export async function DELETE(
 ) {
   const { id } = await params;
   const trashChatFolder = new URL(req.url).searchParams.get("chatFolder") === "trash";
+  const idleOnly = new URL(req.url).searchParams.get("idleOnly") === "1";
   try {
     const filePath = await resolveSessionPath(id);
     if (!filePath) {
@@ -317,6 +320,30 @@ export async function DELETE(
     }
     const deletedPathKeys = new Set([...deletedPaths.values()].map((path) => sessionPathKey(path)));
 
+    if (idleOnly) {
+      // The dialog's idle snapshot may be stale. Refresh live descendants after
+      // all awaited catalogue/path reads and before reparenting, shutdown or unlink.
+      // This is an in-process guard, not a lock across the later async shutdowns.
+      const family = new Set(deletedSessionIds);
+      const live = getRpcSessionInfos({ includeTransient: true });
+      for (let grew = true; grew;) {
+        grew = false;
+        for (const session of live) {
+          if (session.relation?.kind !== "subagent" || !family.has(session.relation.parentSessionId) || family.has(session.id)) continue;
+          family.add(session.id);
+          grew = true;
+        }
+      }
+      const starting = new Set(getRpcStartingSessionIds());
+      const active = [...family].some((sessionId) => {
+        const runtime = getRpcSession(sessionId);
+        const status = getLiveSubagentStatus(sessionId);
+        return starting.has(sessionId) || runtime?.isRunning() || runtime?.isAwaitingInput?.()
+          || status === "running" || status === "queued" || hasUnsettledSubagentRun(sessionId);
+      });
+      if (active) return NextResponse.json({ error: "Session or a subagent is running", code: "session_running" }, { status: 409 });
+    }
+
     // Re-attach all direct children to this session's parent (cascade re-parent)
     // Scan sibling files in the same directory
     try {
@@ -383,6 +410,12 @@ export async function DELETE(
       }
       invalidateSessionPathCache(deletedId);
       invalidateSessionManagerCache(deletedPath);
+    }
+    // Drop their pins and archive times; best effort, the files are already gone.
+    try {
+      await forgetSessionUiState(deletedSessionIds);
+    } catch (error) {
+      console.warn(`[pi-web] could not clear the sidebar state of deleted session ${id}: ${error instanceof Error ? error.message : String(error)}`);
     }
     invalidateSessionListCache();
     let folderTrashed = false;

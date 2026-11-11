@@ -412,7 +412,7 @@ test("shows and locks the optimistic model while a switch is pending", () => {
   assert.match(html, /aria-busy="true"/);
 });
 
-test("filters model options by name and id", () => {
+test("filters model options by name, id and provider", () => {
   const options = [
     { provider: "ollama", modelId: "qwen3:latest", name: "Qwen 3" },
     { provider: "anthropic", modelId: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
@@ -421,8 +421,8 @@ test("filters model options by name and id", () => {
 
   assert.deepEqual(filterModelOptions(options, "QWEN"), [options[0]]);
   assert.deepEqual(filterModelOptions(options, "claude-sonnet"), [options[1]]);
-  assert.equal(filterModelOptions(options, "OpenAI").length, 0);
-  assert.equal(filterModelOptions(options, "anthropic/claude").length, 0);
+  assert.deepEqual(filterModelOptions(options, "OpenAI"), [options[2]]);
+  assert.deepEqual(filterModelOptions(options, "anthropic/claude"), [options[1]]);
   assert.equal(filterModelOptions(options, "missing").length, 0);
   assert.equal(filterModelOptions(options, "  "), options);
 });
@@ -1184,4 +1184,45 @@ test("the composer offers an image picker left of the folder chip", () => {
   const left = source.slice(source.indexOf('<div className="composer-controls-left">'), source.indexOf("{showHints && projectLabel && ("));
   assert.match(left, /onClick=\{\(\) => fileInputRef\.current\?\.click\(\)\}/);
   assert.match(left, /aria-label=\{t\(!onAttachFiles \? "chat\.attachImage" : "chat\.attachFiles"\)\}/);
+});
+
+test("the fork model control stays enabled mid-run but locks while switching", () => {
+  for (const modelSwitching of [false, true]) {
+    const html = renderWithI18n(React.createElement(ChatInput, {
+      onSend() {}, onAbort() {}, onModelChange() {}, isStreaming: true, modelSwitching,
+      model: { provider: "example", modelId: "model" },
+      modelList: [{ provider: "example", providerName: "Example Cloud", id: "model", name: "Model" }],
+    }));
+    const control = html.match(/<button[^>]*class="[^"]*composer-model-trigger[^>]*>/)?.[0];
+    assert.ok(control);
+    assert.equal(/disabled=""/.test(control), modelSwitching);
+  }
+  const option = { provider: "example", providerName: "Example Cloud", modelId: "model", name: "Model" };
+  assert.deepEqual(filterModelOptions([option], "example cloud"), [option]);
+});
+
+test("quote insertion preserves surrounding draft and leaves the caret after the quote", async () => {
+  const source = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
+  const method = source.slice(source.indexOf("    insertQuote(text:"), source.indexOf("    addImages(", source.indexOf("    insertQuote(text:")));
+  const { quoteSeparator } = await jiti.import("@/lib/quoted-selection");
+  let value = "First paragraph.\nReplace me\nTail";
+  let selection;
+  const ta = {
+    value, selectionStart: value.indexOf("Replace"), selectionEnd: value.indexOf("\nTail"),
+    scrollHeight: 260, style: {}, focus() {}, setSelectionRange(...args) { selection = args; },
+  };
+  const context = {
+    textareaRef: { current: ta }, valueRef: { current: value }, quoteSeparator,
+    setValue(next) { value = typeof next === "function" ? next(value) : next; ta.value = value; },
+    setAtQuery() {}, setHashQuery() {}, requestAnimationFrame(fn) { fn(); },
+  };
+  const js = ts.transpileModule(`const handle = {${method}}; handle.insertQuote("> quoted\\n\\n");`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  new Script(js).runInNewContext(context);
+  assert.equal(value, "First paragraph.\n\n> quoted\n\n\nTail");
+  assert.equal(context.valueRef.current, value);
+  assert.equal(selection[0], value.indexOf("\nTail"));
+  assert.equal(selection[1], selection[0]);
+  assert.equal(ta.style.height, "260px", "retain fork sizing rather than the upstream 200px cap");
 });

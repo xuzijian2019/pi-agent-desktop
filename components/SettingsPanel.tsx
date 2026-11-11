@@ -2,7 +2,7 @@
 
 import { AppSelect } from "./AppSelect";
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useDiffViewMode } from "@/hooks/useDiffViewMode";
 import { useShowMessageUsage } from "@/hooks/useShowMessageUsage";
@@ -43,6 +43,7 @@ import { ConfigButton, ConfigSwitch } from "./SettingsUi";
 import { ArtifactsSettingRow } from "./ArtifactsSettingRow";
 import { RemoteAccessSection } from "./RemoteAccessSection";
 import { RelaySection } from "./RelaySection";
+import { NetworkProxySection } from "./NetworkProxySection";
 import { ChatsSettingsSection } from "./ChatsSettingsSection";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { TerminalSettingsSection } from "./TerminalSettingsSection";
@@ -239,6 +240,7 @@ function GeneralSettings({
                   max={CHAT_CONTENT_WIDTH_MAX}
                   step={10}
                   value={chatContentWidth}
+                  style={rangeProgressStyle(chatContentWidth, CHAT_CONTENT_WIDTH_MIN, CHAT_CONTENT_WIDTH_MAX)}
                   onChange={(event) => setChatContentWidth(Number(event.target.value))}
                 />
               </div>
@@ -267,6 +269,7 @@ function GeneralSettings({
                   max={CHAT_CONTENT_FONT_SIZE_MAX}
                   step={1}
                   value={fontSize}
+                  style={rangeProgressStyle(fontSize, CHAT_CONTENT_FONT_SIZE_MIN, CHAT_CONTENT_FONT_SIZE_MAX)}
                   onChange={(event) => setFontSize(Number(event.target.value))}
                 />
               </div>
@@ -385,6 +388,8 @@ function GeneralSettings({
 
           <RemoteAccessSection />
 
+          <NetworkProxySection />
+
           <TerminalSettingsSection />
 
           {shellSettings?.isWindows && (
@@ -439,6 +444,12 @@ function GeneralSettings({
       </div>
     </div>
   );
+}
+
+/** How far a range slider is filled, for the themed track in native-theme.css. */
+function rangeProgressStyle(value: number, min: number, max: number): CSSProperties {
+  const ratio = max > min ? (value - min) / (max - min) : 0;
+  return { "--range-progress": `${Math.round(Math.min(1, Math.max(0, ratio)) * 1000) / 10}%` } as CSSProperties;
 }
 
 export const SETTINGS_SECTION_ITEMS: { id: SettingsSection; labelKey: string; requiresProject: boolean }[] = [

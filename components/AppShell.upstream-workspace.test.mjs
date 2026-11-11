@@ -4,6 +4,7 @@ import { stripTypeScriptTypes } from "node:module";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
+import { orderPanelTabs, movePanelTab } from "../lib/panel-tab-order.ts";
 import { workspaceFileTabsMatchContext } from "../lib/workspace-state.ts";
 
 const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
@@ -61,7 +62,8 @@ test("artifact title updates invalidate the memoized workspace tabs", () => {
   let memo;
   let previousDependencies;
   const context = vm.createContext({
-    fileTabs: [], terminalTabs: [], artifactTabs: [{ id: "artifact:session:preview" }],
+    fileTabs: [{ id: "file:a" }], terminalTabs: [], artifactTabs: [{ id: "artifact:session:preview" }],
+    panelTabOrder: ["artifact:session:preview", "file:a"], orderPanelTabs,
     useArtifactTitles: () => title,
     artifactPanelTab: (tab) => ({ ...tab, label: title, kind: "artifact" }),
     getFileName: (path) => path,
@@ -81,6 +83,9 @@ test("artifact title updates invalidate the memoized workspace tabs", () => {
   assert.equal(render()[0].label, "Original artifact");
   title = "Regenerated artifact";
   assert.equal(render()[0].label, "Regenerated artifact");
+  context.panelTabOrder = movePanelTab(context.panelTabOrder, "file:a", "artifact:session:preview", false);
+  assert.equal(render()[0].id, "file:a");
+  assert.equal(render()[1].label, "Regenerated artifact");
 });
 
 test("a single compact-breakpoint event closes the panel without hiding a restored terminal on mount", () => {

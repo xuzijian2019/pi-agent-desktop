@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getFileIcon } from "./FileIcons";
 import { useI18n } from "@/hooks/useI18n";
 import type { FileViewerDisplayMode, FileViewerState } from "@/lib/file-viewer-state";
@@ -25,11 +25,15 @@ interface Props {
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => void;
   onNewTerminal?: () => void;
+  /** A2: drop `source` before or after `target`; tabs drag only when it is set. */
+  onReorderTab?: (source: string, target: string, after: boolean) => void;
 }
 
-export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onNewTerminal }: Props) {
+export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onNewTerminal, onReorderTab }: Props) {
   const { t } = useI18n();
   const barRef = useRef<HTMLDivElement>(null);
+  const draggedId = useRef<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ id: string; after: boolean } | null>(null);
 
   // Flag which edges have tabs scrolled past them; the CSS turns each flag
   // into a fade, so a tab sliding under the chips beside the bar dissolves
@@ -85,7 +89,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onNewTermin
         return (
           <div
             key={tab.id}
-            className={`file-tab${isActive ? " is-active" : ""}`}
+            className={`file-tab${isActive ? " is-active" : ""}${dropTarget?.id === tab.id ? (dropTarget.after ? " is-drop-after" : " is-drop-before") : ""}`}
             role="tab"
             aria-label={tab.kind === "terminal" ? t("terminal.tabLabel", { name: tab.label }) : tab.label}
             aria-selected={isActive}
@@ -93,6 +97,35 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onNewTermin
             data-tab-id={tab.id}
             title={tab.filePath}
             onClick={() => onSelectTab(tab.id)}
+            draggable={Boolean(onReorderTab)}
+            onDragStart={(event) => {
+              if (!onReorderTab) return;
+              draggedId.current = tab.id;
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData("text/plain", tab.id);
+            }}
+            onDragOver={(event) => {
+              if (!draggedId.current || draggedId.current === tab.id) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+              const rect = event.currentTarget.getBoundingClientRect();
+              const after = event.clientX >= rect.left + rect.width / 2;
+              setDropTarget((prev) => prev?.id === tab.id && prev.after === after ? prev : { id: tab.id, after });
+            }}
+            onDrop={(event) => {
+              if (!draggedId.current || draggedId.current === tab.id) return;
+              event.preventDefault();
+              event.stopPropagation();
+              const rect = event.currentTarget.getBoundingClientRect();
+              onReorderTab?.(draggedId.current, tab.id, event.clientX >= rect.left + rect.width / 2);
+              draggedId.current = null;
+              setDropTarget(null);
+            }}
+            onDragLeave={(event) => {
+              if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+              setDropTarget((prev) => prev?.id === tab.id ? null : prev);
+            }}
+            onDragEnd={() => { draggedId.current = null; setDropTarget(null); }}
             onKeyDown={(event) => {
               if (event.target !== event.currentTarget) return;
               if (event.key === "Enter" || event.key === " ") {
@@ -134,6 +167,8 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onNewTermin
             <button
               type="button"
               className="file-tab-close"
+              draggable={false}
+              onDragStart={(event) => event.stopPropagation()}
               disabled={tab.closing}
               onClick={(event) => {
                 event.stopPropagation();

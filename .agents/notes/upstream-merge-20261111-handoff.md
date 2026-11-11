@@ -1,0 +1,46 @@
+# Desktop upstream merge - 2026-11-11
+
+## Inputs and isolation
+
+- Fork tip: `76abc59326093f3a52e05335ec98e8b98710e923`; desktop upstream: `57de4b19a01530200d96584dd0e86ae5940dd15c`; merge base: `eaf955fd33b26ee1fc3edfcdb27c6f6585515b40`. Incoming history contains 384 commits and touches 528 files.
+- Fresh pi-web tip: `b96b28b9ced615db0ad847f9c77c7dab1902bedb`; integrated pi-web baseline: `f130910abf662b506b2ef2f475fc21a2fe57badc` (0.15.0). The fresh tip is 13 commits ahead and is a drift observation only, not a separate merge source.
+- Clean, independent cloud clone; dedicated branch `merge/upstream-20261111-133945-57de4b19`; local backup `backup/pre-upstream-20261111-133945-76abc593`. No open PR at preflight. No saved coding environment or user computer used.
+- Merge performed with `git merge --no-ff --no-commit` against the fixed desktop SHA. HOME, USERPROFILE, XDG directories, agent data, temporary data and development build output isolated; tests have no real credentials or user sessions.
+- 28 textual conflicts: files and worktrees API routes; sessions runtime-route test; AppShell, AppUpdatesSection, ChatInput, ChatWindow, FileExplorer, FileViewer, MessageView, ProjectContextMenu, SessionSidebar and its test, SettingsPanel and its test, TabBar; useAgentSession and its test; agent-event-stream, draft-store, rpc-manager and two tests, session-reader; package/lockfile, release pins and CSS baseline.
+
+## Integrated from upstream
+
+- pi-web 0.15.0, pi SDK 1.5.2 (all eight SDK packages pinned exactly), desktop component metadata 0.8.4. Updated CJK Markdown, safe app/file links, syntax languages, CSV/binary previews, file upload targets and changes tree, tool patch gaps and narrow one-column patches.
+- Session history/index/privacy improvements, compaction queues, live model switching, deferred provider recovery, subagent MCP/skills/trust integration, bounded liveness/debug reads and network proxy settings.
+- Project/session pinning, project-section folding, Fork and bulk delete, long session-time layout, panel tab drag order; release highlights, Settings slider progress, provider-picker containment and responsive controls.
+
+## Kept from the fork
+
+Project-tree/full-height shell, separate project picker and file workbench, simplified composer, IndexedDB drafts, one-shot send and prompt recovery, monotonic request/view guards, streaming snapshot/scroll preservation, session references, session tool snapshots, auto-title coordination, recap, explicit usage preference, shared app-menu styling, three locales, userHome routing, file/credential restrictions and patched JSON transport.
+
+The latest fork deliberately removed side-chat UI. Upstream persistent side-chat creation, `/side`, side panels and side-specific controls remain absent, with a new anti-resurrection test. Stored side relations can still be read safely. Quote-to-new-chat stays the fork flow. The upstream sidebar explorer, mobile Settings history/home drill-down, legacy quick buttons and duplicate status/UI structures remain declined.
+
+## Review and notable resolutions
+
+- Reviewed the complete incoming/fork file inventory and both sides of overlapping changes in chat, shell/file UI, settings/file routes and session runtime. Cross-file extraction checks preserve file-language detection, project picker, workbench branch previews, settings locale ownership and update busy handling.
+- Upstream's automatic locale merge removed the fork section-picker labels; restored all three. Retained existing file-route CSP assertions and the Next 16.4.5 security/JSON transport fixes. Lockfile regenerated from the fork lock to avoid Tauri plugin re-resolution; undici advances to 8.12.4.
+- Retained extension UI theme adaptation while keeping fork edit-tool instructions. Added live model-switch A-B-A tests and saved-task deferred-provider tests that reject unavailable models rather than silently falling back.
+- Bulk-delete now rechecks the latest client state and requests server `idleOnly=1`; server rejects running/starting/waiting families, live descendants and unsettled subagents with `409 session_running`. Duplicate clicks and skip counts are tested. This is an in-process check before destructive work, not an atomic lock across all later asynchronous shutdown operations or other processes.
+- Independent security review found that the unused upstream batch-delete endpoint/helper bypassed the fork idle-family checks and atomic parent-link rewrite. Excluded both `app/api/sessions/delete/route.ts` and `lib/session-delete.ts`, consistent with the prior merge-history decision, and added an absence sentinel. Bulk UI uses only the guarded fork per-id endpoint.
+- FileExplorer's new ignored-files option was otherwise unreachable after sidebar extraction; exposed it in the existing right-panel file toolbar rather than reviving the declined explorer.
+- Shared-state test imports now use the same I18n alias as components. Isolated test fixtures explicitly control PI_OFFLINE and XDG_STATE_HOME. The upstream parent/subagent completion fixture disables the fork's separate auto-title request and asserts exactly three scripted calls; completion assertions/timeouts are unchanged.
+- `app/globals.css` and `app/settings.css` are byte-identical to desktop upstream 57de4b19. Native theme restores the fork mobile section picker/header and hidden session-time slot. No inline-style baseline increases or risk-policy weakening.
+- Ownership measurements use the actual integrated pi-web f130910a baseline; existing manifest drift counts updated and FileExplorer/MarkdownBody now classify high risk. Latest independent pi-web commits are not imported.
+- Release component pins and manifest agree: desktop 0.8.4, pi 1.5.2, pi-web 0.15.0. Existing CI/release configuration is unchanged: excluded upstream's unrelated npm/GHCR publishing workflow and release-body rewrite.
+
+## Verification
+
+- Clean isolated `npm ci` succeeded. Dependency security/Tauri plugin pairing/CSS/menu focused suite: 32/32. Markdown/proxy/trust/SDK suite: 76/76. I18n/fork extraction/inline-style suite: 108/108. Ownership/CSS/menu: 18/18. Area-specific suites cover runtime, composer, shell and settings, with all final focused runs passing.
+- Initial full suite: 4412 tests, 4402 passed, 9 failed, 1 Windows-only junction skip. All nine failures were diagnosed and corrected as described above; no production behavior assertion was removed or weakened. Final isolated aggregate suite: **4424 tests, 4423 passed, zero failed, one Windows-only junction skip**. Exact-head GitHub CI and screenshot review are recorded in the PR.
+- Final local TypeScript and lint passed; lint has zero errors and 20 existing warnings, matching the previous handoff. Production-only npm audit reports zero vulnerabilities; full root audit reports seven moderate findings, no high/critical. Production-only excludes development/bundled asset tooling and is not a blanket security clearance.
+- `npm run web -- --no-open -p 30151` started successfully in the isolated build/data environment. The generated dev output was moved outside the checkout before final gates, preventing generated chunks from entering lint. The cloud CUA browser is in a different network namespace and received `ERR_CONNECTION_REFUSED`; no local rendered UI or screenshot pass is claimed.
+- Added eight CI-discovered real-application cases in `tests/e2e/upstream-015-merge.spec.ts` for 1440/390 widths and light/dark: long patch/composer/queue, quote caret and cancel, recap-only command surface, Settings provider-picker bounds, and mid-run model menu. Each matrix point saves six screenshots in the existing `e2e-validation` artifact. Histories use real isolated JSONL; live state/SSE/catalog are synthetic without model calls. Quote-to-new-chat covers open/cancel, not a paid send or complete model round trip. Exact-head screenshots require inspection before a visual claim.
+
+## Remaining boundaries
+
+No Mac native/Tauri/AppKit build, signed/unsigned app or installer acceptance, native dialog/theme acceptance, release/tag or packaged runtime staging/verification was performed. SDK package changes are covered by web/unit checks and existing CI; Rust CI's placeholder resources do not prove bundled runtime behavior. A development server is not packaged-app validation. Full local Playwright/Rust suites are not duplicated because existing GitHub CI owns them. Only a dedicated draft PR is authorized; main merge requires the user's later explicit approval for that PR.

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "upstreamBaseline": "main@6fcd7d4 (v0.10.0)",
+  "upstreamBaseline": "main@f130910a (v0.15.0)",
   "note": "Single source of truth for the pi-web merge boundary. `driftedUpstreamFiles` lists files agegr/pi-web owns that this fork has also edited — every one is a potential merge conflict, and a potential SILENT semantic conflict when git merges cleanly but the two sides changed different things. The automated sync (.github/workflows/component-updates.yml) intersects each incoming upstream release with this map to decide whether it may push to main unattended. Human-facing rationale lives in docs/ownership-boundaries.md.",
   "ignored": [
     "package-lock.json",
@@ -25,65 +25,65 @@
   "driftedUpstreamFiles": {
     "components/SessionSidebar.tsx": {
       "risk": "high",
-      "drift": 4272,
+      "drift": 5488,
       "reason": "~500 lines were MOVED OUT into components/ProjectPicker.tsx and components/path-ui.tsx, which do not exist upstream. git merge does not track cross-file moves: an upstream edit to the project-picker block can merge back cleanly and silently resurrect a second copy.",
-      "structuralDrift": 3555,
+      "structuralDrift": 5313,
       "disposition": "accepted"
     },
     "components/AppShell.tsx": {
       "risk": "high",
-      "drift": 2859,
+      "drift": 3503,
       "reason": "Top-bar redesign (toolbar consolidated into a more-menu, inline styles to classNames) plus the mount point for desktop chrome. The desktop-only parts moved to components/desktop/; the rest is the fork's own interaction design, not desktop plumbing, so this file stays high risk by design rather than by neglect. Header/More cleanup (ui-refresh decisions 7 and 8) DELETES upstream UI rather than adding fork UI — the Full history toolbar button, the Session stats more-item and the session top panel — which raises structural drift by 37 lines, because upstream still ships all of it. Numbers are the measured values from `npm run drift` against the recorded baseline. Saved-task append and chip conflict fixes bring measured structural drift to 1411. Phase 4 adds an import, one local element and one prop to fill ChatWindow's empty-state slot: 3 structural lines.",
-      "structuralDrift": 2323,
+      "structuralDrift": 2941,
       "disposition": "accepted"
     },
     "components/FileViewer.tsx": {
       "risk": "high",
-      "drift": 657,
+      "drift": 987,
       "reason": "Adds FileViewerToolbar and FileViewerStatus, file icons, a live-sync indicator and a retry action. Both components are defined inside FileViewer.tsx rather than moved out, so there is no cross-file resurrection risk — only a large diff. Kept deliberately.",
-      "structuralDrift": 471,
+      "structuralDrift": 783,
       "disposition": "accepted"
     },
     "components/FileExplorer.tsx": {
-      "risk": "medium",
-      "drift": 277,
+      "risk": "high",
+      "drift": 543,
       "reason": "Adds selection highlighting (selectedPath/onSelectPath) and moves git status colours onto CSS variables. Generic improvement, no desktop coupling. Kept deliberately.",
-      "structuralDrift": 147,
+      "structuralDrift": 352,
       "disposition": "accepted"
     },
     "components/TabBar.tsx": {
       "risk": "medium",
-      "drift": 162,
+      "drift": 193,
       "reason": "Accessibility work plus terminal tabs: role=\"tab\", aria-selected, roving tabIndex, keyboard activation, and a New terminal button. Keep the fork's class-based markup and avoid duplicating the tab label when adopting upstream changes.",
-      "structuralDrift": 106,
+      "structuralDrift": 133,
       "disposition": "accepted"
     },
     "components/ChatWindow.tsx": {
       "risk": "high",
-      "drift": 1646,
+      "drift": 2044,
       "reason": "Redesigned empty state — the new-session branding header (app icon + PRODUCT_NAME) is removed and only the update chip remains. Overlay composer and recap stay fork-owned; side chat was removed by user request on 2026-10-24. Kept deliberately.",
-      "structuralDrift": 1364,
+      "structuralDrift": 1760,
       "disposition": "accepted"
     },
     "hooks/useTheme.ts": {
       "risk": "medium",
-      "drift": 31,
+      "drift": 38,
       "reason": "Follows the OS colour scheme until the user picks a theme explicitly, and drops the ToggleOrigin argument so the view transition always starts from the centre. The view transition itself is unchanged from upstream. Kept deliberately.",
-      "structuralDrift": 31,
+      "structuralDrift": 38,
       "disposition": "accepted"
     },
     "components/ChatInput.tsx": {
       "risk": "high",
-      "drift": 2561,
+      "drift": 2937,
       "reason": "Composer chrome restyle. Phase 3 stream H2 and Phase 4 part C together replaced 134 of the 136 inline style objects with classes in app/native-theme.css; the 2 that remain carry a measured popover position. Structural drift is 1044 against 1002 on main: +5 from the part C checkpoint (the per-tone banner colour constant and the queued-message recall button's pointer handlers), +3 from diff realignment across the remaining conversions, and +34 from dropping the onMouseEnter/onMouseLeave colour hacks on the composer controls, which the classifier scores as structural because it deletes upstream lines. That last 34 is isolated in a single commit. Saved-draft restoration adds 4 structural lines, bringing the current measured structural drift to 1015. Upstream changed this file in v0.8.1, and components/ChatInput*.test.mjs plus tests/e2e/workbench.spec.ts cover it.",
-      "structuralDrift": 1785,
+      "structuralDrift": 2130,
       "disposition": "accepted"
     },
     "components/MessageView.tsx": {
       "risk": "high",
-      "drift": 1105,
+      "drift": 1686,
       "reason": "Message bubble markup adjusted. Transcript search adds read-only historical rendering and exact-match expansion. Phase 3 stream H3 then replaced ~90 inline style objects with classes in app/native-theme.css, which is why the total is large and almost two thirds cosmetic; the structural half is unchanged transcript-search and written-file rendering. The 2026-09-20 upstream merge added transcript tool expansion and tool-result image hooks on top of the fork's transcript-search rendering, which pushed structural drift just over the high threshold.",
-      "structuralDrift": 503,
+      "structuralDrift": 1004,
       "disposition": "accepted"
     },
     "lib/i18n/registry.ts": {
@@ -95,16 +95,16 @@
     },
     "app/layout.tsx": {
       "risk": "low",
-      "drift": 26,
+      "drift": 29,
       "reason": "native-theme.css import, branding title, dark-mode bootstrap script. Workbench integration adds 1 structural lines relative to d0a8be2; totals conservatively add that delta because the v0.8.2 baseline is unavailable locally.",
-      "structuralDrift": 26,
+      "structuralDrift": 29,
       "disposition": "accepted"
     },
     "lib/rpc-manager.ts": {
       "risk": "high",
-      "drift": 961,
+      "drift": 969,
       "reason": "Small fork edit in a file upstream changes often. Workbench activity tracking was removed on 2026-09-25, which dropped structural drift back under the high threshold. Upstream/main 26eb188 (2026-10-04 merge, round 1) added running-state broadcasts and the built-in MCP extension on the desktop side, which pi-web 96966e5 does not have; measured against that baseline this lifts structural drift to 269. Still accepted.",
-      "structuralDrift": 961,
+      "structuralDrift": 969,
       "disposition": "accepted"
     },
     "components/BranchNavigator.tsx": {
@@ -137,8 +137,8 @@
     },
     "lib/skill-lock.ts": {
       "risk": "low",
-      "drift": 4,
-      "structuralDrift": 4,
+      "drift": 6,
+      "structuralDrift": 6,
       "disposition": "accepted",
       "reason": "Routes homedir() through userHome() so Next's file tracer stops folding it into a build-time glob of the whole user profile — the walk that made every Windows build fail. One import plus call swaps; conflicts here would be textual."
     },
@@ -151,16 +151,16 @@
     },
     "components/SettingsPanel.tsx": {
       "risk": "high",
-      "drift": 558,
-      "structuralDrift": 460,
+      "drift": 846,
+      "structuralDrift": 706,
       "disposition": "accepted",
       "reason": "AppSettings was folded into General: Version & Updates and desktop window/tray switches live here (via AppUpdatesSection / DesktopAppSection). The fork's autoTitle switch and web/desktop tagline split sit in the same tab. High structural drift because the JSX tree changed."
     },
     "hooks/useAgentSession.ts": {
       "risk": "high",
-      "drift": 895,
+      "drift": 1901,
       "reason": "Fork session lifecycle guards plus editable composer outbox submission, queue events and per-message edit/send/delete. Restoring an edited pending message must target the original session draft and preserve current input. Never replace with upstream direct followUp submission.",
-      "structuralDrift": 895,
+      "structuralDrift": 1901,
       "disposition": "accepted"
     },
     "next.config.ts": {
@@ -206,16 +206,16 @@
       "disposition": "accepted"
     },
     "components/MarkdownBody.tsx": {
-      "risk": "medium",
-      "drift": 234,
-      "structuralDrift": 230,
+      "risk": "high",
+      "drift": 315,
+      "structuralDrift": 303,
       "disposition": "accepted",
       "reason": "Uses the fork's headless streaming adapter and coalesced preprocessing while preserving Pi's plugins and widget mapping. Incoming markdown changes must retain the static/safety fallbacks, immediate completion and stream replacement behavior."
     },
     "lib/web-push.ts": {
       "risk": "medium",
-      "drift": 189,
-      "structuralDrift": 189,
+      "drift": 208,
+      "structuralDrift": 208,
       "disposition": "accepted",
       "reason": "Fork adds failed / waiting-for-you pushes (notifySessionEvent, sessionPushPayload), a caller-supplied session name that skips SessionManager.listAll(), and per-device test send / unsubscribe. An upstream rewrite of the notifier must keep all three event kinds, 404/410 pruning, and sendTest rethrowing delivery errors. Subscriptions made through the encrypted relay carry relayDevice and are skipped once that device is revoked (isRelayDevicePaired)."
     },
@@ -408,6 +408,7 @@
     "2026-10-26 — Merged desktop upstream 56691c5a (0.7.7), integrating appearance/font preferences, chat-owned file browsing, environment isolation and startup failure handling. Retained fork project-tree/composer/recap/tail-follow interactions and quiet logging. Drift is measured against actual integrated pi-web 6fcd7d4, not latest unmerged pi-web main. Detailed review and evidence: .agents/notes/upstream-merge-20261026-handoff.md.",
     "2026-11-03 — End-to-end encrypted relay (docs/remote-relay.md): PwaRegistration, push/subscribe and open-in-explorer gain small fork edits; lib/web-push.ts binds relay subscriptions. Markers in components/fork-extractions.test.mjs pin the relay wiring in proxy.ts, instrumentation-node.ts, desktop-api-auth.ts and SettingsPanel.tsx.",
     "2026-11-01 — Remote access (PR 194): lib/web-push.ts and lib/push-client.ts carry the phone push events and the iOS tap-to-enable path; lib/request-security.ts and proxy.ts gate the Tailscale Serve hostname on Tailscale-User-Login and refuse Funnel traffic. Markers in components/fork-extractions.test.mjs pin the wiring.",
-    "2026-11-05 — Merged desktop upstream eaf955fd; workspace recheck feedback adapted to the fork composer. ChatInput structural drift 1778 → 1785 against integrated pi-web 6fcd7d4; accepted high risk unchanged."
+    "2026-11-05 — Merged desktop upstream eaf955fd; workspace recheck feedback adapted to the fork composer. ChatInput structural drift 1778 → 1785 against integrated pi-web 6fcd7d4; accepted high risk unchanged.",
+    "2026-11-11 — Integrated desktop upstream 57de4b19 (pi-web f130910a, v0.15.0), preserving fork composer, recap-only UI, project tree, settings section picker, file/workbench extractions and security patches. Recomputed existing ownership drift against the integrated pi-web baseline; FileExplorer and MarkdownBody now classify high. Review policy remains unchanged. Details: .agents/notes/upstream-merge-20261111-handoff.md."
   ]
 }
