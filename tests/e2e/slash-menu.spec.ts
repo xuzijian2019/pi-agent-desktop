@@ -98,8 +98,8 @@ test('session commands rename, show stats, export, choose a fork and navigate to
 });
 
 test('streaming model menu stays local while idle-only commands stay protected; extensions still execute',async({page,request})=>{
- const p=await seed(page,request);const sent:string[]=[];
- page.on('request',req=>{if(req.method()==='POST'&&req.url().endsWith(`/api/agent/${p.id}`))sent.push(req.postDataJSON().type)});
+ const p=await seed(page,request);const sent:{type:string;message?:string}[]=[];
+ page.on('request',req=>{if(req.method()==='POST'&&req.url().endsWith(`/api/agent/${p.id}`))sent.push(req.postDataJSON())});
  // Keep the real bash task busy until the UI assertions finish, rather than
  // racing a fixed sleep against a cold model menu or a slow CI worker.
  const releaseFile=path.join(p.cwd,'release-bash');
@@ -121,13 +121,15 @@ test('streaming model menu stays local while idle-only commands stay protected; 
    await expect(input(page)).toHaveValue('/thinking high');
   }
   await command(page,'/hotkeys');await expect(page.getByRole('dialog')).toBeVisible();expect((await (await request.get(`/api/agent/${p.id}`)).json()).state.isBashRunning).toBe(true);await page.keyboard.press('Escape');
-  expect(sent).not.toContain('prompt');expect(sent).not.toContain('follow_up');
-  expect(sent).not.toContain('set_model');expect(sent).not.toContain('set_thinking_level');
+  expect(sent.filter(command=>['prompt','follow_up'].includes(command.type))).toEqual([]);
+  expect(sent.filter(command=>['set_model','set_thinking_level'].includes(command.type))).toEqual([]);
  }finally{await writeFile(releaseFile,'release');}
  await expect.poll(async()=> (await (await request.get(`/api/agent/${p.id}`)).json()).state?.isBashRunning).toBe(false);
  await command(page,'/zebra');await expect(input(page)).toHaveValue('/zebra ');await input(page).press('Enter');await expect(page.getByText('EXTENSION_COMMAND_OK',{exact:true})).toBeVisible();await expect(page.getByRole('status',{name:'EXTENSION_STATUS_OK',exact:true})).toHaveCount(1);await expect(page.getByRole('status',{name:'EXTENSION_STATUS_OK',exact:true})).toBeVisible();
  const history=await readFile(p.file,'utf8');expect(history).not.toContain('/model');expect(history).not.toContain('/thinking');
- expect(sent).not.toContain('prompt');expect(sent).not.toContain('follow_up');
+ // The SDK dispatches extension commands through prompt; only this exact
+ // extension request is allowed, never the native model/thinking commands.
+ expect(sent.filter(command=>['prompt','follow_up'].includes(command.type)).map(({type,message})=>({type,message}))).toEqual([{type:'prompt',message:'/zebra'}]);
 });
 
 test('async native command completion preserves a newer draft',async({page,request})=>{

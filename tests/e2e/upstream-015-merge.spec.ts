@@ -13,6 +13,16 @@ const usage = { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2
 async function seed(request: APIRequestContext) {
   const id = randomUUID(), cwd = path.join(WORK_ROOT, `merge-015-${id}`);
   await mkdir(cwd, { recursive: true });
+  // Select the isolated fixture directory through the real UI API. Writing a
+  // JSONL externally does not invalidate the allowed-root cache; without this,
+  // initial project/trust reads race that cache and create a dev error badge.
+  // This grants no project trust and does not start an agent or contact a model.
+  const selected = await request.post("/api/cwd/validate", { data: { cwd } });
+  expect(selected.ok()).toBe(true);
+  expect(await selected.json()).toMatchObject({ success: true, cwd });
+  const trust = await request.get(`/api/project-trust?cwd=${encodeURIComponent(cwd)}`);
+  expect(trust.ok()).toBe(true);
+  expect(await trust.json()).toMatchObject({ requiresTrust: false, decision: null, inherited: false });
   const directory = path.join(SESSIONS_DIR, `--${cwd.replace(/^\//, "").replaceAll("/", "-")}--`);
   await mkdir(directory, { recursive: true });
   const timestamp = new Date().toISOString();
@@ -43,10 +53,12 @@ async function capture(page: Page, name: string) {
 }
 async function selectAnswer(page: Page) {
   const answer = page.getByText(quote, { exact: true });
-  await answer.scrollIntoViewIfNeeded();
+  // The floating composer can cover text that is already inside the viewport.
+  // Explicitly center it; scrollIntoViewIfNeeded() alone skips that scroll.
+  await answer.evaluate(element => element.scrollIntoView({ block: "center", behavior: "instant" }));
   // Use a real pointer selection: removeAllRanges() while a textarea is focused
   // resets its caret to zero in Chromium, unlike selecting text with the mouse.
-  const points = await answer.evaluate(element => {
+  const selectionPoints = () => answer.evaluate(element => {
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
     const nodes: Text[] = [];
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
@@ -58,8 +70,27 @@ async function selectAnswer(page: Page) {
     const last = document.createRange();
     last.setStart(lastNode, lastNode.length - 1); last.setEnd(lastNode, lastNode.length);
     const start = first.getBoundingClientRect(), end = last.getBoundingClientRect();
-    return { start: { x: start.left, y: start.top + start.height / 2 }, end: { x: end.right, y: end.top + end.height / 2 } };
+    const points = {
+      start: { x: start.left + 0.5, y: start.top + start.height / 2 },
+      end: { x: end.right - 0.5, y: end.top + end.height / 2 },
+    };
+    return {
+      ...points,
+      exposed: Object.values(points).every(point => {
+        const target = document.elementFromPoint(point.x, point.y);
+        return target !== null && element.contains(target);
+      }),
+    };
   });
+  let points = await selectionPoints();
+  let previousGeometry: string | undefined;
+  await expect.poll(async () => {
+    points = await selectionPoints();
+    const geometry = JSON.stringify([points.start, points.end]);
+    const stable = geometry === previousGeometry;
+    previousGeometry = geometry;
+    return points.exposed && stable;
+  }, { message: "Selection endpoints must be stable and hit the answer, not the floating composer" }).toBe(true);
   await page.mouse.move(points.start.x, points.start.y);
   await page.mouse.down();
   await page.mouse.move(points.end.x, points.end.y, { steps: 10 });
