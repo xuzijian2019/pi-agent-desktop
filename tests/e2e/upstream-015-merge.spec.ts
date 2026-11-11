@@ -44,11 +44,27 @@ async function capture(page: Page, name: string) {
 async function selectAnswer(page: Page) {
   const answer = page.getByText(quote, { exact: true });
   await answer.scrollIntoViewIfNeeded();
-  await answer.evaluate(element => {
-    const range = document.createRange(); range.selectNodeContents(element);
-    const selection = window.getSelection()!; selection.removeAllRanges(); selection.addRange(range);
-    element.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+  // Use a real pointer selection: removeAllRanges() while a textarea is focused
+  // resets its caret to zero in Chromium, unlike selecting text with the mouse.
+  const points = await answer.evaluate(element => {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    const nodes: Text[] = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (node.textContent?.length) nodes.push(node as Text);
+    }
+    const first = document.createRange();
+    first.setStart(nodes[0], 0); first.setEnd(nodes[0], 1);
+    const lastNode = nodes[nodes.length - 1];
+    const last = document.createRange();
+    last.setStart(lastNode, lastNode.length - 1); last.setEnd(lastNode, lastNode.length);
+    const start = first.getBoundingClientRect(), end = last.getBoundingClientRect();
+    return { start: { x: start.left, y: start.top + start.height / 2 }, end: { x: end.right, y: end.top + end.height / 2 } };
   });
+  await page.mouse.move(points.start.x, points.start.y);
+  await page.mouse.down();
+  await page.mouse.move(points.end.x, points.end.y, { steps: 10 });
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe(quote);
   await expect(page.getByRole("button", { name: "Quote", exact: true })).toBeVisible();
 }
 async function catalog(page: Page) {
@@ -57,6 +73,60 @@ async function catalog(page: Page) {
     modelList: [{ id: "fixture", name: "Offline fixture", provider: "fixture-ui", providerName: "Offline fixture provider" }],
     defaultModel: { provider: "fixture-ui", modelId: "fixture" },
   } }));
+}
+// Only these exact read/liveness requests are synthesized. Every other write is
+// rejected and recorded, including prompt/follow_up, model changes, fork and settings.
+async function offlineAgent(page: Page, id: string, state: { running: boolean; state?: Record<string, unknown> }) {
+  const writes: string[] = [];
+  await page.addInitScript(({ id, running }) => {
+    const Original = window.EventSource;
+    class OfflineSource extends EventTarget {
+      readyState = 1;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror = null;
+      constructor() {
+        super();
+        setTimeout(() => this.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "connected", isStreaming: running }) })), 0);
+      }
+      close() { this.readyState = 2; }
+    }
+    window.EventSource = new Proxy(Original, { construct(target, args) {
+      return new URL(String(args[0]), location.href).pathname === `/api/agent/${id}/events`
+        ? new OfflineSource() : Reflect.construct(target, args);
+    } });
+  }, { id, running: state.running });
+  await page.route("**/api/**", async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const agentPath = `/api/agent/${id}`;
+    if (request.method() === "GET" && [agentPath, `/api/sessions/${id}/state`].includes(url.pathname)) {
+      await route.fulfill({ json: state });
+      return;
+    }
+    if (request.method() === "POST" && url.pathname === `${agentPath}/lease` && !url.search && !request.postData()) {
+      await route.fulfill({ json: { success: true, running: state.running, awaitingInput: false, subagentsActive: false } });
+      return;
+    }
+    let command: Record<string, unknown> | null = null;
+    if (request.method() === "POST" && url.pathname === agentPath && !url.search) {
+      try { command = request.postDataJSON(); } catch { /* Malformed writes remain blocked. */ }
+      if (command && Object.keys(command).length === 1) {
+        if (command.type === "get_tools") {
+          await route.fulfill({ json: { success: true, data: [] } });
+          return;
+        }
+        if (command.type === "get_commands") {
+          await route.fulfill({ json: { success: true, data: { commands: [] } } });
+          return;
+        }
+      }
+    }
+    if (!["GET", "HEAD", "OPTIONS"].includes(request.method())) {
+      writes.push(`${request.method()} ${url.pathname}${command?.type ? ` (${command.type})` : ""}`);
+      await route.fulfill({ status: 409, json: { error: "Read-only merge UI fixture" } });
+    } else await route.fallback();
+  });
+  return writes;
 }
 for (const theme of ["light", "dark"] as const) for (const width of [1440, 390]) {
   test(`upstream merge: patch, quote, recap-only and Settings, ${theme} ${width}`, async ({ page, request }) => {
@@ -68,15 +138,7 @@ for (const theme of ["light", "dark"] as const) for (const width of [1440, 390])
       localStorage.setItem("pi-quote-selection-enabled", "true");
     }, theme);
     await catalog(page);
-    const writes: string[] = [];
-    // Guard against accidental provider/session mutations. All steps in this
-    // case are read-only or browser-local; a POST is a regression, not a model call.
-    await page.route("**/api/**", async route => {
-      if (["POST", "PUT", "DELETE", "PATCH"].includes(route.request().method())) {
-        writes.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
-        await route.fulfill({ status: 409, json: { error: "Read-only merge UI fixture" } });
-      } else await route.fallback();
-    });
+    const writes = await offlineAgent(page, fixture.id, { running: false });
     await page.goto(`/?session=${fixture.id}`);
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
     const input = page.getByRole("textbox", { name: "Message", exact: true });
@@ -96,14 +158,31 @@ for (const theme of ["light", "dark"] as const) for (const width of [1440, 390])
     await contained(input, width);
     await expect(input).toBeInViewport();
     await capture(page, `long-composer-${theme}-${width}.png`);
-    await input.fill("Keep this draft.");
-    await input.press("End");
-    await selectAnswer(page);
-    await page.getByRole("button", { name: "Quote", exact: true }).click();
-    await expect(input).toHaveValue(`Keep this draft.\n\n> ${quote}\n\n`);
-    await expect(input).toBeFocused();
-    await page.keyboard.type("Question after quote");
-    await expect(input).toHaveValue(`Keep this draft.\n\n> ${quote}\n\nQuestion after quote`);
+    const quoteBlock = `> ${quote}\n\n`;
+    const quoteCases = [
+      { name: "beginning", draft: "Keep this draft.", keys: ["Home"], start: 0, end: 0, before: "", after: "Keep this draft." },
+      { name: "middle", draft: "Keep this draft.", keys: ["Home", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight"], start: 4, end: 4, before: "Keep", after: " this draft." },
+      { name: "replaced range", draft: "Keep this draft.", keys: ["Home", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "Shift+ArrowRight", "Shift+ArrowRight", "Shift+ArrowRight", "Shift+ArrowRight", "Shift+ArrowRight"], start: 4, end: 9, before: "Keep", after: " draft." },
+      { name: "end", draft: "Keep this draft.", keys: ["End"], start: 16, end: 16, before: "Keep this draft.", after: "" },
+    ];
+    for (const position of quoteCases) await test.step(`Quote at ${position.name} preserves draft and typing caret`, async () => {
+      await input.fill(position.draft);
+      for (const key of position.keys) await input.press(key);
+      const selection = () => input.evaluate(element => {
+        const textarea = element as HTMLTextAreaElement;
+        return [textarea.selectionStart, textarea.selectionEnd];
+      });
+      await expect.poll(selection).toEqual([position.start, position.end]);
+      await selectAnswer(page);
+      await expect.poll(selection).toEqual([position.start, position.end]);
+      await page.getByRole("button", { name: "Quote", exact: true }).click();
+      const prefix = position.before + (position.before ? "\n\n" : "") + quoteBlock;
+      await expect(input).toHaveValue(prefix + position.after);
+      await expect(input).toBeFocused();
+      await expect.poll(selection).toEqual([prefix.length, prefix.length]);
+      await page.keyboard.type("Question after quote");
+      await expect(input).toHaveValue(prefix + "Question after quote" + position.after);
+    });
     const before = await input.inputValue();
     await selectAnswer(page);
     await page.getByRole("button", { name: "Ask in new chat", exact: true }).click();
@@ -152,31 +231,16 @@ for (const theme of ["light", "dark"] as const) for (const width of [1440, 390])
     const { id } = await seed(request);
     await page.setViewportSize({ width, height: 900 });
     const queue = Array.from({ length: 18 }, (_, i) => `Queued ${i}: ${"long queued follow-up text ".repeat(20)}`);
-    await page.addInitScript(({ id, theme }) => {
+    await page.addInitScript(theme => {
       localStorage.setItem("pi-theme", theme); localStorage.setItem("pi-locale", "en");
-      const Original = window.EventSource;
-      class OfflineSource extends EventTarget {
-        readyState = 1;
-        onmessage: ((event: MessageEvent) => void) | null = null;
-        onerror = null;
-        constructor() {
-          super();
-          setTimeout(() => this.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "connected", isStreaming: true }) })), 0);
-        }
-        close() { this.readyState = 2; }
-      }
-      window.EventSource = new Proxy(Original, { construct(target, args) {
-        return String(args[0]).includes(`/api/agent/${id}/events`) ? new OfflineSource() : Reflect.construct(target, args);
-      } });
-    }, { id, theme });
+    }, theme);
     await catalog(page);
     const state = { running: true, state: {
       isStreaming: true, isPromptRunning: true,
       model: { provider: "fixture-ui", id: "fixture" },
       queuedMessages: { steering: queue.slice(0, 9), followUp: queue.slice(9) },
     } };
-    await page.route(`**/api/sessions/${id}/state`, route => route.fulfill({ json: state }));
-    await page.route(`**/api/agent/${id}`, route => route.fulfill({ json: state }));
+    const writes = await offlineAgent(page, id, state);
     await page.goto(`/?session=${id}`);
     const input = page.getByRole("textbox", { name: "Message", exact: true });
     await expect(page.locator(".composer-queued-row")).toHaveCount(18);
@@ -197,5 +261,6 @@ for (const theme of ["light", "dark"] as const) for (const width of [1440, 390])
     await model.click();
     await expect(menu).toHaveCount(0);
     await expect(input).toHaveValue("Unsent draft remains editable during the run.\n".repeat(4));
+    expect(writes).toEqual([]);
   });
 }

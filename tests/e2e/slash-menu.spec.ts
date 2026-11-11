@@ -97,14 +97,37 @@ test('session commands rename, show stats, export, choose a fork and navigate to
  expect(await readFile(p.file,'utf8')).not.toContain('/fork');
 });
 
-test('streaming native commands stay local; extension commands still execute normally',async({page,request})=>{
- const p=await seed(page,request);await command(page,'!sleep 5');await expect.poll(async()=> (await (await request.get(`/api/agent/${p.id}`)).json()).state?.isBashRunning).toBe(true);
- await command(page,'/model');await expect(page.getByRole('alert').filter({hasText:'Wait for the current task'})).toBeVisible();
- await input(page).fill('/model');await input(page).press('Control+Enter');await expect(page.getByRole('alert').filter({hasText:'Wait for the current task'})).toBeVisible();
- await command(page,'/hotkeys');await expect(page.getByRole('dialog')).toBeVisible();expect((await (await request.get(`/api/agent/${p.id}`)).json()).state.isBashRunning).toBe(true);await page.keyboard.press('Escape');
+test('streaming model menu stays local while idle-only commands stay protected; extensions still execute',async({page,request})=>{
+ const p=await seed(page,request);const sent:string[]=[];
+ page.on('request',req=>{if(req.method()==='POST'&&req.url().endsWith(`/api/agent/${p.id}`))sent.push(req.postDataJSON().type)});
+ // Keep the real bash task busy until the UI assertions finish, rather than
+ // racing a fixed sleep against a cold model menu or a slow CI worker.
+ const releaseFile=path.join(p.cwd,'release-bash');
+ const bashPath=releaseFile.replaceAll('\\','/').replaceAll("'", "'\\''");
+ try{
+  await command(page,`!while [ ! -e '${bashPath}' ]; do sleep 0.1; done`);
+  await expect.poll(async()=> (await (await request.get(`/api/agent/${p.id}`)).json()).state?.isBashRunning).toBe(true);
+  const modelPanel=page.locator('.composer-model-panel');
+  for(const key of ['Enter','Control+Enter']){
+   await input(page).fill('/model');await input(page).press(key);
+   await expect(modelPanel).toBeVisible();await expect(input(page)).toHaveValue('');
+   await expect(modelPanel.getByText('fixture-b',{exact:true})).toBeVisible();
+   await input(page).click();await expect(modelPanel).toHaveCount(0);
+   expect((await (await request.get(`/api/agent/${p.id}`)).json()).state.isBashRunning).toBe(true);
+  }
+  for(const key of ['Enter','Control+Enter']){
+   await input(page).fill('/thinking high');await input(page).press(key);
+   await expect(page.getByRole('alert').filter({hasText:'Wait for the current task'})).toBeVisible();
+   await expect(input(page)).toHaveValue('/thinking high');
+  }
+  await command(page,'/hotkeys');await expect(page.getByRole('dialog')).toBeVisible();expect((await (await request.get(`/api/agent/${p.id}`)).json()).state.isBashRunning).toBe(true);await page.keyboard.press('Escape');
+  expect(sent).not.toContain('prompt');expect(sent).not.toContain('follow_up');
+  expect(sent).not.toContain('set_model');expect(sent).not.toContain('set_thinking_level');
+ }finally{await writeFile(releaseFile,'release');}
  await expect.poll(async()=> (await (await request.get(`/api/agent/${p.id}`)).json()).state?.isBashRunning).toBe(false);
  await command(page,'/zebra');await expect(input(page)).toHaveValue('/zebra ');await input(page).press('Enter');await expect(page.getByText('EXTENSION_COMMAND_OK',{exact:true})).toBeVisible();await expect(page.getByRole('status',{name:'EXTENSION_STATUS_OK',exact:true})).toHaveCount(1);await expect(page.getByRole('status',{name:'EXTENSION_STATUS_OK',exact:true})).toBeVisible();
- expect(await readFile(p.file,'utf8')).not.toContain('/model');
+ const history=await readFile(p.file,'utf8');expect(history).not.toContain('/model');expect(history).not.toContain('/thinking');
+ expect(sent).not.toContain('prompt');expect(sent).not.toContain('follow_up');
 });
 
 test('async native command completion preserves a newer draft',async({page,request})=>{
