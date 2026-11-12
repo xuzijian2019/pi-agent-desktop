@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test, type APIRequestContext, type Locator, type Page, type Route } from "@playwright/test";
 import { SESSIONS_DIR, WORK_ROOT } from "./sandbox";
+import { isAgentReadRequest } from "../../e2e/agent-read-request.mjs";
 
 /** Keep the folder present so the fork's cwdMissing screen does not replace the composer. */
 async function recordedSession(request: APIRequestContext, label: string) {
@@ -73,7 +74,13 @@ for (const theme of ["light", "dark"] as const) {
       const prompts: string[] = [];
       page.on("pageerror", error => errors.push(error.message));
       page.on("request", request => {
-        if (request.method() === "POST" && /\/api\/agent\//.test(request.url())) prompts.push(request.url());
+        if (request.method() !== "POST" || !/\/api\/agent\//.test(request.url())) return;
+        // Session initialization may read tools/commands or renew its lease.
+        // Exclude only those exact protocol reads; all other writes, including
+        // prompt/follow_up and new/queued sends, still fail the assertions below.
+        if (!isAgentReadRequest(request.method(), request.url(), request.postData(), fixture.id)) {
+          prompts.push(`${request.url()} ${request.postData() ?? ""}`);
+        }
       });
       await page.setViewportSize({ width, height: 900 });
       await page.addInitScript(({ theme, locale }) => {
