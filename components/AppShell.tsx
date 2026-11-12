@@ -14,7 +14,7 @@ import type { SidebarProjectActions } from "@/lib/missing-folder";
 import { AppNoticeShelf } from "./AppNoticeShelf";
 import { useScheduledRunNotifications } from "@/hooks/useScheduledRunNotifications";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
-
+import { movePanelTab, orderPanelTabs } from "@/lib/panel-tab-order";
 import { TabBar, type Tab } from "./TabBar";
 import { LazyTerminalPanel as TerminalPanel, preloadTerminalPanel } from "./LazyTerminalPanel";
 
@@ -75,8 +75,9 @@ import type { BlockingExtensionUiRequest, LeafChangeOptions, SessionInfo, Sessio
 import type { McpErrorResponse, ProjectTrustStatus } from "@/lib/api-types";
 import type { ChatInputHandle } from "./ChatInput";
 import type { FileExplorerHandle } from "./FileExplorer";
+import type { AgentEndInfo } from "@/hooks/useAgentSession";
 import type { FileViewerState } from "@/lib/file-viewer-state";
-import { getSessionFamily } from "@/lib/session-family";
+import { getSessionFamily, isHiddenRelation } from "@/lib/session-family";
 import { getLastSettingsSection, type SettingsSection } from "@/lib/settings-navigation";
 import { archivedProjectRootFor, restoreProjectRoot } from "@/lib/archived-projects";
 import { getProjectDisplayName } from "@/lib/project-display";
@@ -198,6 +199,7 @@ export function AppShell() {
   // panel crosses the threshold, so widening and narrowing again re-collapses.
   const [fileTreeNarrowOverride, setFileTreeNarrowOverride] = useState(false);
   const [fileExplorerQuery, setFileExplorerQuery] = useState("");
+  const [showIgnoredFiles, setShowIgnoredFiles] = useState(false);
   const [changesCount, setChangesCount] = useState(0);
   const [changesCollapsed, setChangesCollapsed] = useState(true);
   const [sessionCatalog, setSessionCatalog] = useState<SessionInfo[]>([]);
@@ -601,16 +603,24 @@ export function AppShell() {
   const [artifactTabs, setArtifactTabs] = useState<ArtifactTab[]>([]);
   // artifactPanelTab reads each tab's newest title; this re-renders when one changes.
   const artifactTitleKey = useArtifactTitles(artifactTabs);
-  const panelTabs: Tab[] = useMemo(() => [...fileTabs, ...terminalTabs.map((tab) => ({
+  // A2: the order the user dragged the tabs into; tabs opened since go last.
+  const [panelTabOrder, setPanelTabOrder] = useState<string[]>([]);
+  const panelTabs: Tab[] = useMemo(() => orderPanelTabs([...fileTabs, ...terminalTabs.map((tab) => ({
     id: tab.id,
     label: getFileName(tab.cwd) || tab.cwd,
     filePath: tab.cwd,
     kind: "terminal" as const,
     closing: Boolean(tab.closing),
-  })), ...artifactTabs.map(artifactPanelTab)],
-  // Artifact labels read the external store, whose title key must invalidate this memo.
+  })), ...artifactTabs.map(artifactPanelTab)], panelTabOrder),
+  // Artifact labels read the external store; its title key invalidates this memo.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  [fileTabs, terminalTabs, artifactTabs, artifactTitleKey]);
+  [artifactTitleKey, fileTabs, terminalTabs, artifactTabs, panelTabOrder]);
+  // A closed tab leaves the saved order, so reopening it appends it like any new tab.
+  const panelTabIds = panelTabs.map((tab) => tab.id).join("\n");
+  useEffect(() => {
+    const open = new Set(panelTabIds.split("\n"));
+    setPanelTabOrder((order) => order.every((id) => open.has(id)) ? order : order.filter((id) => open.has(id)));
+  }, [panelTabIds]);
   const activeArtifactTab = artifactTabs.find((tab) => tab.id === activeFileTabId) ?? null;
   const handleRightPanelToggle = useCallback(() => {
     if (isMobile) setSidebarOpen(false);
@@ -1365,12 +1375,14 @@ export function AppShell() {
     }
   }, [handleSelectSession, locale]);
 
-  const handleAgentEnd = useCallback(() => {
+  const handleAgentEnd = useCallback((end?: AgentEndInfo) => {
     setRefreshKey((k) => k + 1);
     setExplorerRefreshKey((k) => k + 1);
     if (selectedSession) hydrateSelectedSession(selectedSession.id);
 
-    if (selectedSession?.relation?.kind === "subagent") return;
+    // A stopped run did not finish a task: refresh, but announce nothing.
+    if (end?.aborted) return;
+    if (isHiddenRelation(selectedSession?.relation)) return;
     if (!shouldShowBrowserNotification()) return;
     const targetSession = selectedSession;
     deliverSessionNotification({
@@ -1402,7 +1414,7 @@ export function AppShell() {
   });
 
   const handleAttentionNeeded = useCallback((request: BlockingExtensionUiRequest) => {
-    if (selectedSession?.relation?.kind === "subagent") return;
+    if (isHiddenRelation(selectedSession?.relation)) return;
     if (!shouldShowBrowserNotification()) return;
     if (!claimExtensionAttentionNotification(request, notifiedAttentionRequestIdsRef.current)) return;
 
@@ -2417,6 +2429,7 @@ export function AppShell() {
               onSelectTab={setActiveFileTabId}
               onCloseTab={handleCloseFileTab}
               onNewTerminal={visibleProjectCwd && !activeCwdMissing ? () => handleOpenTerminal(visibleProjectCwd) : undefined}
+              onReorderTab={(source, target, after) => setPanelTabOrder(movePanelTab(panelTabs.map((tab) => tab.id), source, target, after))}
             />
           </div>
           <div className="file-workbench-actions">
@@ -2642,6 +2655,19 @@ export function AppShell() {
                     spellCheck={false}
                   />
                 </div>
+                <button
+                  type="button"
+                  className={`file-workbench-icon-button${showIgnoredFiles ? " is-active" : ""}`}
+                  onClick={() => setShowIgnoredFiles((shown) => !shown)}
+                  aria-pressed={showIgnoredFiles}
+                  title={translate("sidebar.showIgnoredFiles")}
+                  aria-label={translate("sidebar.showIgnoredFiles")}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" />
+                    {!showIgnoredFiles && <path d="m3 3 18 18" />}
+                  </svg>
+                </button>
                 {changesCount > 0 && (
                   <button
                     type="button"
@@ -2692,6 +2718,7 @@ export function AppShell() {
                   onOpenFile={handleOpenFile}
                   refreshKey={explorerRefreshKey}
                   searchQuery={fileExplorerQuery}
+                  showHidden={showIgnoredFiles}
                   onAtMention={isChatWorkspaceActive ? undefined : handleAtMention}
                   onAtMentions={isChatWorkspaceActive ? undefined : handleAtMentions}
                   onUploadBusyChange={setExplorerUploadBusy}

@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { build } from "esbuild";
 import { chromium } from "playwright";
+import { markdownTextHasSettled } from "./streaming-markdown-settled.mjs";
 
 const out = "test-results/streaming-markdown";
 await mkdir(out, { recursive: true });
@@ -136,8 +137,7 @@ try {
     assert.ok((await page.locator(".markdown-body").textContent()).includes("强调文字"));
     await page.getByRole("link", { name: "本地文件" }).click();
     assert.equal(await page.locator("html").getAttribute("data-opened-file"), "/project/src/main.ts");
-    await page.waitForFunction(() => document.querySelector('.markdown-body')
-      .getAnimations({ subtree: true }).every(animation => animation.playState === 'finished'));
+    await page.waitForFunction(markdownTextHasSettled, "强调文字还在生成");
     await page.screenshot({ path: `${out}/${theme}-${width}.png` });
     // Replacement/reconnection must not show text from the previous response.
     await set(page, "替换后的回复。", true);

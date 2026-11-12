@@ -246,7 +246,8 @@ test("uses top navigation on desktop and one compact section picker on mobile", 
   assert.match(cssSource, /\.settings-section-tab:focus-visible:not\(\[aria-current="page"\]\)/);
   assert.match(cssSource, /\.settings-section-tab:focus-visible\[aria-current="page"\][\s\S]*?outline: none/);
   assert.match(cssSource, /@media \(max-width: 640px\)[\s\S]*?\.settings-section-tabs \{[\s\S]*?display: none/);
-  assert.match(cssSource, /@media \(max-width: 640px\)[\s\S]*?\.settings-mobile-section-picker \{[\s\S]*?display: block/);
+  // Upstream removed its raw select; the fork AppSelect is styled in native-theme.css.
+  assert.match(nativeCssSource, /settings-mobile-section-picker\.app-select-trigger/);
   assert.doesNotMatch(panelSource, /width: isMobile \? "100%" : 188/);
   assert.match(panelSource, /<main className="settings-dialog-main">/);
   assert.doesNotMatch(panelSource, /<style>/);
@@ -315,4 +316,13 @@ test("rendered General keeps the browser overview, fork switches and no completi
 test("automatic naming has one fork preference, not conflicting client/server switches", () => {
   assert.match(panelSource, /appSettings\.autoTitle/);
   assert.doesNotMatch(panelSource, /<AutoTitleSettingRow/);
+});
+
+
+test("upstream network proxy and slider progress retain the fork settings controls", () => {
+  assert.match(panelSource, /<NetworkProxySection \/>/);
+  assert.match(panelSource, /style=\{rangeProgressStyle\(chatContentWidth, CHAT_CONTENT_WIDTH_MIN, CHAT_CONTENT_WIDTH_MAX\)\}/);
+  assert.match(panelSource, /style=\{rangeProgressStyle\(fontSize, CHAT_CONTENT_FONT_SIZE_MIN, CHAT_CONTENT_FONT_SIZE_MAX\)\}/);
+  assert.match(panelSource, /<AppUpdatesSection onBusyChange=\{onBusyChange\}/);
+  assert.doesNotMatch(panelSource, /history\.pushState|settings-phone-home|AutoTitleSettingRow|soundEnabled/);
 });

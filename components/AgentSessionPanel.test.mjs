@@ -69,3 +69,23 @@ test("control actions POST to the subagent runtime endpoint", () => {
   assert.match(source, /action: "abort" | "steer"/);
   assert.match(source, /JSON\.stringify\(\{ action, message \}\)/);
 });
+
+
+test("persisted non-subagent relations do not gain subagent controls or revive side-chat creation", async () => {
+  const { createJiti } = await import("jiti");
+  const jiti = createJiti(import.meta.url, { jsx: { runtime: "automatic" }, tsconfigPaths: true });
+  const React = await jiti.import("react");
+  const { renderToStaticMarkup } = await jiti.import("react-dom/server");
+  const { AgentSessionPanel } = await jiti.import("./AgentSessionPanel.tsx");
+  const { I18nProvider } = await jiti.import("@/hooks/useI18n");
+  const root = { id: "main", name: "main", firstMessage: "", modified: "2026-01-01T00:00:00Z" };
+  const side = { ...root, id: "legacy-side", name: "Imported branch", relation: { kind: "side", parentSessionId: "main" } };
+  const html = renderToStaticMarkup(React.createElement(I18nProvider, null,
+    React.createElement(AgentSessionPanel, {
+      rootSession: root, subagents: [side], selectedSessionId: "main",
+      runningSessionIds: new Set([side.id]), onSelectSession() {},
+    })));
+  assert.match(html, /Imported branch/);
+  assert.doesNotMatch(html, /aria-label="(?:Stop sub-agent|Steer sub-agent)"/);
+  assert.doesNotMatch(source, /onNewSideChat|onToggleSideTab|onDeleteSideChat|sideChat.new/);
+});

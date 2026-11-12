@@ -1,10 +1,10 @@
 {
   "pi": {
-    "version": "1.5.0",
-    "reason": "Merged desktop upstream 0a1c79ef with pi 1.5.0; integration and verification are recorded in .agents/notes/upstream-merge-20261103-handoff.md."
+    "version": "1.5.2",
+    "reason": "Merged desktop upstream 57de4b19; integration and verification boundaries recorded in .agents/notes/upstream-merge-20261111-handoff.md."
   },
   "pi-web": {
-    "version": "0.10.0",
-    "reason": "Merged upstream pi-web through main@6fcd7d4 (segments A-G); fork adaptations documented in .agents/notes/upstream-merge-20261004-round3-handoff.md."
+    "version": "0.15.0",
+    "reason": "Desktop upstream 57de4b19 integrates pi-web through f130910a; fork resolutions recorded in .agents/notes/upstream-merge-20261111-handoff.md."
   }
 }

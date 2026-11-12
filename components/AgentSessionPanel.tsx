@@ -111,7 +111,9 @@ function AgentRow({
   const secondary = main
     ? sessionTitle(session)
     : `${relation?.profile ?? t("agentSwitcher.subagent")} · ${formatRelativeTime(session.modified, locale)}`;
-  const controllable = !main && running;
+  // Only actual subagents accept the subagent control API. Persisted upstream
+  // relations can still be browsed without reviving the declined side-chat UI.
+  const controllable = !main && running && relation !== null;
 
   return (
     <div

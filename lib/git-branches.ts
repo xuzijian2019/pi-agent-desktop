@@ -3,7 +3,7 @@ import { promisify } from "util";
 import { createHash, randomUUID } from "crypto";
 import { existsSync, mkdirSync } from "fs";
 import { dirname, join } from "path";
-import { listWorktrees, invalidateProjectCache } from "./worktree";
+import { listWorktrees, listRegisteredWorktrees, WorktreeBranchInUseError, invalidateProjectCache } from "./worktree";
 import { withCheckoutGuard } from "./checkout-guard";
 import { UiError } from "./web-ui-store";
 import { allowFileRoot } from "./allowed-roots";
@@ -55,7 +55,12 @@ export async function previewBranch(cwd: string, input: BranchOperation): Promis
   if (input.action === "switch") {
     const branch = inventory.branches.find(b => b.ref === input.ref);
     if (!branch) throw new UiError("Branch not found");
-    if (branch.worktree && branch.worktree !== inventory.root) throw new UiError(`Open existing worktree: ${branch.worktree}`, 409);
+    if (!branch.remote) {
+      const holder = (await listRegisteredWorktrees(inventory.root)).find(w => w.branch === branch.name);
+      if (holder && (input.location === "worktree" || holder.path !== inventory.root)) {
+        throw new WorktreeBranchInUseError(branch.name, holder.path, holder.missing);
+      }
+    }
     name = await validName(cwd, input.name || (branch.remote ? branch.name.slice(branch.name.indexOf("/") + 1) : branch.name));
     if (branch.remote && inventory.branches.some(b => b.ref === `refs/heads/${name}`)) throw new UiError("Local branch already exists. Select it or choose another name.", 409);
     if (!branch.remote && name !== branch.name) throw new UiError("Select the existing local branch name");

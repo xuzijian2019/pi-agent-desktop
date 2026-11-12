@@ -42,6 +42,11 @@ function db(): Promise<IDBDatabase> {
   }
   return database;
 }
+/** Stable destination for a fresh composer parked while switching workspaces. */
+export function parkedNewSessionDraftKey(cwd: string): string {
+  return `parked-new:${cwd}`;
+}
+
 function valid(draft: ChatDraft): boolean {
   return typeof draft?.value === "string" && Array.isArray(draft.images)
     && draft.images.every((image) => typeof image.data === "string" && typeof image.mimeType === "string")

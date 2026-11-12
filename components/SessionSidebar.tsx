@@ -1,8 +1,8 @@
 "use client";
 
-import { Fragment, useEffect, useLayoutEffect, useState, useCallback, useRef, useSyncExternalStore, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef, useSyncExternalStore, type ReactNode } from "react";
 import type { SessionInfo, SessionWorkspaceKind } from "@/lib/types";
-import { listSessionFamilies } from "@/lib/session-family";
+import { listSessionFamilies, sideChatTitle } from "@/lib/session-family";
 import { dispatchSessionRowContextMenu } from "@/lib/session-row-context-menu";
 import { skillExpansionToCommand } from "@/lib/slash-display";
 
@@ -43,7 +43,7 @@ import { ChatConfirmDialog } from "./ChatConfirmDialog";
 import { SessionSearch } from "./SessionSearch";
 import { ProjectViewMenu, type ProjectViewMode } from "./ProjectViewMenu";
 import { ChatsSectionMenu } from "./ChatsSectionMenu";
-import { orderChatFamilies, toggleId } from "@/lib/chat-groups";
+import { orderChatFamilies, toggleId, pinnedFirst } from "@/lib/chat-groups";
 import { ArchivedProjectsSection } from "./ArchivedProjectsSection";
 import { ScheduledSidebarRow } from "./scheduled/ScheduledSidebarRow";
 import { ArtifactsSidebarRow } from "./artifacts/ArtifactsSidebarRow";
@@ -54,6 +54,8 @@ import { prefetchSessionData, invalidateSessionData } from "@/lib/session-data-c
 import type { SidebarProjectActions } from "@/lib/missing-folder";
 import { resolveSidebarNewSession } from "@/lib/sidebar-new-session";
 import { appNotify } from "@/lib/notification-store";
+import { shortenPath } from "@/lib/display-path";
+import { forkFailureMessage } from "@/lib/session-fork-client";
 import {
   archiveProjectRoot,
   restoreProjectRoot,
@@ -284,6 +286,33 @@ function writeChatsCollapsed(collapsed: boolean): void {
   chatsCollapsedListeners.forEach((cb) => cb());
 }
 
+// Keep this section preference separate from per-project folds and archive
+// visibility. Like Chats, hydrate with the server snapshot before reading the
+// stored value so a collapsed list never causes a hydration mismatch.
+const projectsSectionListeners = new Set<() => void>();
+// null = not read yet. Once storage or a click sets it, this value is the
+// snapshot, so a failed localStorage write cannot make the fold unresponsive.
+let projectsSectionCollapsedMemory: boolean | null = null;
+function subscribeProjectsSectionCollapsed(cb: () => void): () => void {
+  projectsSectionListeners.add(cb);
+  return () => { projectsSectionListeners.delete(cb); };
+}
+function readProjectsSectionCollapsed(): boolean {
+  if (projectsSectionCollapsedMemory === null) {
+    projectsSectionCollapsedMemory = getPref(APP_PREF_KEYS.collapsedProjectsSection) === "1";
+  }
+  return projectsSectionCollapsedMemory;
+}
+const serverProjectsSectionCollapsed = () => false;
+function writeProjectsSectionCollapsed(collapsed: boolean): void {
+  // Update the snapshot first: setPref/removePref swallow quota/private-mode
+  // errors, and the toggle must still work for this session.
+  projectsSectionCollapsedMemory = collapsed;
+  if (collapsed) setPref(APP_PREF_KEYS.collapsedProjectsSection, "1");
+  else removePref(APP_PREF_KEYS.collapsedProjectsSection);
+  projectsSectionListeners.forEach((cb) => cb());
+}
+
 function readIdSetPref(key: Parameters<typeof getPrefJson>[0]): Set<string> {
   const stored = getPrefJson<unknown>(key);
   return Array.isArray(stored)
@@ -298,6 +327,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // Same fold model as a project: folding drops the extra pages, so the next
   // unfold starts again from the first five chats.
   const chatsCollapsed = useSyncExternalStore(subscribeChatsCollapsed, readChatsCollapsed, serverChatsCollapsed);
+  const projectsSectionCollapsed = useSyncExternalStore(
+    subscribeProjectsSectionCollapsed, readProjectsSectionCollapsed, serverProjectsSectionCollapsed,
+  );
   const [chatSessionPages, setChatSessionPages] = useState(() => {
     const stored = getPrefJson<unknown>(APP_PREF_KEYS.chatSessionPages);
     return typeof stored === "number" && Number.isInteger(stored) && stored > 0 ? stored : 0;
@@ -308,6 +340,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // Project sessions archived one by one (#200). They leave their project's
   // list for a "Show archived" fold at its end; a search still finds them.
   const [archivedSessions, setArchivedSessions] = useState<Set<string>>(() => readIdSetPref(APP_PREF_KEYS.archivedSessions));
+  // S2: a project's pinned sessions come first in it; kept per browser like pinned chats.
+  const [pinnedSessions, setPinnedSessions] = useState<Set<string>>(() => readIdSetPref(APP_PREF_KEYS.pinnedSessions));
+  // S2: pinned projects sit above the others, kept per browser like pinned chats.
+  const [pinnedProjects, setPinnedProjects] = useState<Set<string>>(() => readIdSetPref(APP_PREF_KEYS.pinnedProjects));
+  // S6: the project whose sessions the confirmation would delete.
+  const [projectSessionsDelete, setProjectSessionsDelete] = useState<{ root: string; name: string; ids: string[]; kept: number } | null>(null);
+  const [projectSessionsDeleting, setProjectSessionsDeleting] = useState(false);
+  const [projectSessionsDeleteError, setProjectSessionsDeleteError] = useState<string | null>(null);
   const [projectsShowingArchived, setProjectsShowingArchived] = useState<Set<string>>(() => new Set());
   const [chatsMenuOpen, setChatsMenuOpen] = useState(false);
   const [chatsMenuPos, setChatsMenuPos] = useState<{ top: number; left: number } | null>(null);
@@ -659,6 +699,16 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     if (archivedSessions.size === 0) removePref(APP_PREF_KEYS.archivedSessions);
     else setPrefJson(APP_PREF_KEYS.archivedSessions, [...archivedSessions]);
   }, [archivedSessions]);
+
+  useEffect(() => {
+    if (pinnedSessions.size === 0) removePref(APP_PREF_KEYS.pinnedSessions);
+    else setPrefJson(APP_PREF_KEYS.pinnedSessions, [...pinnedSessions]);
+  }, [pinnedSessions]);
+
+  useEffect(() => {
+    if (pinnedProjects.size === 0) removePref(APP_PREF_KEYS.pinnedProjects);
+    else setPrefJson(APP_PREF_KEYS.pinnedProjects, [...pinnedProjects]);
+  }, [pinnedProjects]);
 
   useEffect(() => {
     if (chatSessionPages === 0) removePref(APP_PREF_KEYS.chatSessionPages);
@@ -1235,6 +1285,99 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     }
   }, [archivedProjectRoots, chatWorkspaceCwd, closeProjectMenu, isChatCwd, projectRootFor, recentProjects, selectedCwd]);
 
+  // S6: a project's top-level sessions (subagent runs go with their parent), split
+  // into those a delete may remove and those running now, which it keeps.
+  const projectSessionsToDelete = useCallback((projectRoot: string): { ids: string[]; kept: number } => {
+    const ids: string[] = [];
+    let kept = 0;
+    for (const session of allSessions) {
+      if (session.transient || session.relation?.kind === "subagent" || session.relation?.kind === "scheduled") continue;
+      if (session.workspaceKind === "chat" || isChatCwd(session.cwd)) continue;
+      if ((session.projectRoot || session.cwd) !== projectRoot) continue;
+      if (runningSessionIds.has(session.id)) kept += 1;
+      else ids.push(session.id);
+    }
+    return { ids, kept };
+  }, [allSessions, isChatCwd, runningSessionIds]);
+
+  const requestProjectSessionsDelete = useCallback((projectRoot: string) => {
+    const { ids, kept } = projectSessionsToDelete(projectRoot);
+    if (ids.length === 0) return;
+    setProjectSessionsDeleteError(null);
+    setProjectSessionsDelete({ root: projectRoot, name: getProjectDisplayNames([projectRoot]).get(projectRoot) ?? projectRoot, ids, kept });
+  }, [projectSessionsToDelete]);
+
+  const projectSessionsDeletingRef = useRef(false);
+  const currentRunningIdsRef = useRef(runningSessionIds);
+  currentRunningIdsRef.current = runningSessionIds;
+  const performProjectSessionsDelete = useCallback(async () => {
+    const target = projectSessionsDelete;
+    if (!target || projectSessionsDeletingRef.current) return;
+    projectSessionsDeletingRef.current = true;
+    setProjectSessionsDeleting(true);
+    setProjectSessionsDeleteError(null);
+    let failure: string | null = null;
+    let skippedRunning = 0;
+    // One at a time: each delete rewrites the session index the next one reads.
+    for (const id of target.ids) {
+      // The dialog may have been open when this run started; never use its old snapshot.
+      if (currentRunningIdsRef.current.has(id)) { skippedRunning += 1; continue; }
+      try {
+        const res = await fetch(`/api/sessions/${encodeURIComponent(id)}?idleOnly=1`, { method: "DELETE" });
+        if (res.status === 409) {
+          const detail = await res.json().catch(() => ({})) as { code?: string; error?: string };
+          // Server rechecks the whole deletion family immediately before mutation.
+          if (detail.code === "session_running") { skippedRunning += 1; continue; }
+          throw new Error(detail.error ?? `HTTP ${res.status}`);
+        }
+        if (!res.ok && res.status !== 404) {
+          const d = await res.json().catch(() => ({})) as { error?: string };
+          throw new Error(d.error ?? `HTTP ${res.status}`);
+        }
+        onSessionDeleted?.(id);
+      } catch (e) {
+        failure = t("sidebar.deleteFailed", { error: e instanceof Error ? e.message : String(e) });
+        break;
+      }
+    }
+    projectSessionsDeletingRef.current = false;
+    setProjectSessionsDeleting(false);
+    void loadSessions();
+    if (skippedRunning > 0) appNotify.info({ message: t("sidebar.deleteProjectSessionsRunning", { count: skippedRunning }) });
+    if (failure) setProjectSessionsDeleteError(failure);
+    else setProjectSessionsDelete(null);
+  }, [loadSessions, onSessionDeleted, projectSessionsDelete, t]);
+
+  // S4: Fork copies a session's current branch into a new session beside it
+  // (POST /api/sessions/[id]/fork) and opens the copy; the source is untouched.
+  // One request per source at a time.
+  const forkingIdsRef = useRef(new Set<string>());
+  const forkSession = useCallback(async (source: SessionInfo) => {
+    if (source.transient || forkingIdsRef.current.has(source.id)) return;
+    forkingIdsRef.current.add(source.id);
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(source.id)}/fork`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const data = await res.json().catch(() => ({})) as { session?: SessionInfo; code?: string; error?: string };
+      if (!res.ok || !data.session) {
+        const { key, params } = forkFailureMessage(data.code, data.error ?? `HTTP ${res.status}`);
+        appNotify.error({ message: t(key, params) });
+        return;
+      }
+      const forked = data.session;
+      handleSelectSessionFromList(forked);
+      appNotify.success({ message: t("sidebar.forkedToast", { title: forked.name || forked.firstMessage || forked.id }) });
+      void loadSessions();
+    } catch (error) {
+      appNotify.error({ message: t("sidebar.forkFailed", { error: error instanceof Error ? error.message : String(error) }) });
+    } finally {
+      forkingIdsRef.current.delete(source.id);
+    }
+  }, [handleSelectSessionFromList, loadSessions, t]);
+
   const restoreProject = useCallback((projectRoot: string) => {
     restoreProjectRoot(projectRoot);
     closeProjectMenu();
@@ -1297,11 +1440,15 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         : []),
       { label: revealProjectLabel, onSelect: () => void revealProjectInFileManager(projectRoot) },
       { kind: "separator" as const },
+      { label: t(pinnedProjects.has(projectRoot) ? "sidebar.unpinProject" : "sidebar.pinProject"), onSelect: () => setPinnedProjects((current) => toggleId(current, projectRoot)) },
       { label: t("sidebar.archiveProject"), onSelect: () => archiveProject(projectRoot) },
+      ...(projectSessionsToDelete(projectRoot).ids.length > 0
+        ? [{ label: t("sidebar.deleteProjectSessions", { count: projectSessionsToDelete(projectRoot).ids.length }), onSelect: () => requestProjectSessionsDelete(projectRoot) }]
+        : []),
     ], at);
     setProjectMenu((current) => (current?.root === projectRoot ? null : current));
     return shown;
-  }, [archiveProject, restoreProject, onOpenTerminal, revealProjectInFileManager, revealProjectLabel, showNativeWorktreeMenu, t]);
+  }, [archiveProject, onOpenTerminal, pinnedProjects, projectSessionsToDelete, requestProjectSessionsDelete, restoreProject, revealProjectInFileManager, revealProjectLabel, showNativeWorktreeMenu, t]);
 
   /** "…" opens the menu under the button; a right-click opens it at the cursor. */
   const openProjectMenu = useCallback((e: React.MouseEvent<HTMLElement>, projectRoot: string, archived = false) => {
@@ -1366,7 +1513,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     : orderedChatFamilies.filter((family) => archivedChats.has(family.root.id));
   const sessionFamilies = listSessionFamilies(projectSessions);
   const allProjects = orderProjects(groupByProject(projectSessions, { runningIds: runningSessionIds, unreadIds: unreadSessionIds }), projectOrder);
-  const activeProjects = allProjects.filter((group) => !archivedProjectRoots.has(group.projectRoot));
+  const activeProjects = pinnedFirst(
+    allProjects.filter((group) => !archivedProjectRoots.has(group.projectRoot)),
+    (group) => pinnedProjects.has(group.projectRoot),
+  );
   const activeProjectRoots = activeProjects.map((group) => group.projectRoot);
   const projectDisplayNames = getProjectDisplayNames(activeProjectRoots);
   // A search looks inside the archive too, and unfolds it to show the matches.
@@ -1395,6 +1545,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     : null;
   // A search always lists every match, folded or not.
   const chatsFolded = !trimmedSessionQuery && chatsCollapsed;
+  // Search reveals both active and archived matches without overwriting folds.
+  const projectsSectionFolded = !trimmedSessionQuery && projectsSectionCollapsed;
   let visibleChatFamilies = trimmedSessionQuery
     ? chatFamilies
     : chatFamilies.slice(0, MAX_VISIBLE_CHAT_SESSIONS * (chatSessionPages + 1));
@@ -1450,6 +1602,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const sessionArchiveActions = (id: string): SessionArchiveActions => ({
     archived: archivedSessions.has(id),
     onToggleArchive: () => setArchivedSessions((current) => toggleId(current, id)),
+    pinned: pinnedSessions.has(id),
+    onTogglePin: () => setPinnedSessions((current) => toggleId(current, id)),
   });
 
   const renderProjectGroup = (group: ReturnType<typeof groupByProject>[number], archived = false) => {
@@ -1464,9 +1618,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const archivedGroupTree = trimmedSessionQuery
       ? []
       : fullGroupTree.filter((node) => archivedSessions.has(node.session.id));
-    const groupTree = archivedGroupTree.length > 0
+    const unarchivedGroupTree = archivedGroupTree.length > 0
       ? fullGroupTree.filter((node) => !archivedSessions.has(node.session.id))
       : fullGroupTree;
+    // Pinned sessions first, each part keeping its recency order (S2).
+    const groupTree = pinnedFirst(unarchivedGroupTree, (node) => pinnedSessions.has(node.session.id));
     const showingArchived = projectsShowingArchived.has(group.projectRoot);
     const extraPages = projectSessionPages[group.projectRoot] ?? 0;
     const visibleSessionLimit = MAX_VISIBLE_PROJECT_SESSIONS * (extraPages + 1);
@@ -1682,6 +1838,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 onSelectSession={handleSelectSessionFromList}
                 onRenamed={loadSessions}
                 archiveActions={sessionArchiveActions(node.session.id)}
+                onFork={forkSession}
                 onSessionDeleted={(id) => {
                   onSessionDeleted?.(id);
                   loadSessions();
@@ -1731,6 +1888,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                       onSelectSession={handleSelectSessionFromList}
                       onRenamed={loadSessions}
                       archiveActions={sessionArchiveActions(node.session.id)}
+                      onFork={forkSession}
                       onSessionDeleted={(id) => {
                         onSessionDeleted?.(id);
                         loadSessions();
@@ -1761,6 +1919,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             familySessions={familySessions}
             subtitle={projectName}
             archiveActions={sessionArchiveActions(family.root.id)}
+            onFork={forkSession}
             selectedSessionId={selectedSessionId}
             runningSessionIds={runningSessionIds}
             unreadSessionIds={unreadSessionIds}
@@ -2130,7 +2289,18 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         )}
 
         <div className={`sidebar-project-tree-header${projectViewMenuOpen ? " is-menu-open" : ""}`}>
-          <span className="sidebar-project-tree-title">{t("sidebar.projects")}</span>
+          <button
+            type="button"
+            className="sidebar-chats-title"
+            data-sidebar-tree-row
+            aria-expanded={!projectsSectionFolded}
+            title={t(projectsSectionFolded ? "sidebar.expandProjectsSection" : "sidebar.collapseProjectsSection")}
+            onClick={() => writeProjectsSectionCollapsed(!projectsSectionCollapsed)}
+          >
+            <span className="sidebar-project-tree-title">{t("sidebar.projects")}</span>
+            {/* Count active project groups, not sessions or archived projects. */}
+            <span className="sidebar-project-tree-count">({activeProjects.length})</span>
+          </button>
           <div className="sidebar-project-tree-tools">
             <button
               ref={projectViewMenuButtonRef}
@@ -2162,7 +2332,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             </button>
           </div>
         </div>
-        {activeProjects.length === 0 && !(trimmedSessionQuery && archivedProjects.length > 0) ? (
+        {!projectsSectionFolded && (activeProjects.length === 0 && !(trimmedSessionQuery && archivedProjects.length > 0) ? (
           <div className="sidebar-project-tree-empty">
             {loading
               ? t("sidebar.loading")
@@ -2204,8 +2374,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           </div>
         ) : projectViewMode === "timeline"
           ? renderTimeline()
-          : activeProjects.map((group) => renderProjectGroup(group))}
-        {archivedProjects.length > 0 && (
+          : activeProjects.map((group) => renderProjectGroup(group)))}
+        {!projectsSectionFolded && archivedProjects.length > 0 && (
           <ArchivedProjectsSection
             count={archivedProjects.length}
             expanded={archiveShown}
@@ -2264,6 +2434,27 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         </div>,
         document.body,
       )}
+      {projectSessionsDelete && createPortal(
+        <ChatConfirmDialog
+          title={t("sidebar.deleteProjectSessionsHeading", { name: projectSessionsDelete.name })}
+          subject={shortenPath(projectSessionsDelete.root)}
+          body={projectSessionsDelete.kept > 0
+            ? `${t("sidebar.deleteProjectSessionsMessage")} ${t("sidebar.deleteProjectSessionsRunning", { count: projectSessionsDelete.kept })}`
+            : t("sidebar.deleteProjectSessionsMessage")}
+          confirmLabel={t("sidebar.delete")}
+          cancelLabel={t("sidebar.cancel")}
+          danger
+          busy={projectSessionsDeleting}
+          error={projectSessionsDeleteError}
+          onCancel={() => {
+            if (projectSessionsDeleting) return;
+            setProjectSessionsDelete(null);
+            setProjectSessionsDeleteError(null);
+          }}
+          onConfirm={() => { void performProjectSessionsDelete(); }}
+        />,
+        document.body,
+      )}
       {projectMenu && projectMenuPos && (
         <ProjectContextMenu
           menuRef={projectMenuRef}
@@ -2296,6 +2487,18 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           archived={projectMenu.archived === true}
           onArchive={() => archiveProject(projectMenu.root)}
           onRestore={() => restoreProject(projectMenu.root)}
+          pinned={pinnedProjects.has(projectMenu.root)}
+          onTogglePin={() => {
+            const root = projectMenu.root;
+            closeProjectMenu();
+            setPinnedProjects((current) => toggleId(current, root));
+          }}
+          deleteSessionsCount={projectSessionsToDelete(projectMenu.root).ids.length}
+          onDeleteSessions={() => {
+            const root = projectMenu.root;
+            closeProjectMenu();
+            requestProjectSessionsDelete(root);
+          }}
           onFetch={() => void worktreeActions.fetchBranches(projectMenu.root)}
           onSelectWorktree={(path) => {
             selectProjectWorktree(projectMenu.root, path, projectBranchMenu);
@@ -2364,11 +2567,15 @@ function SessionFamilyItem({
   onContinueInProject,
   chatActions,
   archiveActions,
+  onFork,
   familySessions,
+  sideFamily,
   subtitle,
 }: {
   node: SessionTreeNode;
   familySessions?: SessionInfo[];
+  /** C1: the family a side chat row is numbered in, as its tab and the Agents panel number it. */
+  sideFamily?: SessionInfo[];
   depth?: number;
   selectedSessionId: string | null;
   runningSessionIds: Set<string>;
@@ -2382,9 +2589,12 @@ function SessionFamilyItem({
   chatActions?: ChatRowActions;
   /** Project sessions: archive or restore this session (#200). */
   archiveActions?: SessionArchiveActions;
+  /** Project sessions: copy the current branch into a new session (S4). */
+  onFork?: (session: SessionInfo) => void;
   /** Cross-project context, shown by the chronological sidebar view. */
   subtitle?: string;
 }) {
+  const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(false);
   const hasChildren = node.children.length > 0;
 
@@ -2412,6 +2622,8 @@ function SessionFamilyItem({
           onContinueInProject={depth === 0 ? onContinueInProject : undefined}
           chatActions={depth === 0 ? chatActions : undefined}
           archiveActions={depth === 0 ? archiveActions : undefined}
+          onFork={depth === 0 ? onFork : undefined}
+          sideTitle={node.session.relation?.kind === "side" ? sideChatTitle(node.session, t("sideChat.title"), sideFamily ?? familySessions ?? []) : undefined}
           hasChildren={hasChildren}
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed((v) => !v)}
@@ -2431,6 +2643,7 @@ function SessionFamilyItem({
               onSelectSession={onSelectSession}
               onRenamed={onRenamed}
               onSessionDeleted={onSessionDeleted}
+              sideFamily={sideFamily ?? familySessions}
               subtitle={subtitle}
             />
           ))}
@@ -2518,6 +2731,9 @@ function showProjectActivity(
 interface SessionArchiveActions {
   archived: boolean;
   onToggleArchive: () => void;
+  /** S2: a project session can be pinned like a chat; absent where a row offers no pin. */
+  pinned?: boolean;
+  onTogglePin?: () => void;
 }
 
 interface ChatRowActions extends SessionArchiveActions {
@@ -2536,6 +2752,8 @@ function SessionItem({
   onContinueInProject,
   chatActions,
   archiveActions,
+  onFork,
+  sideTitle,
   hasChildren = false,
   collapsed = false,
   onToggleCollapse,
@@ -2552,6 +2770,9 @@ function SessionItem({
   onContinueInProject?: (session: SessionInfo) => void;
   chatActions?: ChatRowActions;
   archiveActions?: SessionArchiveActions;
+  onFork?: (session: SessionInfo) => void;
+  /** C1: a side chat's numbered name ("Side chat 2") while it has none of its own. */
+  sideTitle?: string;
   hasChildren?: boolean;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
@@ -2599,7 +2820,7 @@ function SessionItem({
   // back to the compact /skill:name args command the user typed before using
   // it as the auto-name fallback, mirroring MessageView's rendering.
   const displayFirstMessage = skillExpansionToCommand(session.firstMessage) ?? session.firstMessage;
-  const title = session.name || displayFirstMessage.slice(0, 50) || session.id.slice(0, 12);
+  const title = sideTitle ?? (session.name || displayFirstMessage.slice(0, 50) || session.id.slice(0, 12));
 
   const startRename = useCallback(() => {
     if (session.transient) return;
@@ -2669,6 +2890,11 @@ function SessionItem({
   }, [session.id, session.transient, onDeleted, reportActionError, t, confirmDelete, folderDeleteOpen]);
 
   const archive: SessionArchiveActions | undefined = chatActions ?? archiveActions;
+  // Chats always offer a pin; a project session does when its list passes one (S2).
+  const pin = useMemo(
+    () => (archive?.onTogglePin ? { pinned: archive.pinned === true, onTogglePin: archive.onTogglePin } : undefined),
+    [archive],
+  );
 
   // "…" menu: fixed-position portal so the sidebar's overflow/backdrop-filter can't clip it
   const MENU_WIDTH = 190;
@@ -2680,8 +2906,9 @@ function SessionItem({
     setMenuOpen(true);
     const shown = await showNativeMenu([
       { label: t("sidebar.rename"), onSelect: startRename },
-      ...(chatActions
-        ? [{ label: t(chatActions.pinned ? "sidebar.unpinChat" : "sidebar.pinChat"), onSelect: chatActions.onTogglePin }]
+      ...(onFork ? [{ label: t("sidebar.fork"), onSelect: () => onFork(session) }] : []),
+      ...(pin
+        ? [{ label: t(pin.pinned ? "sidebar.unpinChat" : "sidebar.pinChat"), onSelect: pin.onTogglePin }]
         : []),
       ...(onContinueInProject
         ? [{ label: t("sidebar.continueInProject"), onSelect: () => onContinueInProject(session) }]
@@ -2702,7 +2929,7 @@ function SessionItem({
     ], at);
     setMenuOpen(false);
     return shown;
-  }, [archive, beginDeleteConfirmation, chatActions, onContinueInProject, session, locale, startRename, t]);
+  }, [archive, beginDeleteConfirmation, onContinueInProject, onFork, pin, session, locale, startRename, t]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const handled = dispatchSessionRowContextMenu({
@@ -2860,7 +3087,7 @@ function SessionItem({
           >
             {title}
           </a>
-          {chatActions?.pinned && (
+          {pin?.pinned && (
             <svg className="session-item-pin" aria-label={t("sidebar.unpinChat")} width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" />
             </svg>
@@ -2889,11 +3116,21 @@ function SessionItem({
               touch devices, which have no hover, and while its menu is open,
               since the pointer then sits on the portal). Transient runtime
               rows expose no disk-backed actions and have no reliable time.
-              The slot keeps one fixed width so the title never reflows. */}
+              The time and the button share one grid cell and the time stays
+              laid out (hidden) under the button, so the slot is as wide as the
+              wider of the two: a long label ("19小时") never spills over the
+              title, and the title never reflows on hover. */}
           {!session.transient && (
             <div
               className="session-item-trailing"
             >
+              <span
+                className={`session-item-time${hovered || treeFocused || touchMode || menuOpen ? " is-hidden" : ""}`}
+                title={formatRelativeTime(session.modified, locale)}
+                aria-hidden={hovered || treeFocused || touchMode || menuOpen ? true : undefined}
+              >
+                {formatCompactRelativeTime(session.modified, locale)}
+              </span>
               {hovered || treeFocused || touchMode || menuOpen ? (
                 <button
                   ref={menuButtonRef}
@@ -2912,11 +3149,7 @@ function SessionItem({
                     </svg>
                   </span>
                 </button>
-              ) : (
-                <span className="session-item-time" title={formatRelativeTime(session.modified, locale)}>
-                  {formatCompactRelativeTime(session.modified, locale)}
-                </span>
-              )}
+              ) : null}
             </div>
           )}
 
@@ -2938,35 +3171,36 @@ function SessionItem({
                 </svg>
                 {t("sidebar.rename")}
               </button>
-              {chatActions && (
+              {onFork && (
                 <button
                   role="menuitem"
-                  onClick={() => { setMenuOpen(false); chatActions.onTogglePin(); }}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 8,
-                    width: "100%", height: 30, padding: "0 8px",
-                    background: "transparent", border: 0, borderRadius: "var(--radius-md)",
-                    color: "var(--text)", cursor: "pointer",
-                    fontSize: "var(--fs-body)", textAlign: "left",
-                  }}
+                  onClick={() => { setMenuOpen(false); onFork(session); }}
+                  className="sidebar-menu-item"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <circle cx="6" cy="5" r="2" /><circle cx="18" cy="5" r="2" /><circle cx="12" cy="19" r="2" />
+                    <path d="M6 7v2a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V7M12 12v5" />
+                  </svg>
+                  {t("sidebar.fork")}
+                </button>
+              )}
+              {pin && (
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); pin.onTogglePin(); }}
+                  className="sidebar-menu-item"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                     <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" />
                   </svg>
-                  {t(chatActions.pinned ? "sidebar.unpinChat" : "sidebar.pinChat")}
+                  {t(pin.pinned ? "sidebar.unpinChat" : "sidebar.pinChat")}
                 </button>
               )}
               {onContinueInProject && (
                 <button
                   role="menuitem"
                   onClick={() => { setMenuOpen(false); onContinueInProject(session); }}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 8,
-                    width: "100%", height: 30, padding: "0 8px",
-                    background: "transparent", border: 0, borderRadius: "var(--radius-md)",
-                    color: "var(--text)", cursor: "pointer",
-                    fontSize: "var(--fs-body)", textAlign: "left",
-                  }}
+                  className="sidebar-menu-item"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                     <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
@@ -2978,13 +3212,7 @@ function SessionItem({
                 <button
                   role="menuitem"
                   onClick={() => { setMenuOpen(false); archive.onToggleArchive(); }}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 8,
-                    width: "100%", height: 30, padding: "0 8px",
-                    background: "transparent", border: 0, borderRadius: "var(--radius-md)",
-                    color: "var(--text)", cursor: "pointer",
-                    fontSize: "var(--fs-body)", textAlign: "left",
-                  }}
+                  className="sidebar-menu-item"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                     <rect x="3" y="4" width="18" height="4" rx="1" />

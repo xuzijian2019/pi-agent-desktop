@@ -50,8 +50,8 @@ test("keeps the session event stream open through the idle grace window", () => 
   assert.doesNotMatch(agentEndSource, /closeEvents\(\)/);
   assert.match(agentStartSource, /cancelEventStreamGrace\(\)/);
   assert.match(agentSettledSource, /scheduleEventStreamClose\(sid\)/);
-  assert.match(agentSettledSource, /onAgentEnd\?\.\(\)/);
-  assert.match(promptDoneSource, /notifyPromptStage\(runId\)/);
+  assert.match(agentSettledSource, /onAgentEnd\?\.\(\{ aborted: event\.aborted === true \}\)/);
+  assert.match(promptDoneSource, /notifyPromptStage\(runId, event\.aborted === true\)/);
   assert.match(promptDoneSource, /scheduleEventStreamClose\(sid\)/);
   assert.match(sendSource, /const definitivelyRejected = !promptRequestStarted/);
   assert.match(sendSource, /if \(!definitivelyRejected && sentSessionId\) \{[\s\S]*?waitForPromptSettlement/);
@@ -531,7 +531,7 @@ test("extension dialogs preserve the fork silent-completion preference", async (
 
 test("suppresses sounds and browser attention for the active subagent session", async () => {
   assert.doesNotMatch(chatWindowSource, /playDoneSound|useAudio/);
-  assert.match(appShellSource, /selectedSession\?\.relation\?\.kind === "subagent"\) return/);
+  assert.match(appShellSource, /isHiddenRelation\(selectedSession\?\.relation\)\) return/);
   assert.match(appShellSource, /claimExtensionAttentionNotification/);
 });
 
@@ -784,12 +784,16 @@ test("auto-compact slash command toggles session auto-compaction", async () => {
   assert.match(automationSource, /autoCompactionEnabled: state\?\.autoCompactionEnabled \?\? prev\.autoCompactionEnabled/);
 });
 
-test("auto-compaction mid-turn is reported in the status line (the fork's composer has no compact control)", () => {
+test("auto-compaction mid-turn is reported in the status line (the fork's composer has no compact control)", async () => {
   // Upstream keeps a composer compact/abort control reachable while auto-compacting;
   // the fork removed that control, so the run's status line names the compaction instead.
   assert.doesNotMatch(chatInputSource, /onClick=\{isCompacting \? onAbortCompaction : onCompact\}/);
   assert.match(chatWindowSource, /agentRunning && !hasStreamingContent && \(agentPhase \|\| isCompacting\)/);
-  assert.match(phaseLabelSource, /if \(isCompacting\) return t\("chat\.compacting"\);/);
+  const { createJiti } = await import("jiti");
+  const { phaseLabel } = await createJiti(import.meta.url).import("../lib/chat-phase-label.ts");
+  const translate = (key, params) => params ? `${key}:${params.count}` : key;
+  assert.equal(phaseLabel({ kind: "waiting_model" }, translate, true), "chat.compacting");
+  assert.equal(phaseLabel({ kind: "waiting_model" }, translate, true, 2), "chat.compactingQueued:2");
 });
 
 // Execute the extracted hooks with a small deterministic hook host. These tests

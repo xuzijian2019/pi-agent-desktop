@@ -18,15 +18,22 @@ import {
 } from "@/lib/file-types";
 import { createPortal } from "react-dom";
 import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
+import { DelimitedTable } from "./DelimitedTable";
+import { isDelimitedTablePath } from "@/lib/delimited-table";
 import { parsePdfPageFragment, resolveLocalFileHref, shouldOpenLocalFileInApp } from "@/lib/file-links";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins, markdownUrlTransform, normalizeDisplayMath } from "@/lib/markdown";
 import { CodeBlock, MermaidBlock } from "./MermaidBlock";
 import { FrontmatterCard } from "./FrontmatterCard";
-import { parseUnifiedPatch } from "@/lib/patch";
+import { diffGapLabel, parseUnifiedPatch } from "@/lib/patch";
 import type { GitFileDiffResponse } from "@/lib/git-types";
 import { useI18n } from "@/hooks/useI18n";
-import { resolveInitialFileDisplayMode, type FileViewerDisplayMode as DisplayMode, type FileViewerState } from "@/lib/file-viewer-state";
+import {
+  resolveInitialFileDisplayMode,
+  resolveInitialWrapLines,
+  type FileViewerDisplayMode as DisplayMode,
+  type FileViewerState,
+} from "@/lib/file-viewer-state";
 
 export type { FileViewerState } from "@/lib/file-viewer-state";
 
@@ -55,6 +62,8 @@ interface FileData {
   size: number;
   nextOffset: number;
   truncated: boolean;
+  // The file's first bytes hold a NUL (git's test): no text view, only the download.
+  binary?: boolean;
 }
 
 const SOURCE_HIGHLIGHT_MAX_LINES = 1_000;
@@ -86,6 +95,17 @@ const FILE_LINE_NUMBER_STYLE: CSSProperties = {
   userSelect: "none",
   flexShrink: 0,
   verticalAlign: "top",
+};
+
+// The gutter stays put while a wide line scrolls sideways: `position: sticky`
+// against the viewer's own scroller. Only the highlighted Source view (at most
+// SOURCE_HIGHLIGHT_MAX_LINES rows) pins it; the browser repositions every sticky
+// number on each scroll, which a long lightweight file cannot afford.
+const FILE_PINNED_LINE_NUMBER_STYLE: CSSProperties = {
+  ...FILE_LINE_NUMBER_STYLE,
+  position: "sticky",
+  left: 0,
+  zIndex: 1,
 };
 
 type SourceCodeRendererProps = Parameters<NonNullable<SyntaxHighlighterProps["renderer"]>>[0] & {
@@ -294,7 +314,12 @@ type DiffLine = {
   text: string;
   oldLineNo: number | null;
   newLineNo: number | null;
+} | {
+  // Unchanged lines the diff leaves out between two hunks; null when it carries no numbers.
+  type: "gap";
+  count: number | null;
 };
+type DiffTextLine = Exclude<DiffLine, { type: "gap" }>;
 
 function diffLines(patch: string): DiffLine[] {
   const files = parseUnifiedPatch(patch);
@@ -302,6 +327,7 @@ function diffLines(patch: string): DiffLine[] {
 
   return files.flatMap((file) => file.rows.flatMap((row): DiffLine[] => {
     if (row.type === "hunk") return [];
+    if (row.type === "gap") return [{ type: "gap", count: row.count }];
     if (row.left.type === "context" && row.right.type === "context") {
       return [{
         type: "unchanged",
@@ -336,7 +362,7 @@ function DiffView({ patch }: { patch: string }) {
   const { t } = useI18n();
   const diff = diffLines(patch);
 
-  const hasChanges = diff.some((l) => l.type !== "unchanged");
+  const hasChanges = diff.some((l) => l.type === "removed" || l.type === "added");
   if (!hasChanges) {
     return (
       <div style={{ padding: "12px 16px", fontSize: "var(--fs-caption)", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
@@ -347,7 +373,7 @@ function DiffView({ patch }: { patch: string }) {
 
   // Render with context: show 3 lines around each change, collapse the rest
   const CONTEXT = 3;
-  const changed = new Set(diff.flatMap((l, i) => (l.type !== "unchanged" ? [i] : [])));
+  const changed = new Set(diff.flatMap((l, i) => (l.type === "removed" || l.type === "added" ? [i] : [])));
   const visible = new Set<number>();
   for (const ci of changed) {
     for (let j = Math.max(0, ci - CONTEXT); j <= Math.min(diff.length - 1, ci + CONTEXT); j++) {
@@ -355,19 +381,26 @@ function DiffView({ patch }: { patch: string }) {
     }
   }
 
-  const segments: Array<{ hidden: true; count: number } | { hidden: false; lines: DiffLine[] }> = [];
+  const segments: Array<{ hidden: true; count: number | null } | { hidden: false; lines: DiffTextLine[] }> = [];
   let i = 0;
   while (i < diff.length) {
+    const line = diff[i];
+    if (line.type === "gap") {
+      // Between two hunks: lines the patch itself left out.
+      segments.push({ hidden: true, count: line.count });
+      i++;
+      continue;
+    }
     if (visible.has(i)) {
-      const block: DiffLine[] = [];
-      while (i < diff.length && visible.has(i)) {
-        block.push(diff[i]);
+      const block: DiffTextLine[] = [];
+      while (i < diff.length && visible.has(i) && diff[i].type !== "gap") {
+        block.push(diff[i] as DiffTextLine);
         i++;
       }
       segments.push({ hidden: false, lines: block });
     } else {
       let count = 0;
-      while (i < diff.length && !visible.has(i)) {
+      while (i < diff.length && !visible.has(i) && diff[i].type !== "gap") {
         count++;
         i++;
       }
@@ -398,7 +431,7 @@ function DiffView({ patch }: { patch: string }) {
                 borderBottom: "var(--hairline) solid var(--border)",
               }}
             >
-              ... {seg.count} unchanged lines ...
+              {seg.count === null ? "⋯" : diffGapLabel(seg.count, t)}
             </div>
           );
           return result;
@@ -962,7 +995,8 @@ function TextFileViewer({
   // HTML file renders its preview as the first thing painted. Deciding it after
   // the contents load painted the source view for a frame first.
   const requestedInitialDisplayMode = resolveInitialFileDisplayMode(initialState, initialDisplayMode, filePath);
-  const initialWrapLines = initialState?.wrapLines ?? false;
+  // Prose (Markdown, plain text) wraps by default; code keeps its columns. A saved choice wins.
+  const initialWrapLines = resolveInitialWrapLines(initialState, filePath);
   const initialScrollTop = initialState?.scrollTop ?? 0;
   const initialScrollLeft = initialState?.scrollLeft ?? 0;
   const [displayMode, setDisplayMode] = useState<DisplayMode>(requestedInitialDisplayMode);
@@ -1173,10 +1207,13 @@ function TextFileViewer({
   const viewerContent = data?.content ?? "";
   const sourceLines = useMemo(() => viewerContent.split("\n"), [viewerContent]);
   const language = data?.language ?? "text";
-  const isHtml = language === "html";
-  const isMarkdown = language === "markdown";
+  const isBinary = data?.binary === true;
+  const isDelimitedTable = !isBinary && isDelimitedTablePath(filePath);
+  const isHtml = !isBinary && language === "html";
+  const isMarkdown = !isBinary && language === "markdown";
   const htmlHasScripts = isHtml && /<script\b/i.test(viewerContent);
-  const hasPreview = !data?.truncated && (isHtml || isMarkdown);
+  // A CSV/TSV table renders from its first chunk too (DelimitedTable marks it incomplete).
+  const hasPreview = isDelimitedTable || (!data?.truncated && (isHtml || isMarkdown));
   // Only the first chunk of a large file is loaded, so preview is unavailable
   // until the rest arrives; a preview default falls back to source instead of
   // rendering a partial document. The mode returns to preview once the whole
@@ -1199,9 +1236,7 @@ function TextFileViewer({
         language={language === "text" ? "plaintext" : language}
         style={calmCodeTheme}
         showLineNumbers
-        lineNumberStyle={{
-          ...FILE_LINE_NUMBER_STYLE,
-        }}
+        lineNumberStyle={wrapLines ? FILE_LINE_NUMBER_STYLE : FILE_PINNED_LINE_NUMBER_STYLE}
         customStyle={{
           margin: 0,
           padding: 0,
@@ -1412,7 +1447,7 @@ function TextFileViewer({
                 <MentionIcon />
               </button>
             )}
-            {effectiveDisplayMode === "source" && (
+            {effectiveDisplayMode === "source" && !isBinary && (
               <>
                 <button
                   type="button"
@@ -1566,6 +1601,25 @@ function TextFileViewer({
             >
               {markdownPreview}
             </ReactMarkdown>
+          </div>
+        ) : isDelimitedTable && effectiveDisplayMode === "preview" ? (
+          <DelimitedTable
+            content={viewerContent}
+            filePath={filePath}
+            complete={!data?.truncated}
+            scrollRef={contentRef}
+          />
+        ) : isBinary ? (
+          // Decoded bytes are noise; opening a file never downloads it on its own (#1401).
+          <div className="file-viewer-binary">
+            <span>{t("files.binaryNoPreview")}</span>
+            <a
+              href={getFileApiUrl(filePath, "download", sourceSessionId)}
+              download={getFileName(filePath)}
+              className="file-viewer-mode-button file-viewer-binary-download"
+            >
+              {t("files.download")}
+            </a>
           </div>
         ) : useLightweightSource ? (
           <div

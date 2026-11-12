@@ -20,6 +20,7 @@ import { selectableThinkingLevels } from "@/lib/thinking-level-options";
 import { ImageLightbox } from "./ImageLightbox";
 import type { RoutedModelInfo } from "@/lib/types";
 import { getMarkdownListContinuation } from "@/lib/markdown-list-continuation";
+import { quoteSeparator } from "@/lib/quoted-selection";
 import { isBareMcpCommand, isBuiltinMcpCommand } from "@/lib/mcp-command";
 import { FolderIcon, getFileIcon } from "./FileIcons";
 import type { SelectorRowStar } from "./SelectorRow";
@@ -79,7 +80,7 @@ interface Props {
   model?: { provider: string; modelId: string } | null;
   isAutoModelSelection?: boolean;
   modelNames?: Record<string, string>;
-  modelList?: { id: string; name: string; provider: string; input?: string[] }[];
+  modelList?: { id: string; name: string; provider: string; providerName?: string; input?: string[] }[];
   modelError?: string | null;
   /** The cwd can no longer host a run (deleted, replaced by a file, unreadable): sending is blocked and the draft stays. */
   workspaceUnavailable?: UnavailableWorkspaceNotice | null;
@@ -173,6 +174,8 @@ export interface ChatInputHandle {
   snapshot: () => ChatDraft;
   currentSetup: () => TaskSetup;
   insertText: (text: string) => void;
+  /** C3: a quote at the caret, starting a paragraph of its own. */
+  insertQuote: (text: string) => void;
   insertIfEmpty: (text: string) => void;
   replaceMessage: (message: UserMessage) => boolean;
   prependText: (text: string) => void;
@@ -273,6 +276,7 @@ type ComposerTier = "normal" | "compact" | "narrow";
 
 interface ModelOption {
   provider: string;
+  providerName?: string;
   modelId: string;
   name: string;
 }
@@ -291,7 +295,7 @@ export function filterModelOptions(options: ModelOption[], query: string): Model
   if (!normalizedQuery) return options;
 
   return options.filter((option) => (
-    `${option.name} ${option.modelId}`
+    `${option.name} ${option.modelId} ${option.provider} ${option.providerName ?? ""} ${option.provider}/${option.modelId}`
       .toLocaleLowerCase()
       .includes(normalizedQuery)
   ));
@@ -761,7 +765,7 @@ export function ModelErrorBanner({ error }: { error?: string | null }) {
 /** True when the selected model is known to accept image input (#584). Unknown modality info never blocks the user. */
 export function modelSupportsImageInput(
   model: { provider: string; modelId: string } | null | undefined,
-  modelList: { id: string; name: string; provider: string; input?: string[] }[] | undefined
+  modelList: { id: string; name: string; provider: string; providerName?: string; input?: string[] }[] | undefined
 ): boolean {
   if (!model) return true;
   const entry = modelList?.find((m) => m.provider === model.provider && m.id === model.modelId);
@@ -1203,6 +1207,30 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       requestAnimationFrame(() => {
         if (!ta) return;
         const pos = start + sep.length + text.length;
+        ta.setSelectionRange(pos, pos);
+        ta.focus();
+        ta.style.height = "auto";
+        ta.style.height = `${ta.scrollHeight}px`;
+      });
+    },
+    insertQuote(text: string) {
+      const ta = textareaRef.current;
+      if (!ta) {
+        setValue((v) => v + quoteSeparator(v) + text);
+        return;
+      }
+      const start = ta.selectionStart ?? ta.value.length;
+      const end = ta.selectionEnd ?? ta.value.length;
+      const before = ta.value.slice(0, start);
+      const inserted = quoteSeparator(before) + text;
+      const newVal = before + inserted + ta.value.slice(end);
+      valueRef.current = newVal;
+      setValue(newVal);
+      setAtQuery(null);
+      setHashQuery(null);
+      requestAnimationFrame(() => {
+        if (!ta) return;
+        const pos = start + inserted.length;
         ta.setSelectionRange(pos, pos);
         ta.focus();
         ta.style.height = "auto";
@@ -2137,7 +2165,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const fallbackProvider = model?.provider;
   const modelOptions: ModelOption[] = useMemo(() => {
     if (modelList && modelList.length > 0) {
-      return modelList.map((m) => ({ provider: m.provider, modelId: m.id, name: m.name })).sort(compareModelOptions);
+      return modelList.map((m) => ({ provider: m.provider, providerName: m.providerName, modelId: m.id, name: m.name })).sort(compareModelOptions);
     }
     return Object.entries(modelNames ?? {}).map(([modelId, name]) => ({
       provider: fallbackProvider ?? "unknown",
@@ -2154,11 +2182,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     : null;
 
   // Group options by provider, preserving insertion order
-  const modelsByProvider: { provider: string; options: ModelOption[] }[] = [];
+  const modelsByProvider: { provider: string; providerName?: string; options: ModelOption[] }[] = [];
   for (const opt of filteredModelOptions) {
     const group = modelsByProvider.find((g) => g.provider === opt.provider);
     if (group) group.options.push(opt);
-    else modelsByProvider.push({ provider: opt.provider, options: [opt] });
+    else modelsByProvider.push({ provider: opt.provider, providerName: opt.providerName, options: [opt] });
   }
 
   const displayModelName = model
@@ -2762,7 +2790,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               />
             )}
             {cwd && onBranchNavigate && <BranchControl key={draftKey} cwd={cwd} onNavigate={onBranchNavigate} />}
-            {/* Model selector — visible always, disabled during streaming */}
+            {/* A mid-run switch applies to the next model request; only a pending switch is busy. */}
             {(modelOptions.length > 0 || currentName || modelError) && onModelChange && (
                 <div ref={dropdownRef} className={`composer-anchor composer-model-anchor${isNarrow ? " is-narrow" : ""}`}>
                   <button
@@ -2775,7 +2803,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         return !open;
                       });
                     }}
-                    disabled={isStreaming || modelSwitching}
+                    disabled={modelSwitching}
                     aria-busy={modelSwitching || undefined}
                     ref={modelButtonRef}
                     title={modelSwitching ? "Switching model" : modelOptions.length > 0 ? "Change model" : "No available models"}
@@ -2832,7 +2860,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           <div key={group.provider}>
                             {(modelsByProvider.length > 1) && (
                               <div className={`composer-model-group-header${gi > 0 ? " is-divided" : ""}`}>
-                                {group.provider}
+                                {group.providerName ?? group.provider}
                               </div>
                             )}
                             {group.options.map((opt) => {

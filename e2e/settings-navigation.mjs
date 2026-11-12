@@ -1,5 +1,6 @@
 // The gear opens Settings directly and restores the last section. Select the
-// requested section inside the dialog, using its desktop or mobile navigation.
+// requested section inside the dialog, using its desktop tabs or, on a phone,
+// the fork's compact AppSelect menu.
 export async function openSettingsSection(page, section) {
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Settings", exact: true });

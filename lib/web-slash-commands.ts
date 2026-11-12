@@ -1,7 +1,7 @@
 /** Pi 0.86.1 CLI commands with a supported Web UI equivalent. */
 export const WEB_SLASH_COMMANDS = [
   { name: "recap", description: "recap.command" },
-  { name: "model", description: "chat.commandModel", args: true, idle: true },
+  { name: "model", description: "chat.commandModel", args: true },
   { name: "thinking", description: "chat.commandThinking", args: true, idle: true },
   { name: "new", description: "chat.commandNew" },
   { name: "resume", description: "chat.commandResume" },

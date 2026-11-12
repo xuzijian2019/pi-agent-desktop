@@ -137,3 +137,28 @@ test("fork worktree mutations retain host and same-origin authorization", async 
   assert.equal(git(repo, "branch", "--show-current"), "main");
   assert.equal(existsSync(`${repo}-worktrees`), false);
 });
+
+
+test("fork worktree previews expose upstream live and missing branch-holder conflicts", async (t) => {
+  const { repo, parent } = await tempRepo(t);
+  allowOnly(repo);
+  const holder = path.join(parent, "elsewhere");
+  git(repo, "worktree", "add", "-b", "held", holder);
+  for (const missing of [false, true]) {
+    if (missing) await rm(holder, { recursive: true, force: true });
+    const response = await call(route.POST, "POST", { cwd: repo, branch: "held" });
+    assert.equal(response.status, 409);
+    const body = await response.json();
+    assert.equal(body.code, missing ? "branch_worktree_missing" : "branch_in_use");
+    assert.equal(body.branch, "held");
+    assert.equal(body.worktreePath, holder);
+    const switched = await call(route.PUT, "PUT", { cwd: repo, branch: "held" });
+    assert.equal(switched.status, 409);
+    assert.equal((await switched.json()).code, body.code);
+    if (missing) assert.match(body.error, /git worktree prune/);
+  }
+  const current = await call(route.POST, "POST", { cwd: repo, branch: "main" });
+  assert.equal(current.status, 409);
+  assert.equal((await current.json()).worktreePath, repo);
+  assert.equal(existsSync(`${repo}-worktrees`), false);
+});
