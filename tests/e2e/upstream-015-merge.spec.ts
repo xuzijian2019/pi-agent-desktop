@@ -233,6 +233,23 @@ for (const theme of ["light", "dark"] as const) for (const width of [1440, 390])
     await page.keyboard.press("Control+,");
     const settings = page.locator(".settings-dialog-surface");
     await expect(settings).toBeVisible();
+    // #227: the desktop list must actually sit left of the content, not just
+    // carry new grid class names. Phones retain the fork's compact selector.
+    if (width === 1440) {
+      const navigation = settings.locator(".settings-section-tabs");
+      const main = settings.locator(".settings-dialog-main");
+      const navRect = (await navigation.boundingBox())!;
+      const mainRect = (await main.boundingBox())!;
+      expect(navRect.x + navRect.width).toBeLessThanOrEqual(mainRect.x + 1);
+      const general = navigation.getByRole("button", { name: "General", exact: true });
+      await general.focus();
+      await general.press("ArrowDown");
+      await expect(navigation.getByRole("button", { name: "Appearance", exact: true })).toBeFocused();
+    } else {
+      await expect(settings.locator(".settings-section-tabs")).toBeHidden();
+      await expect(settings.getByRole("combobox", { name: "Settings section", exact: true })).toBeVisible();
+    }
+    await capture(page, `settings-navigation-${theme}-${width}.png`);
     if (width === 390) {
       await settings.getByRole("combobox", { name: "Settings section", exact: true }).click();
       await page.getByRole("option", { name: "Models", exact: true }).click();

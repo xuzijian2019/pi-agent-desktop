@@ -2,7 +2,7 @@
 
 import { AppSelect } from "./AppSelect";
 
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useDiffViewMode } from "@/hooks/useDiffViewMode";
 import { useShowMessageUsage } from "@/hooks/useShowMessageUsage";
@@ -523,6 +523,20 @@ export function SettingsPanel({
     setLastSettingsSection(nextSection);
   };
 
+  const moveSectionFocus = (event: ReactKeyboardEvent<HTMLElement>) => {
+    const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>(".settings-section-tab:not(:disabled)"));
+    const current = tabs.indexOf(document.activeElement as HTMLButtonElement);
+    if (current < 0) return;
+    const next = event.key === "ArrowDown" || event.key === "ArrowRight" ? (current + 1) % tabs.length
+      : event.key === "ArrowUp" || event.key === "ArrowLeft" ? (current - 1 + tabs.length) % tabs.length
+      : event.key === "Home" ? 0
+      : event.key === "End" ? tabs.length - 1
+      : -1;
+    if (next < 0) return;
+    event.preventDefault();
+    tabs[next].focus();
+  };
+
   const sectionHost = (id: SettingsSection, content: ReactNode) => mountedSections.has(id) ? (
     <div
       key={id}
@@ -553,7 +567,7 @@ export function SettingsPanel({
             className="settings-mobile-section-picker"
             options={sections.map((item) => ({ value: item.id, label: item.label, disabled: item.requiresProject && !cwd }))}
           />
-          <nav aria-label={t("settings.title")} className="settings-section-tabs">
+          <nav aria-label={t("settings.title")} className="settings-section-tabs" onKeyDown={moveSectionFocus}>
             {sections.map((item) => {
               const selected = section === item.id;
               const disabled = item.requiresProject && !cwd;
@@ -563,12 +577,14 @@ export function SettingsPanel({
                   type="button"
                   className="settings-section-tab"
                   disabled={disabled}
+                  // One tab stop for the whole list; arrow keys move within it (#227).
+                  tabIndex={selected ? 0 : -1}
                   title={disabled ? t("settings.projectRequired") : item.label}
                   aria-current={selected ? "page" : undefined}
                   onClick={() => activateSection(item.id)}
                 >
                   <SettingsSectionIcon section={item.id} />
-                  <span>{item.label}</span>
+                  <span className="settings-section-tab-label">{item.label}</span>
                 </button>
               );
             })}

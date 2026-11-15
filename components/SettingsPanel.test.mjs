@@ -326,3 +326,21 @@ test("upstream network proxy and slider progress retain the fork settings contro
   assert.match(panelSource, /<AppUpdatesSection onBusyChange=\{onBusyChange\}/);
   assert.doesNotMatch(panelSource, /history\.pushState|settings-phone-home|AutoTitleSettingRow|soundEnabled/);
 });
+
+test("lists the sections in a left pane on every desktop platform, icons only in a narrow window (#227)", () => {
+  const pane = nativeCssSource.match(/@media \(min-width: 641px\) \{\n  \.settings-dialog-surface \{[\s\S]*?\n\}\n/)?.[0] ?? "";
+  assert.match(pane, /grid-template-columns: 208px minmax\(0, 1fr\)/);
+  assert.match(pane, /\.settings-dialog-header \{\s*display: contents;/);
+  assert.match(pane, /\.settings-section-tabs \{[\s\S]*?flex-direction: column;[\s\S]*?overflow-y: auto;/);
+  // The layout is no longer keyed to one platform: macOS's header toolbar is gone.
+  assert.doesNotMatch(nativeCssSource, /:root\[data-platform="macos"\] \.settings-section-tabs/);
+  assert.match(nativeCssSource, /@media \(min-width: 641px\) and \(max-width: 899px\) \{\s*\.settings-dialog-surface \{\s*grid-template-columns: 56px minmax\(0, 1fr\);/);
+  assert.match(panelSource, /<span className="settings-section-tab-label">\{item\.label\}<\/span>/);
+  // General's two columns follow the section's own width, not the viewport's.
+  assert.match(nativeCssSource, /\.settings-section-host \{\s*container: settings-section \/ inline-size;/);
+  assert.match(nativeCssSource, /@container settings-section \(min-width: 760px\) \{\s*\.settings-general \{/);
+  assert.doesNotMatch(nativeCssSource, /@media \(min-width: 880px\) \{\s*\.settings-general \{/);
+  // One tab stop; arrow keys, Home and End move within the list.
+  assert.match(panelSource, /tabIndex=\{selected \? 0 : -1\}/);
+  assert.match(panelSource, /onKeyDown=\{moveSectionFocus\}/);
+});
