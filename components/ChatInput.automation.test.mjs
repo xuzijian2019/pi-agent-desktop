@@ -32,10 +32,7 @@ function render(props) {
 
 
 
-// The fork's simplified composer renders no automation gear and keeps Stop
-// in its own control slot, so the upstream gear/narrow-Stop render tests are
-// intentionally absent here; the server/hook command surface is still pinned.
-
+// 2026-11-15: the owner replaced the fork simplified toolbar with upstream controls.
 
 test("server supports the automation command set end to end", () => {
   const rpc = readFileSync(new URL("../lib/rpc-manager.ts", import.meta.url), "utf8");
@@ -49,18 +46,20 @@ test("server supports the automation command set end to end", () => {
   assert.match(hook, /type: "set_steering_mode", mode: change\.steeringMode/);
 });
 
-test("known automation never restores the removed gear, compaction or steering buttons", () => {
+test("upstream automation and stop-compaction controls remain wired while streaming", () => {
   const html = render({
     automation: { autoCompactionEnabled: true, autoRetryEnabled: true, steeringMode: "all", followUpMode: "one-at-a-time" },
     onCompact() {}, onAbortCompaction() {}, onSteer() {}, onFollowUp() {},
     isCompacting: true, isStreaming: true,
   });
-  assert.doesNotMatch(html, /aria-label="(?:Session automation|Compact context|Stop compaction)"/);
-  assert.doesNotMatch(source, /<SessionAutomationMenu\b|onAudioUnlock|<SelectorRow\b/);
+  assert.match(html, /aria-label="Session automation"/);
+  assert.match(html, /aria-label="Stop compaction"/);
+  assert.match(source, /<SessionAutomationMenu\b/);
+  assert.match(source, /<SelectorRow\b/);
   assert.match(html, /data-action="stop"/);
 });
 
-test("extracted mention and project menus preserve the fork's classes and project disambiguation", async () => {
+test("upstream project menu preserves disambiguation and safe mention pipeline", async () => {
   const { SessionMentionMenu } = await jiti.import("./SessionMentionMenu.tsx");
   const { ComposerProjectChip, getProjectLabel } = await jiti.import("./ComposerProjectChip.tsx");
   const projectOptions = ["/work/company/app", "/work/personal/app"];
@@ -69,16 +68,16 @@ test("extracted mention and project menus preserve the fork's classes and projec
   const html = renderToStaticMarkup(React.createElement(I18nProvider, null,
     React.createElement(ComposerProjectChip, {
       menuRef: { current: null }, open: true, onOpenChange() {}, label,
-      projectPath: projectOptions[0], isCompact: true, projectOptions, onProjectChange() {},
+      projectPath: projectOptions[0], maxWidth: 160, projectOptions, onProjectChange() {},
     }),
     React.createElement(SessionMentionMenu, {
       loaded: true, matches: [{ id: "one", name: "Session one", firstMessage: "First message" }],
       activeIndex: 0, itemRefs: { current: [] }, onPick() {}, onHover() {}, showHints: false,
     }),
   ));
-  assert.match(html, /class="chat-project-context is-compact"/);
-  assert.match(html, /class="native-popover app-menu composer-project-menu"/);
-  assert.match(html, /class="composer-project-option is-current"/);
+  assert.match(html, /class="chat-project-context" style="max-width:160px"/);
+  assert.match(html, /class="native-popover app-menu" role="menu"/);
+  assert.match(html, /role="menuitem" aria-current="true"/);
   assert.match(html, /class="native-popover app-menu composer-completion-popover is-front"/);
   assert.match(html, /class="composer-completion-item is-session is-active"/);
   assert.doesNotMatch(html, /composer-completion-hint/);

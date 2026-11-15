@@ -241,3 +241,7 @@ npm test        # the same gate CI runs: lib + scripts + components tests
 npm run drift   # cosmetic vs structural drift, flags stale manifest risk levels
 npm run lint    # eslint + branding check
 ```
+
+### 2026-11-15 composer ownership update
+
+The owner requested upstream composer appearance and normal controls in both new and continued sessions. The previous simplified fork toolbar is superseded. Draft/attachment recovery and send guards remain fork safety responsibilities; see [fork UI notes](agents/fork-ui.md). This does not restore the welcome branding or remove workbench branch operations.

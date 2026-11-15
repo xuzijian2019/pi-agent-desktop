@@ -595,3 +595,19 @@ test("a project session's row menus offer Fork, which opens the copy (S4)", () =
   assert.match(sessionItemSource, /\.\.\.\(onFork \? \[\{ label: t\("sidebar\.fork"\), onSelect: \(\) => onFork\(session\) \}\] : \[\]\),/);
   assert.match(sessionItemSource, /onClick=\{\(\) => \{ setMenuOpen\(false\); onFork\(session\); \}\}/);
 });
+
+test("upstream tree extraction keeps fork navigation and path-hint safety", () => {
+  assert.match(source, /from "@\/lib\/sidebar-session-nodes"/);
+  assert.doesNotMatch(source, /function buildSessionTree\(/);
+  assert.match(source, /setSubagentRowExpanded\(node.session.id, collapsed\)/);
+  assert.match(source, /sidebar\.forkedFrom/);
+  assert.match(source, /href=\{`\?session=\$\{encodeURIComponent\(session.id\)\}`\}/);
+  assert.match(source, /orderProjects\(groupByProject\(projectSessions/);
+  assert.match(source, /if \(!target.isConnected\) return/);
+  for (const event of ["scroll", "resize", "pointerdown"]) {
+    assert.ok(source.includes(`window.addEventListener("${event}", hideProjectPathHint`));
+    assert.ok(source.includes(`window.removeEventListener("${event}", hideProjectPathHint`));
+  }
+  assert.match(source, /window.innerWidth - projectPathHint.left - 8/);
+  assert.match(source, /projectPathHint.missing/);
+});

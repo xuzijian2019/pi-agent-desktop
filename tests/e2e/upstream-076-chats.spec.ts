@@ -35,13 +35,11 @@ async function access(request: APIRequestContext, id: string) {
 }
 
 async function openAccessMenu(page: Page, unlocked = false) {
-  // The server may persist the permission before the browser's POST/rebuild
-  // finishes. Wait for the actual chat chip to reflect that state; an immediate
-  // visibility probe must not mistake its old label for a compact-layout menu.
-  // Chat access has its own always-visible anchor, outside More controls.
-  const button = page.locator(".composer-chat-access-anchor").getByRole("button", {
-    name: unlocked ? "Chat · computer" : "Chat", exact: true,
-  });
+  // Upstream places chat access with reasoning in the run menu. On phones
+  // reveal the toolbar first; the same per-chat safety assertions still apply.
+  const more = page.getByRole("button", { name: "More controls", exact: true });
+  if (await more.isVisible()) await more.click();
+  const button = page.getByRole("button", { name: "Change reasoning level", exact: true });
   await expect(button).toBeVisible();
   await expect(button).toBeEnabled();
   await button.click();
@@ -98,9 +96,9 @@ for (const theme of ["light", "dark"] as const) {
 
       const toggle = await openAccessMenu(page);
       await expect(page.getByRole("menuitem", { name: "Show chat folder", exact: true })).toHaveAttribute("title", current.cwd);
-      await fitsViewport(page.locator(".composer-dropdown-panel.is-tools"), width);
-      const accessMenu = page.locator(".composer-dropdown-panel.is-tools");
-      expect((await accessMenu.boundingBox())!.width).toBeGreaterThanOrEqual(280);
+      await fitsViewport(page.locator(".composer-run-menu"), width);
+      const accessMenu = page.locator(".composer-run-menu");
+      expect((await accessMenu.boundingBox())!.width).toBeGreaterThanOrEqual(240);
       const menuBox = (await accessMenu.boundingBox())!;
       const chatBox = (await page.locator(".chat-window").boundingBox())!;
       expect(menuBox.x).toBeGreaterThanOrEqual(chatBox.x);

@@ -5,12 +5,12 @@ import path from 'node:path';
 import {AGENT_DIR,SESSIONS_DIR,WORK_ROOT} from './sandbox';
 
 const input=(page:Page)=>page.locator('.chat-composer textarea');
-const menu=(page:Page)=>page.getByRole('listbox',{name:'Commands',exact:true});
+const menu=(page:Page)=>page.locator('.app-suggestion-menu:has(section)');
 async function command(page:Page,text:string){
  // /name updates the title before its awaited session refresh completes. The
  // composer intentionally ignores another command while that work is pending.
  // Wait before submitting, not afterwards: the newer-draft test deliberately
- // types while its rename request remains in flight.
+ // navigates to a different draft while its rename request remains in flight.
  await expect(page.locator('.chat-input-shell')).not.toHaveAttribute('aria-busy','true');
  await input(page).fill(text); await input(page).press('Enter');
 }
@@ -32,18 +32,21 @@ async function seed(page:Page,request:APIRequestContext){
  await page.goto(`/?session=${id}`); await expect(page.getByText('Second question',{exact:true})).toBeVisible();await expect(input(page)).toBeEditable();return{id,cwd,file};
 }
 
-test('compact command rows, predictable keyboard navigation, search, completion and narrow layout',async({page})=>{
+test('upstream command cards, predictable keyboard navigation, search, completion and narrow layout',async({page})=>{
  // 19 built-ins + 19 fixture commands + pi's built-in MCP extension's /mcp.
- await project(page);await input(page).fill('/');await expect(menu(page).getByRole('option')).toHaveCount(39);
- await expect(menu(page).getByRole('option').filter({hasText:/^\/(?:side|btw)(?:\s|$)/})).toHaveCount(0);
- const options=menu(page).getByRole('option');const boxes=await options.evaluateAll(nodes=>nodes.slice(0,8).map(node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,height:r.height}}));
- expect(new Set(boxes.map(b=>b.x)).size).toBe(1);expect(Math.max(...boxes.map(b=>b.height))).toBeLessThanOrEqual(40);
- expect((await menu(page).boundingBox())!.height).toBeLessThan(341);
- expect((await page.locator('.composer-completion-popover.is-slash').boundingBox())!.y).toBeGreaterThanOrEqual(48);
- const first=await input(page).getAttribute('aria-activedescendant');await input(page).press('ArrowDown');expect(await input(page).getAttribute('aria-activedescendant')).not.toBe(first);
- await input(page).press('ArrowUp');expect(await input(page).getAttribute('aria-activedescendant')).toBe(first);
- await input(page).press('ArrowUp');await expect(options.last()).toHaveAttribute('aria-selected','true');await expect(options.last()).toBeInViewport();
- const selected=await input(page).getAttribute('aria-activedescendant');await input(page).press('ArrowLeft');expect(await input(page).getAttribute('aria-activedescendant')).toBe(selected);
+ await project(page);await input(page).fill('/');await expect(menu(page).getByRole('button')).toHaveCount(39);
+ await expect(menu(page).getByRole('button').filter({hasText:/^\/(?:side|btw)(?:\s|$)/})).toHaveCount(0);
+ const options=menu(page).getByRole('button');const boxes=await options.evaluateAll(nodes=>nodes.slice(0,8).map(node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,height:r.height}}));
+ // User requested upstream's grouped card grid, replacing the fork's compact single column.
+ expect(new Set(boxes.map(b=>b.x)).size).toBeGreaterThan(1);expect(Math.min(...boxes.map(b=>b.height))).toBeGreaterThanOrEqual(58);
+ expect((await menu(page).boundingBox())!.height).toBeLessThanOrEqual(598);
+ expect((await menu(page).boundingBox())!.y).toBeGreaterThanOrEqual(48);
+ const selectedIndex=()=>options.evaluateAll(nodes=>nodes.findIndex(node=>(node as HTMLElement).style.boxShadow.includes('28%')));
+ await expect.poll(selectedIndex).toBe(0);
+ await input(page).press('ArrowDown');await expect.poll(selectedIndex).toBe(1);
+ await input(page).press('ArrowUp');await expect.poll(selectedIndex).toBe(0);
+ await input(page).press('ArrowUp');await expect.poll(selectedIndex).toBe(38);await expect(options.last()).toBeInViewport();
+ const selected=await selectedIndex();await input(page).press('ArrowLeft');expect(await selectedIndex()).toBe(selected);
  await input(page).fill('/zeb');await expect(options).toHaveCount(1);await input(page).press('Tab');await expect(input(page)).toHaveValue('/zebra ');await expect(menu(page)).toHaveCount(0);
  await input(page).fill('/');await expect(menu(page)).toBeVisible();await page.screenshot({path:test.info().outputPath('slash-desktop.png'),animations:'disabled'});
  // Theme lives in Settings → General; flip the document class so the dark screenshot does not depend on the removed sidebar toggle.
@@ -70,7 +73,7 @@ test('native UI commands open existing settings, auth, trust, hotkeys and resume
 test('native model/thinking commands use SDK actions; invalid arguments never become prompts',async({page,request})=>{
  const p=await seed(page,request);const sent:string[]=[];page.on('request',req=>{if(req.method()==='POST'&&req.url().endsWith(`/api/agent/${p.id}`))sent.push(req.postDataJSON().type)});
  await command(page,'/model');
- const modelPanel=page.locator('.composer-model-panel');
+ const modelPanel=page.locator('.model-selector [role="listbox"]');
  await expect(modelPanel).toBeVisible();
  // The session's current model renders before /api/models finishes loading.
  // Wait for the target option, not merely the popup shell, before testing a
@@ -107,7 +110,7 @@ test('streaming model menu stays local while idle-only commands stay protected; 
  try{
   await command(page,`!while [ ! -e '${bashPath}' ]; do sleep 0.1; done`);
   await expect.poll(async()=> (await (await request.get(`/api/agent/${p.id}`)).json()).state?.isBashRunning).toBe(true);
-  const modelPanel=page.locator('.composer-model-panel');
+  const modelPanel=page.locator('.model-selector [role="listbox"]');
   for(const key of ['Enter','Control+Enter']){
    await input(page).fill('/model');await input(page).press(key);
    await expect(modelPanel).toBeVisible();await expect(input(page)).toHaveValue('');
@@ -132,9 +135,31 @@ test('streaming model menu stays local while idle-only commands stay protected; 
  expect(sent.filter(command=>['prompt','follow_up'].includes(command.type)).map(({type,message})=>({type,message}))).toEqual([{type:'prompt',message:'/zebra'}]);
 });
 
-test('async native command completion preserves a newer draft',async({page,request})=>{
+test('async native command locks its composer and preserves a newer session draft',async({page,request})=>{
  const p=await seed(page,request);let release!:()=>void;let arrived=false;const barrier=new Promise<void>(resolve=>{release=resolve;});
  await page.route(`**/api/agent/${p.id}`,async route=>{if(route.request().method()==='POST'&&route.request().postDataJSON().type==='set_session_name'){const response=await route.fetch();arrived=true;await barrier;await route.fulfill({response});}else await route.continue();});
- await command(page,'/name Pending rename');await expect.poll(()=>arrived).toBe(true);await input(page).fill('KEEP NEW DRAFT');release();
- await expect(page).toHaveTitle(/Pending rename/);await expect(input(page)).toHaveValue('KEEP NEW DRAFT');
+ try {
+  await command(page,'/name Pending rename');await expect.poll(()=>arrived).toBe(true);
+  // Upstream locks the command's own fieldset. Do not manufacture an input
+  // event through a disabled element; navigate through the real sidebar.
+  await expect(page.locator('.chat-input-shell')).toHaveAttribute('aria-busy','true');
+  await expect(input(page)).toBeDisabled();
+  await expect(input(page)).toHaveValue('/name Pending rename');
+  await page.getByRole('button',{name:'New Session',exact:true}).click();
+  await expect(input(page)).toBeEditable();
+  await input(page).fill('KEEP NEW DRAFT');
+  const draftUrl=page.url();
+  expect(new URL(draftUrl).searchParams.get('session')).not.toBe(p.id);
+  const refreshed=page.waitForResponse(response=>new URL(response.url()).pathname===`/api/sessions/${p.id}`&&response.request().method()==='GET');
+  release();
+  await (await refreshed).finished();
+  await expect(input(page)).toHaveValue('KEEP NEW DRAFT');
+  await expect(page).toHaveURL(draftUrl);
+  await expect(input(page)).toBeEditable();
+  // Prove normal editing continues after the old session refresh, not only
+  // that the initial string survived the first render after navigation.
+  await input(page).press('End');
+  await input(page).pressSequentially(' AFTER RENAME');
+  await expect(input(page)).toHaveValue('KEEP NEW DRAFT AFTER RENAME');
+ } finally { release(); }
 });

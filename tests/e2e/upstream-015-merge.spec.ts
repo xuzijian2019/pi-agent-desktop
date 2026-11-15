@@ -219,20 +219,45 @@ for (const theme of ["light", "dark"] as const) for (const width of [1440, 390])
     await page.getByRole("button", { name: "Ask in new chat", exact: true }).click();
     const quoteDialog = page.getByRole("dialog", { name: "New chat about selected text", exact: true });
     await expect(quoteDialog).toBeVisible();
-    await expect(quoteDialog.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(`> ${quote}\n\n`);
+    await expect(quoteDialog.getByRole("textbox")).toHaveValue(`> ${quote}\n\n`);
     await expect(page.getByRole("button", { name: "Ask in side chat", exact: true })).toHaveCount(0);
     await capture(page, `quote-new-chat-${theme}-${width}.png`);
     await quoteDialog.getByRole("button", { name: "Close", exact: true }).click();
     await expect(input).toHaveValue(before);
     await input.fill("/recap");
-    await expect(page.locator(".composer-completion-body.is-slash")).toContainText("recap");
+    await expect(page.locator(".app-suggestion-menu:has(section)")).toContainText("recap");
     await input.fill("/side");
-    await expect(page.locator(".composer-completion-body.is-slash")).not.toContainText("/side");
+    // Upstream keeps an empty-state menu but omits its section grid when no
+    // command matches. Check that state, not a nonexistent section ancestor.
+    await expect(input).toHaveValue("/side");
+    const emptySlashMenu = page.locator(".app-suggestion-menu");
+    await expect(emptySlashMenu).toBeVisible();
+    await expect(emptySlashMenu).toContainText("No extension, prompt, or skill commands found");
+    await expect(emptySlashMenu.getByRole("button")).toHaveCount(0);
+    await expect(emptySlashMenu).not.toContainText("/side");
     await input.fill("");
+    await capture(page, `existing-composer-empty-${theme}-${width}.png`);
 
     await page.keyboard.press("Control+,");
     const settings = page.locator(".settings-dialog-surface");
     await expect(settings).toBeVisible();
+    // #227: the desktop list must actually sit left of the content, not just
+    // carry new grid class names. Phones retain the fork's compact selector.
+    if (width === 1440) {
+      const navigation = settings.locator(".settings-section-tabs");
+      const main = settings.locator(".settings-dialog-main");
+      const navRect = (await navigation.boundingBox())!;
+      const mainRect = (await main.boundingBox())!;
+      expect(navRect.x + navRect.width).toBeLessThanOrEqual(mainRect.x + 1);
+      const general = navigation.getByRole("button", { name: "General", exact: true });
+      await general.focus();
+      await general.press("ArrowDown");
+      await expect(navigation.getByRole("button", { name: "Appearance", exact: true })).toBeFocused();
+    } else {
+      await expect(settings.locator(".settings-section-tabs")).toBeHidden();
+      await expect(settings.getByRole("combobox", { name: "Settings section", exact: true })).toBeVisible();
+    }
+    await capture(page, `settings-navigation-${theme}-${width}.png`);
     if (width === 390) {
       await settings.getByRole("combobox", { name: "Settings section", exact: true }).click();
       await page.getByRole("option", { name: "Models", exact: true }).click();
@@ -274,16 +299,25 @@ for (const theme of ["light", "dark"] as const) for (const width of [1440, 390])
     const writes = await offlineAgent(page, id, state);
     await page.goto(`/?session=${id}`);
     const input = page.getByRole("textbox", { name: "Message", exact: true });
-    await expect(page.locator(".composer-queued-row")).toHaveCount(18);
+    // Upstream queue rows use full-message titles and inline layout, not the
+    // removed fork-only class. Verify every message, not just a container.
+    const queueRows = page.locator('.chat-input-shell div[title^="Queued "]');
+    await expect(queueRows).toHaveCount(18);
+    for (const text of queue) await expect(queueRows.filter({ has: page.locator("span", { hasText: text }) })).toContainText(text);
     await input.fill("Unsent draft remains editable during the run.\n".repeat(4));
     await contained(input, width);
     await expect(input).toBeInViewport();
-    await contained(page.locator(".composer-queue-strip"), width);
+    const queuePanel = queueRows.first().locator("..");
+    await contained(queuePanel, width);
+    await expect.poll(() => queuePanel.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
+    await queueRows.last().scrollIntoViewIfNeeded();
+    await expect(queueRows.last()).toBeInViewport();
+    await expect(input).toBeInViewport();
     await capture(page, `long-queue-${theme}-${width}.png`);
-    const model = page.locator(".composer-model-trigger");
+    const model = page.locator(".model-selector > button");
     await expect(model).toBeEnabled();
     await model.click();
-    const menu = page.locator(".composer-model-panel");
+    const menu = page.locator(".model-selector [role=listbox]");
     await expect(menu).toBeVisible();
     await contained(menu, width);
     await expect(menu).toContainText("Offline fixture");

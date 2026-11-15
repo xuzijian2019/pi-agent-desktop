@@ -40,9 +40,16 @@ for (const theme of ["light", "dark"] as const) {
       const composer = page.getByRole("textbox", { name: "Message", exact: true });
       await expect(composer).toBeEditable();
       const trigger = page.getByRole("button", { name: "⑂ main", exact: true }).first();
+      // Git operations live in the chat header, not the upstream composer.
+      await expect(page.locator(".chat-composer-controls").getByRole("button", { name: "⑂ main", exact: true })).toHaveCount(0);
       await trigger.click();
       const dialog = page.getByRole("dialog", { name: "Git branch", exact: true });
       await expect(dialog).toBeVisible();
+      await expect.poll(async () => {
+        const rect = (await dialog.boundingBox())!;
+        const button = (await trigger.boundingBox())!;
+        return rect.x >= 0 && rect.y >= button.y + button.height && rect.x + rect.width <= width + 1 && rect.y + rect.height <= 901;
+      }).toBe(true);
       await dialog.getByRole("button", { name: "Create branch", exact: true }).click();
       await dialog.getByLabel("Name", { exact: true }).fill("feature/not-created");
       const baseSelect = dialog.getByRole("combobox", { name: "Base branch", exact: true });
@@ -81,21 +88,22 @@ for (const theme of ["light", "dark"] as const) {
       await expect(dialog).toBeVisible();
       await expect(baseSelect).toHaveText(base);
       await expect(locationSelect).toHaveText("New worktree");
-      // The popup intentionally covers the textarea center. Find an actually
-      // exposed textarea point, then use a real pointer click (never force or
-      // dispatchEvent) so this still verifies the outside-dismissal handler.
-      const outsidePoint = await composer.evaluate(el => {
+      // The header popup can cover the compact centered textarea on phones.
+      // Click an exposed part of the chat surface, using a real pointer and hit
+      // testing, to verify outside dismissal without force or dispatchEvent.
+      const surface = page.locator(".chat-window");
+      const outsidePoint = await surface.evaluate(el => {
         const rect = el.getBoundingClientRect();
-        for (const x of [4, rect.width - 4]) {
-          for (const y of [4, rect.height / 2, rect.height - 4]) {
+        for (const x of [rect.width / 2, 4, rect.width - 4]) {
+          for (const y of [rect.height - 40, rect.height / 2, 4]) {
             const hit = document.elementFromPoint(rect.left + x, rect.top + y);
-            if (hit && el.contains(hit) && !hit.closest(".workbench-branch-control")) return { x, y };
+            if (hit && el.contains(hit) && !hit.closest(".workbench-branch-control, button, a, input, textarea")) return { x, y };
           }
         }
         return null;
       });
-      expect(outsidePoint, "an exposed textarea point outside the branch popup").not.toBeNull();
-      await composer.click({ position: outsidePoint! });
+      expect(outsidePoint, "an exposed chat surface point outside the branch popup").not.toBeNull();
+      await surface.click({ position: outsidePoint! });
       await expect(dialog).toHaveCount(0);
       expect(snapshot()).toEqual(before);
     });

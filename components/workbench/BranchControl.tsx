@@ -16,6 +16,29 @@ function containsBranchControlTarget(root: HTMLElement | null, target: Node): bo
   });
 }
 
+// The control can live in a top workspace header or a bottom toolbar.
+// Keep fixed positioning, but choose the side that actually has usable space.
+export function getBranchPopoverPosition(
+  trigger: { left: number; top: number; bottom: number },
+  viewport: { width: number; height: number },
+  bounds?: { left: number; right: number },
+) {
+  const inset = 12;
+  const gap = 6;
+  const leftEdge = Math.max(inset, (bounds?.left ?? 0) + inset);
+  const rightEdge = Math.max(leftEdge, Math.min(viewport.width - inset, (bounds?.right ?? viewport.width) - inset));
+  const width = Math.max(0, Math.min(320, rightEdge - leftEdge));
+  const above = Math.max(0, trigger.top - gap - inset);
+  const below = Math.max(0, viewport.height - trigger.bottom - gap - inset);
+  const openBelow = below > above;
+  return {
+    left: Math.max(leftEdge, Math.min(trigger.left, rightEdge - width)),
+    ...(openBelow ? { top: Math.max(inset, trigger.bottom + gap) } : { bottom: Math.max(inset, viewport.height - trigger.top + gap) }),
+    width,
+    maxHeight: Math.min(420, openBelow ? below : above),
+  };
+}
+
 export function BranchControl({ cwd, onNavigate }: { cwd: string; onNavigate: (cwd: string) => void }) {
   const { t } = useI18n(); const [open, setOpen] = useState(false); const git = useGitInventory(cwd, BRANCHES); const inventory = git.branches;
   const [query, setQuery] = useState(""); const [creating, setCreating] = useState(false); const [name, setName] = useState("");
@@ -24,18 +47,14 @@ export function BranchControl({ cwd, onNavigate }: { cwd: string; onNavigate: (c
   const [baseRef, setBase] = useState("HEAD"); const [location, setLocation] = useState<"current" | "worktree">("current");
   const [preview, setPreview] = useState<BranchPreview>(); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
   const owner = useRef(cwd); owner.current = cwd; const anchor = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState<{ left: number; bottom: number; width: number; maxHeight: number }>();
+  const [position, setPosition] = useState<ReturnType<typeof getBranchPopoverPosition>>();
   useLayoutEffect(() => {
     if (!open) return;
     const place = () => {
       const trigger = anchor.current?.querySelector("button")?.getBoundingClientRect();
       const composer = anchor.current?.closest(".chat-composer")?.getBoundingClientRect();
       if (!trigger) return;
-      const inset = 12;
-      const leftEdge = Math.max(inset, (composer?.left ?? 0) + inset);
-      const rightEdge = Math.min(window.innerWidth - inset, (composer?.right ?? window.innerWidth) - inset);
-      const width = Math.min(320, rightEdge - leftEdge);
-      setPosition({ left: Math.max(leftEdge, Math.min(trigger.left, rightEdge - width)), bottom: window.innerHeight - trigger.top + 6, width, maxHeight: Math.max(0, Math.min(420, trigger.top - 18)) });
+      setPosition(getBranchPopoverPosition(trigger, { width: window.innerWidth, height: window.innerHeight }, composer));
     };
     place();
     window.addEventListener("resize", place);

@@ -55,11 +55,11 @@ test("session controls follow the input card instead of sitting inside it", () =
 });
 
 
-test("fork composer placeholder follows the actual responsive text line box", async () => {
+test("upstream composer placeholder follows the actual responsive text line box", async () => {
   const css = (await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
-  assert.match(inputSource, /<textarea[\s\S]*?className="composer-textarea"/);
+  assert.match(inputSource, /<textarea[\s\S]*?className="chat-input-textarea"/);
   assert.match(css, /\.chat-composer textarea \{[^}]*line-height: var\(--composer-line-height\) !important/);
-  assert.match(css, /\.chat-composer textarea::placeholder \{[^}]*line-height: var\(--composer-line-height\)/);
+  assert.match(css, /\.chat-composer \.chat-input-textarea::placeholder \{[^}]*line-height: var\(--composer-line-height\)/);
   assert.match(css, /@media \(max-width: 640px\) \{\s*\.chat-composer \{[^}]*--composer-font-size: max\(16px, var\(--chat-content-font-size, 14px\)\);[^}]*--composer-line-height: calc\(var\(--composer-font-size\) \* 1\.5\)/);
-  assert.doesNotMatch(css, /\.chat-composer \.chat-input-textarea::placeholder/, "upstream's unused class cannot carry the fork placeholder fix");
+  assert.doesNotMatch(css, /\.composer-textarea \{/, "no obsolete fork textarea rule can override the upstream input");
 });

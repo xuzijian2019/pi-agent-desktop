@@ -56,8 +56,8 @@ test("contains chat content and inputs within the mobile viewport", () => {
   assert.match(cssSource, /\.markdown-body \{[\s\S]*?min-width: 0;[\s\S]*?max-width: 100%;[\s\S]*?overflow-x: hidden;/);
   assert.match(cssSource, /\.markdown-code-block \{[\s\S]*?min-width: 0;[\s\S]*?max-width: 100%;/);
   assert.match(chatWindowSource, /overflow-x-hidden overflow-y-scroll/);
-  assert.match(chatInputSource, /className="composer-textarea"/);
-  assert.match(nativeThemeSource, /\.composer-textarea \{[\s\S]*?flex: 1;[\s\S]*?width: 100%;[\s\S]*?min-width: 0;/);
+  assert.match(chatInputSource, /className="chat-input-textarea"/);
+  assert.match(chatInputSource, /<textarea[\s\S]*?flex: compact \? "none" : 1,[\s\S]*?minWidth: 0,[\s\S]*?width: "100%",/);
   assert.match(chatWindowSource, /maxHeight: "min\(760px, 100%\)"/);
 });
 
@@ -79,10 +79,10 @@ test("collapses secondary composer chrome while the mobile keyboard is open", ()
   // means; a renamed class would otherwise leave the rule silently dead.
   // The fork's composer chrome carries its own class; native-theme.css adds
   // the keyboard rule for it next to upstream's .chat-input-controls one.
-  assert.match(chatInputSource, /className=\{`chat-composer-controls\$\{isNarrow \? " is-narrow" : ""\}`\}/);
+  assert.match(chatInputSource, /className="chat-composer-controls"/);
   assert.match(nativeThemeSource, /html\[data-keyboard-open\] \.chat-composer-controls \{\s*display: none !important;/);
-  // The fork's composer shell is a plain div (upstream renders a fieldset with a compact variant).
-  assert.match(chatInputSource, /className="chat-input-shell"/);
+  // The upstream fieldset uses the shell only for the full composer.
+  assert.match(chatInputSource, /className=\{compact \? undefined : "chat-input-shell"\}/);
   assert.match(chatWindowSource, /className="chat-window chat-content /);
   // Phone landscape exceeds the 640px breakpoint but has the least height.
   // upstream splits the rule so its model picker can stay open (#1271).

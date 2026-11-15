@@ -25,9 +25,9 @@
   "driftedUpstreamFiles": {
     "components/SessionSidebar.tsx": {
       "risk": "high",
-      "drift": 5488,
+      "drift": 5517,
       "reason": "~500 lines were MOVED OUT into components/ProjectPicker.tsx and components/path-ui.tsx, which do not exist upstream. git merge does not track cross-file moves: an upstream edit to the project-picker block can merge back cleanly and silently resurrect a second copy.",
-      "structuralDrift": 5313,
+      "structuralDrift": 5338,
       "disposition": "accepted"
     },
     "components/AppShell.tsx": {
@@ -60,9 +60,9 @@
     },
     "components/ChatWindow.tsx": {
       "risk": "high",
-      "drift": 2044,
+      "drift": 2062,
       "reason": "Redesigned empty state — the new-session branding header (app icon + PRODUCT_NAME) is removed and only the update chip remains. Overlay composer and recap stay fork-owned; side chat was removed by user request on 2026-10-24. Kept deliberately.",
-      "structuralDrift": 1760,
+      "structuralDrift": 1776,
       "disposition": "accepted"
     },
     "hooks/useTheme.ts": {
@@ -74,9 +74,9 @@
     },
     "components/ChatInput.tsx": {
       "risk": "high",
-      "drift": 2937,
+      "drift": 2463,
       "reason": "Composer chrome restyle. Phase 3 stream H2 and Phase 4 part C together replaced 134 of the 136 inline style objects with classes in app/native-theme.css; the 2 that remain carry a measured popover position. Structural drift is 1044 against 1002 on main: +5 from the part C checkpoint (the per-tone banner colour constant and the queued-message recall button's pointer handlers), +3 from diff realignment across the remaining conversions, and +34 from dropping the onMouseEnter/onMouseLeave colour hacks on the composer controls, which the classifier scores as structural because it deletes upstream lines. That last 34 is isolated in a single commit. Saved-draft restoration adds 4 structural lines, bringing the current measured structural drift to 1015. Upstream changed this file in v0.8.1, and components/ChatInput*.test.mjs plus tests/e2e/workbench.spec.ts cover it.",
-      "structuralDrift": 2130,
+      "structuralDrift": 1866,
       "disposition": "accepted"
     },
     "components/MessageView.tsx": {
@@ -151,8 +151,8 @@
     },
     "components/SettingsPanel.tsx": {
       "risk": "high",
-      "drift": 846,
-      "structuralDrift": 706,
+      "drift": 863,
+      "structuralDrift": 720,
       "disposition": "accepted",
       "reason": "AppSettings was folded into General: Version & Updates and desktop window/tray switches live here (via AppUpdatesSection / DesktopAppSection). The fork's autoTitle switch and web/desktop tagline split sit in the same tab. High structural drift because the JSX tree changed."
     },
@@ -409,6 +409,7 @@
     "2026-11-03 — End-to-end encrypted relay (docs/remote-relay.md): PwaRegistration, push/subscribe and open-in-explorer gain small fork edits; lib/web-push.ts binds relay subscriptions. Markers in components/fork-extractions.test.mjs pin the relay wiring in proxy.ts, instrumentation-node.ts, desktop-api-auth.ts and SettingsPanel.tsx.",
     "2026-11-01 — Remote access (PR 194): lib/web-push.ts and lib/push-client.ts carry the phone push events and the iOS tap-to-enable path; lib/request-security.ts and proxy.ts gate the Tailscale Serve hostname on Tailscale-User-Login and refuse Funnel traffic. Markers in components/fork-extractions.test.mjs pin the wiring.",
     "2026-11-05 — Merged desktop upstream eaf955fd; workspace recheck feedback adapted to the fork composer. ChatInput structural drift 1778 → 1785 against integrated pi-web 6fcd7d4; accepted high risk unchanged.",
-    "2026-11-11 — Integrated desktop upstream 57de4b19 (pi-web f130910a, v0.15.0), preserving fork composer, recap-only UI, project tree, settings section picker, file/workbench extractions and security patches. Recomputed existing ownership drift against the integrated pi-web baseline; FileExplorer and MarkdownBody now classify high. Review policy remains unchanged. Details: .agents/notes/upstream-merge-20261111-handoff.md."
+    "2026-11-11 — Integrated desktop upstream 57de4b19 (pi-web f130910a, v0.15.0), preserving fork composer, recap-only UI, project tree, settings section picker, file/workbench extractions and security patches. Recomputed existing ownership drift against the integrated pi-web baseline; FileExplorer and MarkdownBody now classify high. Review policy remains unchanged. Details: .agents/notes/upstream-merge-20261111-handoff.md.",
+    "2026-11-15 — Integrated desktop upstream 9669045c, then applied the owner's explicit request to align both new and continued-session composer UI with upstream. Kept draft/send safety pipelines; moved branch operations outside the composer and retained viewport bounds for long queues. Refreshed existing drift entries against integrated pi-web f130910a. Review policy unchanged. See .agents/notes/upstream-merge-20261115-handoff.md."
   ]
 }

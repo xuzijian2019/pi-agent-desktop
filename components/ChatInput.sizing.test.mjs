@@ -25,7 +25,7 @@ test("composer remeasures current draft content and clears its inline height whe
   assert.equal(textareaRef.current.style.height, "88px");
   textareaRef.current.scrollHeight = 600;
   resize();
-  assert.equal(textareaRef.current.style.height, "600px", "CSS, not a second JS constant, owns the 200px cap");
+  assert.equal(textareaRef.current.style.height, "200px", "upstream JS cap keeps restored multiline drafts within the editor");
   textareaRef.current.value = "short restored draft";
   textareaRef.current.scrollHeight = 24;
   resize();
@@ -61,10 +61,11 @@ test("width observer remeasures wrapping, ignores height-only notifications and 
 });
 
 test("new tasks share the chat column and the normal 24–200px editor limits", () => {
-  assert.match(text, /className="chat-composer-wrap" style=\{\{ maxWidth: "var\(--chat-content-max-width, 820px\)" \}\}/);
-  assert.match(css, /\.composer-textarea \{[^}]*min-height: 24px;[^}]*max-height: 200px;/);
+  assert.match(text, /maxWidth: "var\(--chat-content-max-width, 820px\)", margin: "0 auto"/);
+  assert.match(text, /Math.min\(ta.scrollHeight, 200\)/);
+  assert.match(text, /className="chat-input-textarea"/);
   assert.doesNotMatch(css, /\.chat-empty-state \.composer-textarea\s*\{/);
   assert.doesNotMatch(css, /\.chat-empty-state \.chat-composer-wrap\s*\{/);
-  assert.match(css, /\.chat-empty-state \{[^}]*max-width: none;/);
-  assert.doesNotMatch(text, /className="composer-trigger-hint"/);
+
+  assert.match(text, /className="composer-trigger-hint" aria-hidden="true"/);
 });

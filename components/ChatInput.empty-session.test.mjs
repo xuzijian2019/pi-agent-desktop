@@ -31,38 +31,28 @@ test("fresh sessions keep input hints and hide usage controls", () => {
   assert.doesNotMatch(html, /aria-label="Compact context"|context-usage-ring|send-preview/);
 });
 
-test("existing sessions have no placeholder hints or Compact button and show a visible percentage", () => {
-  const html = renderComposer({
-    showInputHints: false,
-    sessionStats: stats,
-    contextUsage: { percent: 12, contextWindow: 200000, tokens: 24000 },
-  });
-  assert.match(html, /placeholder=""/);
+test("existing sessions use the same upstream hints and clickable context ring", () => {
+  const html = renderComposer({ showInputHints: false, sessionStats: stats,
+    contextUsage: { percent: 12, contextWindow: 200000, tokens: 24000 }, onCompact() {} });
+  assert.match(html, /placeholder="Message… Type \/ for commands, @ for files, # for sessions"/);
   assert.match(html, /aria-label="Message"/);
-  assert.doesNotMatch(html, /aria-label="Compact context"|Type \/ for commands|send-preview/);
-  assert.match(html, /class="context-usage-percent"[^>]*>12\.0%<\/span>/);
-  const usageButton = html.match(/<button[^>]*class="context-usage-ring"[^>]*>/)?.[0];
-  assert.ok(usageButton);
-  assert.doesNotMatch(usageButton, /\btitle=/);
-  assert.match(usageButton, /aria-haspopup="dialog"/);
+  assert.match(html, /aria-label="Session automation"/);
+  assert.match(html, /12\.0% ctx/);
+  assert.match(html, /aria-haspopup="dialog"/);
 });
 
-test("project and tool setup appear only before a conversation starts", () => {
-  const setup = {
-    projectPath: "/repo/project", onSelectProject() {},
-    toolPreset: "full", onToolPresetChange() {},
-  };
-  const fresh = renderComposer({ ...setup, showInputHints: true });
-  assert.match(fresh, /chat-project-context/);
-  assert.match(fresh, /aria-label="Change tool preset"/);
-  assert.match(fresh, />All tools<\/span>/);
-  const existing = renderComposer({ ...setup, showInputHints: false, sessionStats: stats });
-  assert.doesNotMatch(existing, /chat-project-context|Change tool preset/);
-  assert.match(existing, /context-usage-ring/);
+test("project and tool setup remain available in both new and continued sessions", () => {
+  for (const showInputHints of [true, false]) {
+    const html = renderComposer({ showInputHints, projectPath: "/repo/project", onSelectProject() {},
+      toolPreset: "full", onToolPresetChange() {} });
+    assert.match(html, /chat-project-context/);
+    assert.match(html, /Change tool preset/);
+    assert.match(html, />All tools<\/span>/);
+  }
 });
 
-test("existing sessions with unknown context show a dash, not a misleading zero", () => {
-  const html = renderComposer({ showInputHints: false, sessionStats: stats, contextUsage: { percent: null, contextWindow: 200000, tokens: null } });
-  assert.match(html, /class="context-usage-percent"[^>]*>—<\/span>/);
-  assert.doesNotMatch(html, />0\.0%</);
+test("unknown context reports an unknown numerator rather than a misleading zero", () => {
+  const html = renderComposer({ sessionStats: stats, contextUsage: { percent: null, contextWindow: 200000, tokens: null } });
+  assert.match(html, /— \/ 200k/);
+  assert.doesNotMatch(html, /0\.0% ctx/);
 });

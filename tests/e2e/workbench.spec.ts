@@ -72,7 +72,7 @@ test("loading a remotely saved draft restores references and setup atomically", 
   const toolPreset = page.getByRole("button", { name: "Change tool preset", exact: true });
   await expect(toolPreset).toHaveAttribute("title", "Change tool preset: All tools");
   await toolPreset.click();
-  await expect(page.locator(".composer-dropdown-panel.is-tools .composer-option-row.is-active")).toContainText("All tools");
+  await expect(page.locator(".composer-tool-menu [role=option][aria-selected=true]")).toContainText("All tools");
   await page.keyboard.press("Escape");
   await expect(conflict).toHaveCount(0);
 
@@ -98,11 +98,11 @@ test("loading a remotely saved draft restores references and setup atomically", 
   await conflict.getByRole("button", { name: "Load saved version" }).click();
   await expect(composer).toHaveValue(plainDraft.value);
   await page.getByRole("button", { name: "Change reasoning level", exact: true }).click();
-  await expect(page.locator(".is-thinking .composer-option-row.is-active")).toContainText("auto");
+  await expect(page.locator(".composer-run-menu [role=option][aria-selected=true]")).toContainText("auto");
   await page.keyboard.press("Escape");
   await expect(toolPreset).toHaveAttribute("title", "Change tool preset: Settings default");
   await toolPreset.click();
-  await expect(page.locator(".composer-dropdown-panel.is-tools .composer-option-row.is-active")).toContainText("Settings default");
+  await expect(page.locator(".composer-tool-menu [role=option][aria-selected=true]")).toContainText("Settings default");
   await page.keyboard.press("Escape");
   await expect.poll(readSavedDraft).toEqual({ ...plainDraft, references: {} });
 });
@@ -144,10 +144,14 @@ test("branch creation works without a model", async ({ page }) => {
   await dialog.evaluate(el => Promise.all(el.getAnimations({ subtree: true }).map(a => a.finished)));
   const triggerBox = (await page.getByRole("button", { name: "⑂ main", exact: true }).first().boundingBox())!;
   const dialogBox = (await dialog.boundingBox())!;
-  const composerBox = (await page.locator(".chat-composer").boundingBox())!;
-  expect(Math.abs(dialogBox.y + dialogBox.height - (triggerBox.y - 6))).toBeLessThan(2);
-  expect(dialogBox.x).toBeGreaterThanOrEqual(composerBox.x);
-  expect(dialogBox.x + dialogBox.width).toBeLessThanOrEqual(composerBox.x + composerBox.width);
+  // The owner moved this fork control out of the upstream-aligned composer
+  // into the existing chat header; keep real creation/review coverage.
+  await expect(page.locator(".chat-composer-controls").getByRole("button", { name: "⑂ main", exact: true })).toHaveCount(0);
+  expect(dialogBox.x).toBeGreaterThanOrEqual(0);
+  expect(dialogBox.x + dialogBox.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  expect(dialogBox.y).toBeGreaterThanOrEqual(0);
+  expect(dialogBox.y + dialogBox.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  expect(triggerBox.width).toBeGreaterThan(0);
   expect(dialogBox.width).toBeLessThanOrEqual(320);
   await dialog.getByRole("button", { name: "Create branch" }).click();
   await dialog.getByLabel("Name", { exact: true }).fill("feature/workbench");
@@ -163,10 +167,9 @@ test("composer metadata and rounded panel remain uncluttered at desktop and phon
   await expect(controls.getByRole("button", { name: "Preview outgoing message", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Saved Tasks", exact: true })).toHaveCount(0);
   const folder = controls.locator(".chat-project-context");
-  const branch = controls.getByRole("button", { name: "⑂ main", exact: true });
-  await expect(branch).toBeVisible();
-  const folderBox = (await folder.boundingBox())!; const branchBox = (await branch.boundingBox())!;
-  expect(branchBox.x).toBeGreaterThan(folderBox.x); expect(Math.abs(branchBox.y - folderBox.y)).toBeLessThan(8);
+  // Upstream's composer has project + model, not the fork-only Git chip.
+  await expect(controls.getByRole("button", { name: "⑂ main", exact: true })).toHaveCount(0);
+  await expect(folder).toBeVisible();
   const panel = await openPanel(page);
   // One header row: tabs and panel actions, no view switcher.
   await expect(panel.locator(".right-panel-tab-strip")).toHaveCount(1);
@@ -187,13 +190,13 @@ test("composer metadata and rounded panel remain uncluttered at desktop and phon
     [1, 1], [innerWidth - 1, 1], [innerWidth / 2, innerHeight / 2],
     [1, innerHeight - 1], [innerWidth - 1, innerHeight - 1],
   ].every(([x, y]) => !document.elementFromPoint(x, y)?.closest("#file-panel, .right-panel-overlay-backdrop")))).toBe(true);
-  await expect(branch).toBeVisible();
+  await expect(folder).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  const narrowBranch = (await branch.boundingBox())!;
-  const model = controls.getByRole("button", { name: "Example model", exact: true });
+  const narrowProject = (await folder.boundingBox())!;
+  const model = controls.locator(".model-selector > button");
   const narrowModel = (await model.boundingBox())!;
-  expect(narrowModel.x).toBeGreaterThanOrEqual(narrowBranch.x + narrowBranch.width);
-  for (const control of [branch, model]) {
+  expect(narrowModel.x).toBeGreaterThanOrEqual(narrowProject.x + narrowProject.width);
+  for (const control of [folder, model]) {
     await expect.poll(() => control.evaluate(el => {
       const rect = el.getBoundingClientRect();
       return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
@@ -215,11 +218,11 @@ test("new-task composer shares chat sizing and reflows drafts without another ke
   await project(page);
   const input = page.getByRole("textbox", { name: "Message", exact: true });
   const card = page.locator(".chat-composer");
-  await expect(page.locator(".chat-empty-state")).toBeVisible();
+  await expect(page.locator(".chat-input-shell")).toBeVisible();
   await expect.poll(() => input.evaluate(el => {
     const style = getComputedStyle(el);
-    return [style.minHeight, style.maxHeight];
-  })).toEqual(["24px", "200px"]);
+    return [parseFloat(style.minHeight), parseFloat(style.maxHeight)];
+  })).toEqual([36, 200]);
   await expect.poll(() => card.evaluate(el => Math.abs(el.getBoundingClientRect().width - 820))).toBeLessThan(1);
   await input.fill("A draft that must wrap when the window narrows. ".repeat(8));
   const height = () => input.evaluate(el => el.clientHeight);
@@ -253,14 +256,21 @@ test("new-task composer shares chat sizing and reflows drafts without another ke
   }
   await page.evaluate(() => document.documentElement.classList.remove("dark"));
   await input.fill("");
-  await expect.poll(height).toBe(24);
-  await expect(page.locator(".composer-trigger-hint")).toHaveCount(0);
+  await expect.poll(height).toBe(36);
+  await input.focus();
+  await expect(page.locator(".composer-trigger-hint")).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("composer-sizing-desktop.png") });
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect.poll(height).toBe(24);
+  await expect.poll(height).toBe(36);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   for (const theme of ["light", "dark"]) {
     await page.evaluate(value => document.documentElement.classList.toggle("dark", value === "dark"), theme);
+    await page.evaluate(async () => { await document.fonts.ready; });
     await page.screenshot({ path: testInfo.outputPath(`composer-sizing-phone-${theme}.png`), animations: "disabled" });
+    await input.fill("Long phone draft\n".repeat(60));
+    await expect.poll(height).toBe(200);
+    await page.screenshot({ path: testInfo.outputPath(`composer-sizing-long-phone-${theme}.png`), animations: "disabled" });
+    await input.fill("");
+    await expect.poll(height).toBe(36);
   }
 });

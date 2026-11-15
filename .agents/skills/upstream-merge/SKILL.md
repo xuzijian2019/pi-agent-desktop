@@ -34,9 +34,13 @@ never force-push.
 
 Resolution rules:
 - **Fork interaction design wins.** This covers the project-tree sidebar, the
-  sidebar-left layout, the simplified composer, the composer git-branch chip,
+  sidebar-left layout, the workbench branch operations,
   side/recap, IndexedDB drafts, the class-based `TabBar`, and Playwright as
   `test:e2e`. Adopt upstream *logic* (guards, new features, fixes) into it.
+  **2026-11-15 owner override:** new and continued-session composer appearance
+  and normal controls follow upstream, replacing the earlier simplified-composer
+  rule. Preserve draft/attachment recovery, single-shot send and cross-session
+  guards; keep branch operations outside the composer. See `docs/agents/fork-ui.md`.
 - If upstream adds an entry to a menu or list the fork restructured, re-apply
   the entry in the fork's structure. Don't resurrect upstream's structure.
 - Styling goes in `app/native-theme.css` with a `className`. Don't add fork CSS

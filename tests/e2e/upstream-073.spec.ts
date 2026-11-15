@@ -35,7 +35,7 @@ async function refresh(request: APIRequestContext, id: string) {
 }
 
 function projectGroup(page: Page, cwd: string) {
-  return page.locator(".sidebar-project-tree-group").filter({ has: page.locator(`button[aria-label=${JSON.stringify(cwd)}]`) });
+  return page.locator(`.sidebar-project-tree-group[data-project-root=${JSON.stringify(cwd)}]`);
 }
 
 async function openWorktrees(page: Page, cwd: string) {
