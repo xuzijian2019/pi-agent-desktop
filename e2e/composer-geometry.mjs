@@ -10,8 +10,7 @@ export async function checkComposerGeometry(page) {
   const heights = [];
   try {
     // Empty placeholder, entered text and the first line of a tall draft must
-    // stay readable across the supported font-size range. The fork deliberately
-    // keeps attachment controls below the card, not beside the first text line.
+    // stay aligned with the upstream inline attachment across supported font sizes.
     for (const size of [12, 14, 20, 24]) {
       await card.evaluate((el, size) => el.style.setProperty('--chat-content-font-size', `${size}px`), size);
       for (const draft of ['', '给 Pi 发消息…', 'First line\nSecond line\nThird line']) {
@@ -24,15 +23,16 @@ export async function checkComposerGeometry(page) {
           const style = getComputedStyle(text), box = text.getBoundingClientRect();
           const outer = el.getBoundingClientRect(), icon = attach.getBoundingClientRect();
           return {
-            attachOutsideCard: !el.contains(attach), attachTop: icon.top, cardBottom: outer.bottom,
+            attachInsideCard: el.contains(attach),
+            delta: icon.y + icon.height / 2 - (box.y + parseFloat(style.paddingTop) + parseFloat(style.lineHeight) / 2),
             textLeft: box.left, textRight: box.right, cardLeft: outer.left, cardRight: outer.right,
             fontSize: parseFloat(style.fontSize),
             placeholderLine: parseFloat(getComputedStyle(text, '::placeholder').lineHeight), line: parseFloat(style.lineHeight),
             overflow: text.scrollHeight - text.clientHeight,
           };
         });
-        assert.equal(alignment.attachOutsideCard, true, 'Fork attachment control belongs below the input card');
-        assert.ok(alignment.attachTop >= alignment.cardBottom, `Attachment control must not overlap text: ${JSON.stringify(alignment)}`);
+        assert.equal(alignment.attachInsideCard, true, 'Upstream attachment control belongs inside the input card');
+        assert.ok(Math.abs(alignment.delta) < 0.6, `Attach and first line must align at ${size}px: ${JSON.stringify(alignment)}`);
         assert.ok(alignment.textLeft >= alignment.cardLeft && alignment.textRight <= alignment.cardRight, `Text must fit inside its card: ${JSON.stringify(alignment)}`);
         assert.equal(alignment.fontSize, page.viewportSize().width <= 640 ? Math.max(16, size) : size, 'Requested font size must actually apply');
         assert.ok(Math.abs(alignment.placeholderLine - alignment.line) < 0.1, 'Placeholder must use the actual text line height');

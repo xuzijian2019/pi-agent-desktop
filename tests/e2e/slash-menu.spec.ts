@@ -10,7 +10,7 @@ async function command(page:Page,text:string){
  // /name updates the title before its awaited session refresh completes. The
  // composer intentionally ignores another command while that work is pending.
  // Wait before submitting, not afterwards: the newer-draft test deliberately
- // types while its rename request remains in flight.
+ // navigates to a different draft while its rename request remains in flight.
  await expect(page.locator('.chat-input-shell')).not.toHaveAttribute('aria-busy','true');
  await input(page).fill(text); await input(page).press('Enter');
 }
@@ -135,9 +135,31 @@ test('streaming model menu stays local while idle-only commands stay protected; 
  expect(sent.filter(command=>['prompt','follow_up'].includes(command.type)).map(({type,message})=>({type,message}))).toEqual([{type:'prompt',message:'/zebra'}]);
 });
 
-test('async native command completion preserves a newer draft',async({page,request})=>{
+test('async native command locks its composer and preserves a newer session draft',async({page,request})=>{
  const p=await seed(page,request);let release!:()=>void;let arrived=false;const barrier=new Promise<void>(resolve=>{release=resolve;});
  await page.route(`**/api/agent/${p.id}`,async route=>{if(route.request().method()==='POST'&&route.request().postDataJSON().type==='set_session_name'){const response=await route.fetch();arrived=true;await barrier;await route.fulfill({response});}else await route.continue();});
- await command(page,'/name Pending rename');await expect.poll(()=>arrived).toBe(true);await input(page).fill('KEEP NEW DRAFT');release();
- await expect(page).toHaveTitle(/Pending rename/);await expect(input(page)).toHaveValue('KEEP NEW DRAFT');
+ try {
+  await command(page,'/name Pending rename');await expect.poll(()=>arrived).toBe(true);
+  // Upstream locks the command's own fieldset. Do not manufacture an input
+  // event through a disabled element; navigate through the real sidebar.
+  await expect(page.locator('.chat-input-shell')).toHaveAttribute('aria-busy','true');
+  await expect(input(page)).toBeDisabled();
+  await expect(input(page)).toHaveValue('/name Pending rename');
+  await page.getByRole('button',{name:'New Session',exact:true}).click();
+  await expect(input(page)).toBeEditable();
+  await input(page).fill('KEEP NEW DRAFT');
+  const draftUrl=page.url();
+  expect(new URL(draftUrl).searchParams.get('session')).not.toBe(p.id);
+  const refreshed=page.waitForResponse(response=>new URL(response.url()).pathname===`/api/sessions/${p.id}`&&response.request().method()==='GET');
+  release();
+  await (await refreshed).finished();
+  await expect(input(page)).toHaveValue('KEEP NEW DRAFT');
+  await expect(page).toHaveURL(draftUrl);
+  await expect(input(page)).toBeEditable();
+  // Prove normal editing continues after the old session refresh, not only
+  // that the initial string survived the first render after navigation.
+  await input(page).press('End');
+  await input(page).pressSequentially(' AFTER RENAME');
+  await expect(input(page)).toHaveValue('KEEP NEW DRAFT AFTER RENAME');
+ } finally { release(); }
 });

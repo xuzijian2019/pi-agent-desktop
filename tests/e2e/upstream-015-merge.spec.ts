@@ -227,7 +227,14 @@ for (const theme of ["light", "dark"] as const) for (const width of [1440, 390])
     await input.fill("/recap");
     await expect(page.locator(".app-suggestion-menu:has(section)")).toContainText("recap");
     await input.fill("/side");
-    await expect(page.locator(".app-suggestion-menu:has(section)")).not.toContainText("/side");
+    // Upstream keeps an empty-state menu but omits its section grid when no
+    // command matches. Check that state, not a nonexistent section ancestor.
+    await expect(input).toHaveValue("/side");
+    const emptySlashMenu = page.locator(".app-suggestion-menu");
+    await expect(emptySlashMenu).toBeVisible();
+    await expect(emptySlashMenu).toContainText("No extension, prompt, or skill commands found");
+    await expect(emptySlashMenu.getByRole("button")).toHaveCount(0);
+    await expect(emptySlashMenu).not.toContainText("/side");
     await input.fill("");
     await capture(page, `existing-composer-empty-${theme}-${width}.png`);
 
@@ -292,11 +299,20 @@ for (const theme of ["light", "dark"] as const) for (const width of [1440, 390])
     const writes = await offlineAgent(page, id, state);
     await page.goto(`/?session=${id}`);
     const input = page.getByRole("textbox", { name: "Message", exact: true });
-    await expect(page.locator(".composer-queued-row")).toHaveCount(18);
+    // Upstream queue rows use full-message titles and inline layout, not the
+    // removed fork-only class. Verify every message, not just a container.
+    const queueRows = page.locator('.chat-input-shell div[title^="Queued "]');
+    await expect(queueRows).toHaveCount(18);
+    for (const text of queue) await expect(queueRows.filter({ has: page.locator("span", { hasText: text }) })).toContainText(text);
     await input.fill("Unsent draft remains editable during the run.\n".repeat(4));
     await contained(input, width);
     await expect(input).toBeInViewport();
-    await contained(page.locator(".composer-queued-row").first().locator(".."), width);
+    const queuePanel = queueRows.first().locator("..");
+    await contained(queuePanel, width);
+    await expect.poll(() => queuePanel.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
+    await queueRows.last().scrollIntoViewIfNeeded();
+    await expect(queueRows.last()).toBeInViewport();
+    await expect(input).toBeInViewport();
     await capture(page, `long-queue-${theme}-${width}.png`);
     const model = page.locator(".model-selector > button");
     await expect(model).toBeEnabled();
