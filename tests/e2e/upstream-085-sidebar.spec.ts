@@ -14,6 +14,12 @@ test("upstream sidebar: forks stay independent, child folds persist and paths di
     { ...base, id: "merge-085-fork", path: "fixture-fork", name: "Independent fork", parentSessionId: "merge-085-parent", relation: { kind: "fork", originSessionId: "merge-085-parent" } },
     { ...base, id: "merge-085-child", path: "fixture-child", name: "Nested subagent", parentSessionId: "merge-085-parent", relation: { kind: "subagent", parentSessionId: "merge-085-parent", profile: "research", description: "UI fixture", status: "completed" } },
   ];
+  // Catalog reads only: no provider access or agent starts in this visual fixture.
+  await page.route(/\/api\/models(?:\?.*)?$/, route => route.fulfill({ json: {
+    models: { "fixture-ui:fixture": "Offline fixture" },
+    modelList: [{ id: "fixture", name: "Offline fixture", provider: "fixture-ui", providerName: "Offline fixture provider" }],
+    defaultModel: { provider: "fixture-ui", modelId: "fixture" },
+  } }));
   await page.route("**/api/sessions?*", route => route.fulfill({ json: { sessions } }));
   await page.route("**/api/sessions", route => route.fulfill({ json: { sessions } }));
   await page.addInitScript(() => { localStorage.setItem("pi-locale", "en"); localStorage.setItem("pi-theme", "light"); });
@@ -41,6 +47,9 @@ test("upstream sidebar: forks stay independent, child folds persist and paths di
   await expect(fork).toBeVisible();
   for (const theme of ["light", "dark"]) {
     await page.evaluate(theme => { document.documentElement.classList.toggle("dark", theme === "dark"); document.documentElement.setAttribute("data-theme", theme); }, theme);
+    // Clicking dismisses the hint while the pointer remains on the header.
+    // Re-enter it for each theme so the real mouseenter timer runs again.
+    await page.mouse.move(1400, 850);
     await header.hover();
     const hint = page.locator(".sidebar-project-path-hint");
     await expect(hint).toBeVisible();

@@ -32,3 +32,14 @@
 
 ## Focused web regression coverage
 Existing four light/dark x desktop/phone Settings scenarios now assert actual left-navigation geometry, keyboard focus, compact selector and capture screenshots. One added sidebar scenario covers independent forks, child folding persistence and long-path hint dismissal in both themes. These run under the real npm run web harness with a synthetic read-only catalog; execution and pixel review are pending CI, not locally claimed.
+
+## Owner-requested composer alignment (same run)
+After draft PR #51 was opened, the owner explicitly requested full alignment of both new-session and continued-session input UI with desktop upstream. This supersedes the previous fork simplified-composer presentation rule. Adopted upstream editor/render tree, shared model selector, project picker, tools/reasoning/automation controls, context ring and all composer CSS geometry. No unrelated welcome/branding area restored.
+
+Safety adaptations remain: IndexedDB draft hydration/retry, pasted-text and reference preparation, IME/single-submit/cross-session guards, /model bridging into the same selector, long queue scrolling and narrow-screen popup bounds. Branch operations were moved outside the composer into the project-only workspace header rather than removed; their confirmation/cancel/keep-changes behavior is unchanged. Header popovers choose available up/down space. Extension statuses remain outside the composer, one per session view. These are documented differences, not a claim of byte-identical upstream code.
+
+Old visual-only assertions were replaced with equivalent upstream assertions; draft/history/quote/attachment/queue and branch-operation safety assertions remain. Existing E2E scenarios now capture empty and long new/continued composers across light/dark desktop/phone states. Actual final-head execution and pixel review are pending CI.
+
+Initial head 763825b7 CI run 43722566176: eight jobs successful (including both payload canaries and both Rust platforms), E2E 85 passed / 6 failed / 1 pre-existing skip. Five failures were old project selectors relying on the former full-path-only accessible name; the sixth was a second hover with the pointer never leaving the row. Test locators and hover transitions were corrected without weakening archive/worktree/folding assertions. These initial results do not validate the later composer changes.
+
+Composer revision local gates: final complete unit suite 4467 passed / 0 failed / 1 platform skip; TypeScript clean; lint 0 errors / 21 warnings. Latest measured drift against f130910a: 3777 cosmetic / 25272 structural. Ownership entries refreshed without changing review policy. Old-head Settings screenshots (desktop/phone, light/dark) and sidebar light screenshot were actually opened and inspected: no layout/theme obstruction; sidebar fixture error was corrected for the next run. This is not final-head composer visual acceptance.

@@ -16,6 +16,8 @@ export interface ModelSelectorOption {
 
 interface ModelSelectorProps {
   options: ModelSelectorOption[];
+  /** Opens the same picker for the web /model command without a second UI. */
+  openRequest?: number;
   value?: { provider: string; modelId: string } | null;
   onChange: (provider: string, modelId: string) => void;
   onClear?: () => void;
@@ -69,6 +71,7 @@ export function ModelSelector({
   placement = "up",
   defaultValue,
   onSetDefault,
+  openRequest = 0,
 }: ModelSelectorProps) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
@@ -78,6 +81,17 @@ export function ModelSelector({
   const [anchorRect, setAnchorRect] = useState<{ top: number; right: number; bottom: number; left: number; width: number } | null>(null);
   const [filter, setFilter] = useState("");
   const locked = disabled || busy;
+  const handledOpenRequest = useRef(0);
+  useEffect(() => {
+    if (!openRequest || handledOpenRequest.current === openRequest || locked) return;
+    handledOpenRequest.current = openRequest;
+    const button = rootRef.current?.querySelector("button");
+    if (!button) return;
+    const rect = button.getBoundingClientRect();
+    setAnchorRect({ top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left, width: rect.width });
+    setFilter("");
+    setOpen(true);
+  }, [openRequest, locked]);
   const sortedOptions = useMemo(() => [...options].sort(compareModelOptions), [options]);
   const filteredOptions = filterModelOptions(sortedOptions, filter);
   const showFilter = sortedOptions.length > MODEL_FILTER_THRESHOLD;

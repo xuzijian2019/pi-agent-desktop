@@ -19,7 +19,6 @@ const { composeMessageWithAttachedFiles } = await jiti.import("@/lib/chat-attach
 const { ModelSelector } = await jiti.import("./ModelSelector.tsx");
 const { clearDraft, getDraft, mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft, setDraft } = await jiti.import("@/lib/draft-store");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
-const nativeThemeSource = await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8");
 
 function renderWithI18n(element) {
   return renderToStaticMarkup(React.createElement(I18nProvider, null, element));
@@ -335,7 +334,7 @@ test("renders the read-only tool preset as the active selection", () => {
   assert.match(html, />Read-only<\/span>/);
 });
 
-test("disambiguates project chips without stripping parent names on narrow screens", () => {
+test("disambiguates desktop project chips and preserves the full path when narrowing the label", () => {
   const html = renderWithI18n(React.createElement(ChatInput, {
     onSend() {}, onAbort() {}, isStreaming: false,
     projectPath: "/work/client/app", projectOptions: ["/work/client/app", "/work/server/app"],
@@ -343,9 +342,10 @@ test("disambiguates project chips without stripping parent names on narrow scree
   }));
   assert.match(html, />client\/app<\/span>/);
   const source = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
-  // The same disambiguated label is passed at every width, including phones.
-  assert.match(source, /<ComposerProjectChip[\s\S]*?label=\{projectLabel\}/);
-  assert.doesNotMatch(source, /projectLabel\.split\(/);
+  // Upstream narrows the visible label on phones but retains the full path for the chip tooltip.
+  assert.match(source, /<ComposerProjectChip[\s\S]*?label=\{isNarrow \? projectLabel\.split\("\/"\)\.pop\(\) \|\| projectLabel : projectLabel\}/);
+  assert.match(source, /projectPath=\{projectPath\}/);
+  assert.match(source, /maxWidth=\{isNarrow \? 112 : isCompact \? 120 : 170\}/);
 });
 
 test("renders the empty tool preset as Chat only", () => {
@@ -501,8 +501,9 @@ test("file mention menu applies the measured upward height cap", () => {
   const block = source.slice(start, start + 4000);
   assert.match(block, /ref=\{atMenuRef\}/);
   assert.match(block, /min\(48vh, 400px, \$\{atMenuMaxHeight\}px\)/);
-  assert.match(block, /composer-completion-popover/);
-  assert.match(nativeThemeSource, /\.composer-completion-popover[\s\S]*?flex-direction: column/);
+  assert.match(block, /className="native-popover app-menu app-suggestion-menu"/);
+  assert.match(block, /display: "flex",\s*flexDirection: "column",/);
+  assert.match(block, /maxHeight: atMenuMaxHeight === null/);
   assert.equal(block.includes("maxHeight: \"min(48vh, 400px)\""), false);
 });
 
@@ -888,10 +889,8 @@ test("renders compact errors above the input as a wrapping alert", () => {
   assert.match(html, /role="alert"/);
   assert.match(html, /Compaction failed: OpenAI API error/);
   assert.match(html, /&lt;html&gt;request forbidden&lt;\/html&gt;/);
-  assert.match(html, /class="composer-compact-alert"/);
-  // The wrapping that keeps a long provider error inside the composer now
-  // lives on the class rather than on an inline style.
-  assert.match(nativeThemeSource, /\.composer-compact-alert \{[\s\S]*?white-space: pre-wrap;[\s\S]*?overflow-wrap: anywhere;/);
+  // Upstream expresses the same safe wrapping directly on the alert.
+  assert.match(html, /white-space:pre-wrap;overflow-wrap:anywhere/);
   assert.ok(html.indexOf('role="alert"') < html.indexOf("<textarea"));
 });
 
@@ -913,7 +912,11 @@ test("renders ChatInput controls with responsive container classes and accessibi
   assert.match(html, /class="chat-composer"/);
   assert.match(html, /class="chat-composer-controls"/);
   assert.doesNotMatch(html, /aria-label="Compact context"/);
-  assert.match(html, /aria-label="Context usage: —"/);
+  assert.doesNotMatch(html, /aria-label="Context usage: 0/);
+  assert.doesNotMatch(html, /aria-haspopup="dialog"/); // no empty usage ring until data arrives
+  const withUsage = renderWithI18n(React.createElement(ChatInput, { onSend() {}, onAbort() {}, isStreaming: false, contextUsage: { percent: 25, contextWindow: 100000, tokens: 25000 } }));
+  assert.match(withUsage, /aria-label="25\.0% ctx \/ 100k"/);
+  assert.match(withUsage, /aria-haspopup="dialog"/);
   assert.doesNotMatch(html, /completion sound/i);
 });
 
@@ -1125,8 +1128,10 @@ test("chat access stays reachable without project presets, hints or reasoning co
 test("only the chat composer offers saving a default model or reasoning level", () => {
   const chatInputSource = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
   const agentsConfigSource = readFileSync(new URL("./AgentsConfig.tsx", import.meta.url), "utf8");
-  // The fork keeps its own model menu; its rows carry upstream's default star (ComposerOptionRow).
-  assert.match(chatInputSource, /star=\{onSetDefaultModel \? \{\s*isDefault: defaultModel\?\.provider === opt\.provider && defaultModel\?\.modelId === opt\.modelId,/);
+  // Upstream owns the shared model menu; the composer forwards its default callback.
+  const modelSelectorSource = readFileSync(new URL("./ModelSelector.tsx", import.meta.url), "utf8");
+  assert.match(chatInputSource, /<ModelSelector[\s\S]*?defaultValue=\{defaultModel\}[\s\S]*?onSetDefault=\{onSetDefaultModel\}/);
+  assert.match(modelSelectorSource, /star=\{onSetDefault \? \{\s*isDefault: option\.modelId === defaultValue\?\.modelId && option\.provider === defaultValue\?\.provider,/);
   // "auto" means "use the default", so it never gets a star of its own.
   assert.match(chatInputSource, /star=\{onSetDefaultThinkingLevel && lvl !== "auto"/);
   // A subagent profile's model is not the default for new chats.
@@ -1170,30 +1175,30 @@ test("selector rows expose a plain default star separate from the selected optio
   assert.doesNotMatch(active, /border-left/);
 });
 
-test("the fork's model menu closes on an outside click", () => {
-  // pi-web moved its model menu into ModelSelector and took this branch of the shared
-  // outside-click handler with it; the fork keeps its own menu, so it must keep the branch.
-  const source = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
-  const handler = source.slice(source.indexOf("// Close dropdowns on outside click"), source.indexOf('document.addEventListener("mousedown", handler)'));
-  assert.match(handler, /dropdownRef\.current && !dropdownRef\.current\.contains\(e\.target as Node\)[\s\S]*?setModelDropdownOpen\(false\);\s*setModelFilter\(""\);/);
+test("the shared upstream model menu closes and clears its filter on outside click", () => {
+  const source = readFileSync(new URL("./ModelSelector.tsx", import.meta.url), "utf8");
+  const handler = source.slice(source.indexOf("const handleOutsideClick"), source.indexOf('document.addEventListener("mousedown", handleOutsideClick)'));
+  assert.match(handler, /rootRef\.current && !rootRef\.current\.contains\(event\.target as Node\)/);
+  assert.match(handler, /panelRef\.current && !panelRef\.current\.contains\(event\.target as Node\)/);
+  assert.match(handler, /setOpen\(false\);\s*setFilter\(""\);/);
 });
 
-test("the composer offers an image picker left of the folder chip", () => {
+test("the upstream composer offers an image picker inside the editor before the textarea", () => {
   const source = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
   assert.match(source, /<input\s+ref=\{fileInputRef\}\s+type="file"\s+accept=\{!onAttachFiles \? "image\/\*" : undefined\}\s+multiple[\s\S]*?processImageFiles\(files\);/);
-  const left = source.slice(source.indexOf('<div className="composer-controls-left">'), source.indexOf("{showHints && projectLabel && ("));
+  const left = source.slice(source.indexOf('className="chat-composer-editor"'), source.indexOf('className="chat-input-textarea"'));
   assert.match(left, /onClick=\{\(\) => fileInputRef\.current\?\.click\(\)\}/);
   assert.match(left, /aria-label=\{t\(!onAttachFiles \? "chat\.attachImage" : "chat\.attachFiles"\)\}/);
 });
 
-test("the fork model control stays enabled mid-run but locks while switching", () => {
+test("the shared model control stays enabled mid-run but locks while switching", () => {
   for (const modelSwitching of [false, true]) {
     const html = renderWithI18n(React.createElement(ChatInput, {
       onSend() {}, onAbort() {}, onModelChange() {}, isStreaming: true, modelSwitching,
       model: { provider: "example", modelId: "model" },
       modelList: [{ provider: "example", providerName: "Example Cloud", id: "model", name: "Model" }],
     }));
-    const control = html.match(/<button[^>]*class="[^"]*composer-model-trigger[^>]*>/)?.[0];
+    const control = html.match(/<button[^>]*aria-label="(?:Change model|Switching model)"[^>]*>/)?.[0];
     assert.ok(control);
     assert.equal(/disabled=""/.test(control), modelSwitching);
   }
@@ -1224,5 +1229,5 @@ test("quote insertion preserves surrounding draft and leaves the caret after the
   assert.equal(context.valueRef.current, value);
   assert.equal(selection[0], value.indexOf("\nTail"));
   assert.equal(selection[1], selection[0]);
-  assert.equal(ta.style.height, "260px", "retain fork sizing rather than the upstream 200px cap");
+  assert.equal(ta.style.height, "200px", "upstream caps the editor height while preserving all quoted text and the caret");
 });

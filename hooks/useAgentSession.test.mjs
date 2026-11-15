@@ -234,7 +234,13 @@ test("history edits move the branch only when sent, so cancel or reload keeps it
     source.indexOf("  const executeBash = useCallback"),
   );
 
-  assert.doesNotMatch(chatWindowSource, /onNavigate=/);
+  // The restored project branch chip has its own onNavigate callback. History
+  // messages must not navigate eagerly: only the send handler below may do it.
+  const messageView = chatWindowSource.match(/<MessageView\b[\s\S]*?\n        \/>/)?.[0];
+  assert.ok(messageView);
+  assert.doesNotMatch(messageView, /onNavigate=/);
+  assert.match(messageView, /onEditContent=\{stableHandleEditContent\}/);
+  assert.match(messageView, /onCancelEdit=\{cancelEdit\}/);
   assert.match(source, /if \(!input\.replaceMessage\(message\)\) \{[\s\S]*?return;\s*\}\s*setEdit\(entryId\)/);
   assert.match(messageViewSource, /onClick=\{onCancelEdit\}/);
   assert.match(source, /const cancelEdit = useCallback\(\(\) => setEdit\(null\)/);

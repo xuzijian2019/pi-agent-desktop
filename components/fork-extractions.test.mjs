@@ -252,7 +252,8 @@ const FORK_FEATURES = [
     markers: ["assignMessageKeys(current.tracker, messages, entryIds)", "messageKeys[idx] ?? idx", "messageKeys[groupStartIdx] ?? groupStartIdx"],
   },
   { name: "Right panel single header", file: "components/AppShell.tsx", markers: ["right-panel-tab-strip", "file-panel-viewer-bar", "file-panel-split"] },
-  { name: "Composer preparation and branch metadata", file: "components/ChatInput.tsx", markers: ["prepareOutgoingMessage", "<BranchControl", "snapshotRef"] },
+  { name: "Composer preparation with upstream controls", file: "components/ChatInput.tsx", markers: ["prepareOutgoingMessage", "<ModelSelector", "<SessionAutomationMenu", "snapshotRef"] },
+  { name: "Workbench branch operations outside upstream composer", file: "components/ChatWindow.tsx", markers: ["chat-workspace-header", "!chatOnly && cwd && onBranchNavigate", "<BranchControl"] },
   { name: "Checkout admission", file: "lib/rpc-manager.ts", markers: ["withCheckoutGuard", "hasBusyCheckout"] },
   {
     name: "ChatWindow new-session header",
@@ -533,10 +534,11 @@ const REMOVED_UPSTREAM_UI = [
     required: ["file-panel-viewer-bar"],
   },
   {
-    name: "Compact composer button",
+    name: "Legacy fork composer preview",
     file: "components/ChatInput.tsx",
-    markers: ["composer-compact-button", "sendPreview", "<SessionAutomationMenu"],
-    required: ["ContextUsageRing", "prepareOutgoingMessage"],
+    // Owner 2026-11-15: upstream automation/compaction replaces old fork toolbar.
+    markers: ["sendPreview"],
+    required: ["ContextUsageRing", "prepareOutgoingMessage", "<SessionAutomationMenu", "onCompact={canCompactNow ? onCompact : undefined}"],
   },
   {
     name: "Full history toolbar button",
@@ -694,7 +696,7 @@ test("shell access prompt uses the fork theme contrast and safe geometry", async
 });
 
 test("the fork extension status line keeps upstream's opaque background", async () => {
-  const composer = await read("components/ChatInput.tsx");
+  const composer = await read("components/ChatWindow.tsx");
   const css = await read("app/native-theme.css");
   assert.match(composer, /<ExtensionStatusLine statuses=\{extensionStatuses\}/);
   assert.doesNotMatch(composer, /<ExtensionStatusBar/);

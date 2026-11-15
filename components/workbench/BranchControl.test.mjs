@@ -42,3 +42,36 @@ test("branch dialog keeps its own portaled select open but dismisses unrelated c
   assert.equal(containsTarget(root, option), false);
   assert.match(source, /if \(!containsBranchControlTarget\(anchor\.current, event\.target as Node\)\) setOpen\(false\)/);
 });
+
+const positionHelper = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "getBranchPopoverPosition");
+const place = new Script(ts.transpileModule(`${positionHelper.getText(ast).replace("export ", "")}\ngetBranchPopoverPosition;`, {
+  compilerOptions: { target: ts.ScriptTarget.ES2020 },
+}).outputText).runInNewContext({});
+
+test("branch menu opens below the header and above a bottom toolbar without clipping", () => {
+  const header = place({ left: 16, top: 48, bottom: 76 }, { width: 1280, height: 800 });
+  assert.equal(header.top, 82);
+  assert.equal(header.bottom, undefined);
+  assert.equal(header.maxHeight, 420);
+  const footer = place({ left: 16, top: 720, bottom: 748 }, { width: 1280, height: 800 });
+  assert.equal(footer.bottom, 86);
+  assert.equal(footer.top, undefined);
+  assert.equal(footer.maxHeight, 420);
+});
+
+test("branch menu clamps to a narrow viewport and available vertical space", () => {
+  for (const width of [320, 390]) {
+    for (const top of [0, 48, 200, 350]) {
+      const viewport = { width, height: 400 };
+      const p = place({ left: width - 32, top, bottom: top + 28 }, viewport);
+      assert.ok(p.left >= 12);
+      assert.ok(p.left + p.width <= width - 12);
+      assert.ok(p.maxHeight > 0);
+      const y = p.top ?? viewport.height - p.bottom - p.maxHeight;
+      assert.ok(y >= 12);
+      assert.ok(y + p.maxHeight <= viewport.height - 12);
+    }
+  }
+  const constrained = place({ left: 900, top: 80, bottom: 108 }, { width: 1280, height: 800 }, { left: 400, right: 800 });
+  assert.equal(constrained.left + constrained.width, 788);
+});

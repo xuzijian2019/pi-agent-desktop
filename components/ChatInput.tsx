@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useMemo, useImperativeHandle, forwardRef, KeyboardEvent, useId } from "react";
-import { isImeComposing } from "@/lib/ime";
+import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useMemo, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
 import { WEB_SLASH_COMMANDS, parseWebSlashCommand, type ViewSlashCommand } from "@/lib/web-slash-commands";
 import type { BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
 import type { SkillsResponse } from "@/lib/api-types";
@@ -15,22 +14,22 @@ import { buildEntriesFromFiles, buildAtInsertText, extractAtQuery, extractHashQu
 import { prepareOutgoingMessage, type PreparedOutgoing, type ReferenceSelection } from "@/lib/prepare-outgoing";
 import type { ChatDraft } from "@/lib/draft-store";
 import type { TaskSetup } from "@/lib/task-types";
-import { BranchControl } from "./workbench/BranchControl";
+import { ModelSelector } from "./ModelSelector";
+import { SelectorRow } from "./SelectorRow";
+import { SessionAutomationMenu } from "./SessionAutomationMenu";
+import { ImagePreview } from "./ImagePreview";
 import { selectableThinkingLevels } from "@/lib/thinking-level-options";
-import { ImageLightbox } from "./ImageLightbox";
 import type { RoutedModelInfo } from "@/lib/types";
 import { getMarkdownListContinuation } from "@/lib/markdown-list-continuation";
 import { quoteSeparator } from "@/lib/quoted-selection";
 import { isBareMcpCommand, isBuiltinMcpCommand } from "@/lib/mcp-command";
 import { FolderIcon, getFileIcon } from "./FileIcons";
-import type { SelectorRowStar } from "./SelectorRow";
 
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useMenuNavigation } from "@/hooks/useMenuNavigation";
 import { useEnterSendMode } from "@/hooks/useEnterSendMode";
 import { useI18n } from "@/hooks/useI18n";
 import type { ExtensionStatusItem } from "@/lib/types";
-import { ExtensionStatusLine } from "./ExtensionStatusLine";
 import type { ContextUsage, SessionStatsInfo } from "@/lib/pi-types";
 import { ContextUsageRing } from "./ContextUsageRing";
 import { useChatAppearance } from "@/hooks/useChatAppearance";
@@ -168,6 +167,7 @@ interface Props {
   contextUsage?: ContextUsage | null;
   /** Session telemetry displayed in the usage popover. */
   sessionStats?: SessionStatsInfo | null;
+  onSessionStatsPanelOpen?: () => void;
 }
 
 export interface ChatInputHandle {
@@ -281,7 +281,6 @@ interface ModelOption {
   name: string;
 }
 
-const MODEL_FILTER_THRESHOLD = 8;
 const MODEL_OPTION_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 function compareModelOptions(a: ModelOption, b: ModelOption): number {
@@ -371,56 +370,6 @@ function getBuiltinSlashCommand(message: string): SlashCommandPaletteItem | unde
   const match = message.trim().match(/^\/([^\s]+)(?:\s|$)/);
   if (!match) return undefined;
   return BUILTIN_SLASH_COMMANDS.find((command) => command.name === match[1]);
-}
-
-/**
- * A composer menu row in the fork's native style. With `star`, the right
- * gutter holds upstream's default marker (SelectorRow): a static star on the
- * default row, and a "save as default" button on the others that appears on
- * hover or focus (always on touch screens, via native-theme.css).
- */
-function ComposerOptionRow({ active, onSelect, star, children }: {
-  active: boolean;
-  onSelect: () => void;
-  star?: SelectorRowStar;
-  children: React.ReactNode;
-}) {
-  const row = (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`composer-option-row${active ? " is-active" : ""}${star ? " has-star" : ""}`}
-    >
-      {active
-        ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon"><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
-        : <span className="composer-check-spacer" />}
-      {children}
-    </button>
-  );
-  if (!star) return row;
-  const icon = (
-    <svg width="10" height="10" viewBox="0 0 24 24" fill={star.isDefault ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
-      <polygon points="12 2.5 14.9 8.6 21.5 9.4 16.6 13.9 17.9 20.5 12 17.2 6.1 20.5 7.4 13.9 2.5 9.4 9.1 8.6" />
-    </svg>
-  );
-  return (
-    <div className="composer-option-star-row">
-      {row}
-      {star.isDefault ? (
-        <span role="img" aria-label={star.defaultLabel} title={star.defaultLabel} className="composer-option-star is-default">{icon}</span>
-      ) : (
-        <button
-          type="button"
-          title={star.saveLabel}
-          aria-label={star.saveLabel}
-          onClick={(event) => { event.stopPropagation(); star.onSave(); }}
-          className="composer-option-star"
-        >
-          {icon}
-        </button>
-      )}
-    </div>
-  );
 }
 
 export function canRunBuiltinSlashCommandWhileStreaming(message: string): boolean {
@@ -645,37 +594,54 @@ function QueuedMessageRow({ kind, label, text }: { kind: "steer" | "follow-up"; 
   return (
     <div
       title={text}
-      className="composer-queued-row"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "3px 10px",
+        fontSize: "var(--fs-caption)",
+        color: "var(--text-muted)",
+        minWidth: 0,
+      }}
     >
       <span
-        className={`composer-queued-kind${kind === "steer" ? " is-steer" : ""}`}
+        style={{
+          flexShrink: 0,
+          fontSize: "var(--fs-micro)",
+          fontFamily: "var(--font-mono)",
+          padding: "1px 7px",
+          borderRadius: 999,
+          border: `1px solid ${kind === "steer" ? "color-mix(in srgb, var(--accent) 45%, transparent)" : "var(--border)"}`,
+          color: kind === "steer" ? "var(--accent)" : "var(--text-dim)",
+        }}
       >
         {label}
       </span>
-      <span className="composer-ellipsis">{text}</span>
+      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</span>
     </div>
   );
 }
 
-function ModelNoticeBanner({
-  tone,
-  title,
-  body,
-  action,
-  onDismiss,
-  dismissLabel,
-}: {
-  tone: "error" | "warning";
-  title: string;
-  body: string;
-  action?: React.ReactNode;
-  onDismiss?: () => void;
-  dismissLabel?: string;
-}) {
+function ModelNoticeBanner({ tone, title, body, action, onClose, dismissLabel }: { tone: "error" | "warning"; title: string; body: string; action?: React.ReactNode; onClose?: () => void; dismissLabel?: string }) {
+  const color = tone === "error" ? "239,68,68" : "234,179,8";
   return (
     <div
       role="alert"
-      className={`composer-notice-banner is-${tone}`}
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 8,
+        maxHeight: 120,
+        marginBottom: 8,
+        padding: "7px 10px",
+        overflowY: "auto",
+        border: `1px solid rgba(${color},0.3)`,
+        borderRadius: "var(--radius-sm)",
+        background: `rgba(${color},0.07)`,
+        color: `rgb(${color})`,
+        fontSize: "var(--fs-micro)",
+        lineHeight: 1.45,
+      }}
     >
       <svg
         width="13"
@@ -686,35 +652,39 @@ function ModelNoticeBanner({
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        className="composer-notice-icon"
+        style={{ flexShrink: 0, marginTop: 1 }}
         aria-hidden="true"
       >
         <path d="M10.3 2.9 1.8 17a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 2.9a2 2 0 0 0-3.4 0Z" />
         <line x1="12" y1="9" x2="12" y2="13" />
         <line x1="12" y1="17" x2="12.01" y2="17" />
       </svg>
-      <div className="composer-notice-main">
-        <div className="composer-notice-head">
-          <div className="composer-notice-title">{title}</div>
-          {action}
-          {onDismiss && (
-            <button
-              type="button"
-              onClick={onDismiss}
-              aria-label={dismissLabel}
-              title={dismissLabel}
-              className="composer-notice-dismiss"
-            >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-                <line x1="5" y1="5" x2="19" y2="19" />
-                <line x1="19" y1="5" x2="5" y2="19" />
-              </svg>
-            </button>
-          )}
-        </div>
-        <div className="composer-notice-body">{body}</div>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontWeight: "var(--fw-semibold)" }}>{title}</div>
+        <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{body}</div>
+        {action}
       </div>
-
+      {onClose && (
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={dismissLabel ?? "Dismiss"}
+          title={dismissLabel}
+          style={{
+            flexShrink: 0,
+            background: "none",
+            border: "none",
+            padding: "0 2px",
+            cursor: "pointer",
+            color: "inherit",
+            opacity: 0.7,
+            fontSize: "var(--fs-body)",
+            lineHeight: 1,
+          }}
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 }
@@ -736,19 +706,31 @@ export function WorkspaceUnavailableBanner({ workspace, onRecheck }: { workspace
         title={t("chat.workspaceUnavailable")}
         body={body}
         action={onRecheck ? (
-          <div className="workspace-recheck-actions">
-            <button
-              type="button"
-              onClick={onRecheck}
-              disabled={checking}
-              aria-busy={checking}
-              className="workspace-recheck-button"
-            >
-              {checking ? t("chat.workspaceRechecking") : t("chat.workspaceRecheck")}
-            </button>
-            {workspace.recheck === "unchanged" && (
-              <span role="status">{t("chat.workspaceRecheckUnchanged")}</span>
-            )}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={onRecheck}
+            disabled={checking}
+            aria-busy={checking}
+            style={{
+              flexShrink: 0,
+              padding: "2px 8px",
+              border: "var(--hairline) solid color-mix(in srgb, var(--danger) 45%, transparent)",
+              borderRadius: "var(--radius-sm)",
+              background: "transparent",
+              color: "inherit",
+              cursor: checking ? "default" : "pointer",
+              opacity: checking ? 0.6 : 1,
+              fontSize: "var(--fs-micro)",
+              lineHeight: 1.4,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {checking ? t("chat.workspaceRechecking") : t("chat.workspaceRecheck")}
+          </button>
+          {workspace.recheck === "unchanged" && (
+            <span role="status">{t("chat.workspaceRecheckUnchanged")}</span>
+          )}
           </div>
         ) : undefined}
       />
@@ -808,12 +790,23 @@ export function ModelScopeWarningBanner({
         <button
           type="button"
           onClick={onOpenModelsConfig}
-          className="composer-notice-action"
+          style={{
+            flexShrink: 0,
+            padding: "2px 8px",
+            border: `1px solid rgba(234,179,8,0.45)`,
+            borderRadius: "var(--radius-sm)",
+            background: "transparent",
+            color: "inherit",
+            cursor: "pointer",
+            fontSize: "var(--fs-micro)",
+            lineHeight: 1.4,
+            whiteSpace: "nowrap",
+          }}
         >
           {t("chat.modelScopeConfigure")}
         </button>
       ) : undefined}
-      onDismiss={onDismiss}
+      onClose={onDismiss}
       dismissLabel={dismissLabel}
     />
   );
@@ -840,6 +833,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onClearDraft, onSend, onAttachFiles, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, workspaceUnavailable, onRecheckWorkspace, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange, modelSwitching,
   defaultModel, onSetDefaultModel,
   compactError, compactNotice, compactResult, toolPreset, onToolPresetChange,
+  onCompact, isCompacting, onAbortCompaction, summarizationRetry, automation, onSetAutomation,
   thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   savedDefaultThinkingLevel, onSetDefaultThinkingLevel,
   retryInfo, onAbortRetry, routedModel, branchSummaryPending = false, onAbortBranchSummary, queuedMessages, onQueuedMessageAction, inputHistory = [], onRecallQueue,
@@ -856,18 +850,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   projectOptions = [],
   onProjectChange,
   autoFocus = false,
-  extensionStatuses = [],
   contextUsage,
-  sessionStats,
-  showInputHints, onSetupChange, onBranchNavigate,
+  sessionStats, onSessionStatsPanelOpen,
+  onSetupChange,
   compact = false,
 }: Props, ref) {
   const { t } = useI18n();
   const { fontSize } = useChatAppearance();
   const isMobile = useIsMobile();
-  const slashListId = useId();
-  const [slashMaxHeight, setSlashMaxHeight] = useState(300);
-  const modelButtonRef = useRef<HTMLButtonElement>(null);
+  const [slashMenuMaxHeight, setSlashMenuMaxHeight] = useState<number | null>(null);
   const composerRef = useRef<HTMLDivElement | null>(null);
   const [composerTier, setComposerTier] = useState<ComposerTier>(() => (isMobile ? "narrow" : "normal"));
 
@@ -900,16 +891,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   const isNarrow = composerTier === "narrow";
   const isCompact = composerTier === "compact" || isNarrow;
-  const hasTranscript = (sessionStats?.totalMessages ?? 0) > 0;
-  const showHints = showInputHints ?? !hasTranscript;
   const enterSendMode = useEnterSendMode();
   const [value, setValue] = useState(() => (draftKey ? getDraft(draftKey)?.value ?? "" : ""));
-  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
-  const [modelDropdownRect, setModelDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
-  const [modelFilter, setModelFilter] = useState("");
   const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
+  const [automationDropdownOpen, setAutomationDropdownOpen] = useState(false);
+  const automationDropdownRef = useRef<HTMLDivElement>(null);
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
   const [controlsMenuOpen, setControlsMenuOpen] = useState(false);
+  const [modelOpenRequest, setModelOpenRequest] = useState(0);
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
 
@@ -926,7 +915,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   attachedFilesRef.current = attachedFiles;
   const projectLabel = getProjectLabel(projectPath, projectOptions);
   const trimmedValue = value.trimStart();
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const bashMode = !chatOnly && attachedImages.length === 0 && trimmedValue.startsWith("!");
   const bashExcluded = bashMode && trimmedValue.startsWith("!!");
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
@@ -952,8 +940,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     : {};
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const modelDropdownPanelRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
   const toolDropdownRef = useRef<HTMLDivElement>(null);
@@ -1034,7 +1020,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         if (!ta) return;
         ta.focus();
         ta.style.height = "auto";
-        ta.style.height = `${ta.scrollHeight}px`;
+        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
       });
     },
     replaceMessage(message: UserMessage) {
@@ -1062,7 +1048,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         if (!ta) return;
         ta.focus();
         ta.style.height = "auto";
-        ta.style.height = `${ta.scrollHeight}px`;
+        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
       });
       return true;
     },
@@ -1082,7 +1068,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         ta.focus();
         ta.setSelectionRange(combined.length, combined.length);
         ta.style.height = "auto";
-        ta.style.height = `${ta.scrollHeight}px`;
+        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
       });
     },
     rekeyDraft(previousKey: string, nextKey: string) {
@@ -1185,7 +1171,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         ta.focus();
         ta.setSelectionRange(ta.value.length, ta.value.length);
         ta.style.height = "auto";
-        ta.style.height = `${ta.scrollHeight}px`;
+        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
       });
     },
     insertText(text: string) {
@@ -1210,7 +1196,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         ta.setSelectionRange(pos, pos);
         ta.focus();
         ta.style.height = "auto";
-        ta.style.height = `${ta.scrollHeight}px`;
+        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
       });
     },
     insertQuote(text: string) {
@@ -1234,7 +1220,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         ta.setSelectionRange(pos, pos);
         ta.focus();
         ta.style.height = "auto";
-        ta.style.height = `${ta.scrollHeight}px`;
+        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
       });
     },
     addImages(files: File[]) {
@@ -1475,8 +1461,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const ta = textareaRef.current;
     if (!ta) return;
     ta.style.height = "auto";
-    // CSS owns the height limit; remeasure wrapping without duplicating it here.
-    if (ta.value) ta.style.height = `${ta.scrollHeight}px`;
+    if (ta.value) ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
   }, []);
 
   useLayoutEffect(resizeTextarea, [value, fontSize, resizeTextarea]);
@@ -1542,10 +1527,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           setDraftSetup(previous => previous ? { ...previous, model: { provider: matches[0].provider, modelId: matches[0].id } } : previous);
           onModelChange(matches[0].provider, matches[0].id);
         } else {
-          const rect = modelButtonRef.current?.getBoundingClientRect();
-          if (!rect) throw new Error(t("chat.commandUnavailable"));
-          setModelDropdownRect({ top: rect.top, left: rect.left, width: rect.width });
-          setModelFilter(""); setModelDropdownOpen(true); setThinkingDropdownOpen(false);
+          setModelOpenRequest(request => request + 1);
+          setThinkingDropdownOpen(false);
         }
       } else if (command.name === "thinking") {
         if (!onThinkingLevelChange) throw new Error(t("chat.commandUnavailable"));
@@ -1554,7 +1537,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           if (!level) throw new Error(t("chat.commandThinkingUsage"));
           setDraftSetup(previous => previous ? { ...previous, effort: level } : previous);
           onThinkingLevelChange(level);
-        } else { setThinkingDropdownOpen(true); setControlsMenuOpen(true); setModelDropdownOpen(false); }
+        } else { setThinkingDropdownOpen(true); setControlsMenuOpen(true); }
       } else if (["compact", "reload", "name", "session", "copy", "clone", "side", "btw", "recap"].includes(command.name)) {
         const result = await onBuiltinCommand?.(`/${command.name}${command.argument ? ` ${command.argument}` : ""}`);
         if (!result?.handled) throw new Error(t("chat.commandUnavailable"));
@@ -1627,9 +1610,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   })();
 
   const {
+    groups: groupedSlashCommands,
     commands: groupedCommands,
   } = buildSlashCommandLayout(filteredSlashCommands, skillDormancy);
-  const displayedSlashCommands = slashQuery ? filteredSlashCommands : groupedCommands;
+  const displayedSlashCommands = groupedCommands;
 
   const slashCommandCountLabel = filteredSlashCommands.length === 1
     ? t(slashQuery ? "chat.match" : "chat.command")
@@ -1815,7 +1799,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       ta.focus();
       ta.setSelectionRange(text.length, text.length);
       ta.style.height = "auto";
-      ta.style.height = `${ta.scrollHeight}px`;
+      ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
     });
   }, [setHashQuery]);
 
@@ -1835,7 +1819,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       ta.focus();
       ta.setSelectionRange(nextValue.length, nextValue.length);
       ta.style.height = "auto";
-      ta.style.height = `${ta.scrollHeight}px`;
+      ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
     });
   }, [dispatchBuiltin]);
 
@@ -2034,7 +2018,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const ta = textareaRef.current;
     if (!ta) return;
     ta.style.height = "auto";
-    ta.style.height = `${ta.scrollHeight}px`;
+    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
   }, []);
 
   const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -2105,19 +2089,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     }
   }, [slashQuery, onLoadSlashCommands]);
 
-  useLayoutEffect(() => {
-    if (!slashMenuOpen) return;
-    const measure = () => {
-      const top = composerRef.current?.getBoundingClientRect().top ?? 364;
-      setSlashMaxHeight(Math.max(80, Math.min(320, top - 64)));
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    if (composerRef.current) observer.observe(composerRef.current);
-    window.addEventListener("resize", measure);
-    return () => { observer.disconnect(); window.removeEventListener("resize", measure); };
-  }, [slashMenuOpen, isNarrow]);
-
   // Lazy-load skill dormancy (disable-model-invocation) each time the slash
   // palette opens, so toggles made in the skills panel are reflected on the
   // next open. Failures degrade silently to the unannotated palette.
@@ -2173,26 +2144,36 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       name,
     })).sort(compareModelOptions);
   }, [modelList, modelNames, fallbackProvider]);
-  const filteredModelOptions = filterModelOptions(modelOptions, modelFilter);
-  const showModelFilter = modelOptions.length > MODEL_FILTER_THRESHOLD;
   const routedModelName = routedModel
     ? modelOptions.find((option) => option.provider === routedModel.provider && option.modelId === routedModel.id)?.name
       ?? modelNames?.[routedModel.id]
       ?? routedModel.id
     : null;
 
-  // Group options by provider, preserving insertion order
-  const modelsByProvider: { provider: string; providerName?: string; options: ModelOption[] }[] = [];
-  for (const opt of filteredModelOptions) {
-    const group = modelsByProvider.find((g) => g.provider === opt.provider);
-    if (group) group.options.push(opt);
-    else modelsByProvider.push({ provider: opt.provider, providerName: opt.providerName, options: [opt] });
-  }
+  useLayoutEffect(() => {
+    if (!atMenuOpen || atQuery === null) {
+      setAtMenuMaxHeight(null);
+      return;
+    }
+    const menu = atMenuRef.current;
+    if (!menu) return;
+    return subscribeUpwardMenuMaxHeight(menu, (nextHeight) => {
+      setAtMenuMaxHeight((current) => current === nextHeight ? current : nextHeight);
+    });
+  }, [atMenuOpen, atQuery]);
 
-  const displayModelName = model
-    ? (modelOptions.find((o) => o.modelId === model.modelId && o.provider === model.provider)?.name ?? model.modelId)
-    : null;
-  const currentName = displayModelName;
+
+  useLayoutEffect(() => {
+    if (!slashMenuOpen || slashQuery === null) {
+      setSlashMenuMaxHeight(null);
+      return;
+    }
+    const menu = slashMenuRef.current;
+    if (!menu) return;
+    return subscribeUpwardMenuMaxHeight(menu, (nextHeight) => {
+      setSlashMenuMaxHeight((current) => current === nextHeight ? current : nextHeight);
+    });
+  }, [slashMenuOpen, slashQuery]);
 
   useLayoutEffect(() => {
     if (!atMenuOpen || atQuery === null) {
@@ -2226,25 +2207,44 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     ? t(chatUnlocked ? "chat.chatUnlocked" : "chat.chatWorkspace")
     : t(`chat.toolPresetName.${rawToolPresetLabel}`);
 
+  // One chip for reasoning + tools: the level always, the preset only when it
+  // departs from settings.json ("configured" is the unremarkable default).
+  // The session menu (gear) holds the automation switches once a wrapper
+  // reports them, and manual compaction whenever it can start.
+  const automationKnown = Boolean(onSetAutomation && automation && (automation.autoCompactionEnabled !== null || automation.autoRetryEnabled !== null || automation.steeringMode !== null));
+  const canCompactNow = Boolean(onCompact && !isStreaming && !isCompacting);
+  const runSettingsLabel = [
+    onThinkingLevelChange ? thinkingDisplayLabel : null,
+    chatOnly ? t(chatUnlocked ? "chat.chatUnlocked" : "chat.chatWorkspace") : null,
+    !onThinkingLevelChange && chatOnly ? toolPresetLabel : null,
+  ].filter(Boolean).join(" · ");
+  const runSettingsTitle = [
+    onThinkingLevelChange
+      ? (isStreaming
+        ? t("chat.currentReasoning", { level: thinkingDisplayLabel })
+        : t("chat.changeReasoning", { level: thinkingDisplayLabel }))
+      : null,
+    chatOnly
+      ? chatUnlocked
+        ? `${t("chat.chatUnlocked")}: ${t("chat.chatUnlockedDescription")}`
+        : `${t("chat.chatWorkspace")}: ${t(chatAccess && !chatAccess.state.folder ? "chat.chatOnlyDescription" : "chat.chatFolderDescription")}`
+      : null,
+    onToolPresetChange ? t("chat.changeToolPreset") + `: ${toolPresetLabel}` : null,
+  ].filter(Boolean).join(" · ");
+
   // Close dropdowns on outside click
   useMenuNavigation(toolDropdownOpen, toolDropdownRef, () => setToolDropdownOpen(false));
   useMenuNavigation(thinkingDropdownOpen, thinkingDropdownRef, () => setThinkingDropdownOpen(false));
   useMenuNavigation(projectDropdownOpen, projectDropdownRef, () => setProjectDropdownOpen(false));
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (
-        dropdownRef.current && !dropdownRef.current.contains(e.target as Node) &&
-        !modelDropdownPanelRef.current?.contains(e.target as Node)
-      ) {
-        setModelDropdownOpen(false);
-        setModelFilter("");
-      }
       if (toolDropdownRef.current && !toolDropdownRef.current.contains(e.target as Node)) {
         setToolDropdownOpen(false);
       }
       if (thinkingDropdownRef.current && !thinkingDropdownRef.current.contains(e.target as Node)) {
         setThinkingDropdownOpen(false);
       }
+      if (automationDropdownRef.current && !automationDropdownRef.current.contains(e.target as Node)) setAutomationDropdownOpen(false);
       if (controlsMenuRef.current && !controlsMenuRef.current.contains(e.target as Node)) {
         setControlsMenuOpen(false);
       }
@@ -2271,16 +2271,28 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
 
   return (
-    <div
-      className="chat-input-shell"
-      aria-busy={builtinCommandPending || undefined}
+    <fieldset
+      disabled={builtinCommandPending}
+      aria-busy={builtinCommandPending}
+      className={compact ? undefined : "chat-input-shell"}
+      style={{
+        flexShrink: 0,
+        minWidth: 0,
+        margin: 0,
+        border: 0,
+        background: "transparent",
+        padding: compact ? 0 : "0 16px 8px",
+        opacity: builtinCommandPending ? 0.5 : 1,
+        transition: "opacity var(--dur-base) var(--ease-native)",
+      }}
     >
+      {/* Hidden file input */}
       {!compact && <input
         ref={fileInputRef}
         type="file"
         accept={!onAttachFiles ? "image/*" : undefined}
         multiple
-        hidden
+        style={{ display: "none" }}
         onChange={(e) => {
           const files = Array.from(e.target.files ?? []);
           if (onAttachFiles) onAttachFiles(files);
@@ -2288,11 +2300,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           e.target.value = "";
         }}
       />}
-      <div className="chat-composer-wrap" style={{ maxWidth: "var(--chat-content-max-width, 820px)" }}>
+      <div style={{ maxWidth: "var(--chat-content-max-width, 820px)", margin: "0 auto" }}>
         {workspaceUnavailable
           ? <WorkspaceUnavailableBanner workspace={workspaceUnavailable} onRecheck={onRecheckWorkspace} />
           : <ModelErrorBanner error={modelError} />}
-        <ModelScopeWarningBanner warnings={modelScopeWarnings} onDismiss={onDismissModelScopeWarnings} dismissLabel={t("chat.modelScopeDismiss")} onOpenModelsConfig={onOpenModelsConfig} />
+        <ModelScopeWarningBanner
+          warnings={modelScopeWarnings}
+          onDismiss={onDismissModelScopeWarnings}
+          dismissLabel={t("chat.modelScopeDismiss")}
+          onOpenModelsConfig={onOpenModelsConfig}
+        />
         {showImageUnsupportedWarning && (() => {
           const entry = modelList?.find((m) => m.provider === model?.provider && m.id === model?.modelId);
           return (
@@ -2300,22 +2317,52 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               tone="warning"
               title={t("chat.imageNotSupportedTitle")}
               body={t("chat.imageNotSupportedBody", { model: entry?.name || model?.modelId || "" })}
-              onDismiss={() => setImageWarningDismissed(true)}
+              onClose={() => setImageWarningDismissed(true)}
             />
           );
         })()}
         {/* Queued steering / follow-up messages (delivered by pi on upcoming turns) */}
         {((queuedMessages?.steering.length ?? 0) + (queuedMessages?.followUp.length ?? 0)) > 0 && (
-          <div className="composer-queue-strip">
-            <div className="composer-queue-header">
-              <span className="composer-queue-label">
+          <div style={{
+            marginBottom: 8,
+            border: "var(--hairline) solid var(--border)",
+            borderRadius: "var(--radius-sm)",
+            background: "var(--bg-panel)",
+            padding: "5px 0",
+            maxHeight: "min(24vh, 160px)",
+            overflowY: "auto",
+          }}>
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+              padding: "2px 8px 4px 10px",
+            }}>
+              <span style={{
+                fontSize: "var(--fs-micro)",
+                fontFamily: "var(--font-mono)",
+                color: "var(--text-dim)",
+                textTransform: "uppercase",
+                letterSpacing: 0.4,
+              }}>
                 {t("chat.queued", { count: (queuedMessages?.steering.length ?? 0) + (queuedMessages?.followUp.length ?? 0) })}
               </span>
               {onRecallQueue && (
                 <button
                   onClick={onRecallQueue}
-                   title={t("chat.recallTitle")}
                   className="composer-queue-recall"
+                   title={t("chat.recallTitle")}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "4px 12px",
+                    fontSize: "var(--fs-caption)",
+                    color: "var(--text)",
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                  }}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="9 14 4 9 9 4" />
@@ -2335,22 +2382,36 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         )}
         {/* Retry banner */}
         {retryInfo && (
-          <div className="composer-retry-banner">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon">
+          <div style={{
+            marginBottom: 8, padding: "5px 10px",
+            background: "rgba(234,179,8,0.08)", border: "var(--hairline) solid rgba(234,179,8,0.25)",
+            borderRadius: "var(--radius-sm)", fontSize: "var(--fs-caption)", color: "rgba(180,130,0,0.9)",
+            display: "flex", alignItems: "center", gap: 6,
+          }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
               <path d="M3 3v5h5" />
             </svg>
-             {t("chat.retrying", { attempt: retryInfo.attempt, max: retryInfo.maxAttempts })}{retryInfo.errorMessage && <span className="composer-status-detail">— {retryInfo.errorMessage}</span>}
+             {t("chat.retrying", { attempt: retryInfo.attempt, max: retryInfo.maxAttempts })}{retryInfo.errorMessage && <span style={{ opacity: 0.7, marginLeft: 4 }}>— {retryInfo.errorMessage}</span>}
              {onAbortRetry && (
-               <button type="button" onClick={onAbortRetry} className="composer-status-action">
+               <button
+                 type="button"
+                 onClick={onAbortRetry}
+                 style={{ marginLeft: "auto", flexShrink: 0, background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: "var(--fs-micro)", padding: 0, textDecoration: "underline", textUnderlineOffset: 2 }}
+               >
                  {t("chat.cancelRetry")}
                </button>
              )}
           </div>
         )}
         {branchSummaryPending && (
-          <div role="status" className="composer-compact-banner">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+          <div role="status" style={{
+            marginBottom: 8, padding: "5px 10px",
+            background: "var(--bg-hover)", border: "var(--hairline) solid var(--border)",
+            borderRadius: "var(--radius-sm)", fontSize: "var(--fs-caption)", color: "var(--text-muted)",
+            display: "flex", alignItems: "center", gap: 6,
+          }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <line x1="6" y1="3" x2="6" y2="15" />
               <circle cx="18" cy="6" r="3" />
               <circle cx="6" cy="18" r="3" />
@@ -2361,7 +2422,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               <button
                 type="button"
                 onClick={onAbortBranchSummary}
-                className="composer-status-action"
+                style={{ marginLeft: "auto", flexShrink: 0, background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: "var(--fs-micro)", padding: 0, textDecoration: "underline", textUnderlineOffset: 2 }}
               >
                 {t("chat.branchSummaryStop")}
               </button>
@@ -2369,16 +2430,26 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           </div>
         )}
         {compactResultText && (
-          <div className="composer-compact-banner">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon">
+          <div style={{
+            marginBottom: 8, padding: "5px 10px",
+            background: "rgba(16,185,129,0.08)", border: "var(--hairline) solid rgba(16,185,129,0.24)",
+            borderRadius: "var(--radius-sm)", fontSize: "var(--fs-caption)", color: "rgba(5,150,105,0.95)",
+            display: "flex", alignItems: "center", gap: 6,
+          }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <polyline points="20 6 9 17 4 12" />
             </svg>
             {compactResultText}
           </div>
         )}
         {compactNotice && (
-          <div role="status" className="composer-compact-banner">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+          <div role="status" style={{
+            marginBottom: 8, padding: "5px 10px",
+            background: "var(--bg-panel)", border: "var(--hairline) solid var(--border)",
+            borderRadius: "var(--radius-sm)", fontSize: "var(--fs-caption)", color: "var(--text-muted)",
+            display: "flex", alignItems: "center", gap: 6,
+          }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <circle cx="12" cy="12" r="10" />
               <line x1="12" y1="16" x2="12" y2="12" />
               <line x1="12" y1="8" x2="12.01" y2="8" />
@@ -2389,200 +2460,23 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         {compactError && (
           <div
             role="alert"
-            className="composer-compact-alert"
+            style={{
+              marginBottom: 8,
+              padding: "7px 10px",
+              background: "color-mix(in srgb, var(--danger) 7%, transparent)",
+              border: "var(--hairline) solid color-mix(in srgb, var(--danger) 30%, transparent)",
+              borderRadius: "var(--radius-sm)",
+              color: "var(--danger)",
+              fontFamily: "var(--font-mono)",
+              fontSize: "var(--fs-caption)",
+              lineHeight: 1.5,
+              whiteSpace: "pre-wrap",
+              overflowWrap: "anywhere",
+            }}
           >
             {compactError}
           </div>
         )}
-        {attachedFiles.length > 0 && (
-          <div className="composer-file-chips" style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
-            {attachedFiles.map((file) => (
-              <span key={file.id} className="composer-file-chip" title={`${file.name} · ${formatAttachmentSize(file.size)}`}>
-                <span className="composer-file-chip-name">{file.name}</span>
-                <span className="composer-file-chip-size">{formatAttachmentSize(file.size)}</span>
-                <button
-                  type="button"
-                  className="composer-file-chip-remove"
-                  onClick={() => removeAttachedFile(file.id)}
-                  aria-label={t("chat.removeAttachment", { name: file.name })}
-                >
-                  <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
-                    <line x1="1" y1="1" x2="7" y2="7" /><line x1="7" y1="1" x2="1" y2="7" />
-                  </svg>
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* Main input */}
-        <div className="composer-input-anchor">
-          {historyMenuOpen && inputHistory.length > 0 && (
-            <div
-              ref={historyMenuRef}
-              className="native-popover app-menu composer-completion-popover is-history"
-            >
-              <div
-                title={t("chat.inputHistory")}
-                className="composer-history-header"
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.75"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M3 12a9 9 0 1 0 3-6.7" />
-                  <path d="M3 4v5h5" />
-                  <path d="M12 7v5l3 2" />
-                </svg>
-              </div>
-              <div className="composer-completion-body is-history">
-                {inputHistory.map((item, index) => {
-                  const active = index === historyActiveIndex;
-                  return (
-                    <button
-                      key={`${index}:${item}`}
-                      ref={(node) => {
-                        historyItemRefs.current[index] = node;
-                      }}
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        applyHistoryInput(item);
-                      }}
-                      onMouseEnter={() => setHistoryActiveIndex(index)}
-                      className={`composer-history-item${active ? " is-active" : ""}`}
-                    >
-                      <span className="composer-history-index">
-                        {index + 1}
-                      </span>
-                      <span className="composer-clamp-2">
-                        {item}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-          {slashMenuOpen && slashQuery !== null && (
-            <div
-              ref={slashMenuRef}
-              className={`native-popover app-menu composer-completion-popover is-slash${isNarrow ? " is-narrow" : ""}`}
-              style={{ "--completion-max": `${slashMaxHeight}px` } as React.CSSProperties}
-            >
-              <div
-                className="composer-completion-header"
-              >
-                 <span>{slashCommandsLoading ? t("chat.loadingCommands") : t("chat.slashCommands", { label: slashCommandCountLabel })}</span>
-                 {showHints && <span className="composer-completion-hint">{t("chat.commandNavigation")}</span>}
-              </div>
-              <div className="composer-completion-body is-slash" id={slashListId} role="listbox" aria-label={t("chat.commandList")}>
-                {displayedSlashCommands.length === 0 ? <div className="composer-slash-empty">{slashCommandsLoading ? t("chat.loadingCommands") : t("chat.noCommands")}</div> : displayedSlashCommands.map((command, index) => {
-                  const active = index === slashActiveIndex;
-                  const dormant = isDormantSkillCommand(command, skillDormancy);
-                  const description = getSlashDescription(command, t);
-                  return (
-                    <button
-                      key={`${command.source}:${command.name}`} id={`${slashListId}-${index}`}
-                      ref={node => { slashItemRefs.current[index] = node; }}
-                      type="button" role="option" aria-selected={active} tabIndex={-1}
-                      title={`/${command.name} — ${description}`}
-                      onMouseDown={event => event.preventDefault()}
-                      onClick={() => applySlashCommand(command, true)}
-                      onMouseEnter={() => setSlashActiveIndex(index)}
-                      className={`composer-slash-item${active ? " is-active" : ""}`}
-                    >
-                      <span className={`composer-slash-name${dormant ? " is-dormant" : ""}`}>/{command.name}</span>
-                      <span className="composer-slash-desc">{description}</span>
-                      <span className="composer-slash-source">{dormant ? t("chat.dormant") : t(SLASH_SOURCE_GROUP_LABEL_KEYS[command.source])}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-          {hashMenuOpen && hashQuery !== null && (
-            <SessionMentionMenu
-              loaded={sessionIndex !== null}
-              showHints={showHints}
-              matches={hashMatches}
-              activeIndex={hashActiveIndex}
-              itemRefs={hashItemRefs}
-              onPick={applyHashCompletion}
-              onHover={setHashActiveIndex}
-            />
-          )}
-          {atMenuOpen && atQuery !== null && (() => {
-            const indexLoading = fileIndexLoading && (!fileIndex || fileIndex.cwd !== cwd);
-             const matchCountLabel = atMatches.length === 1 ? t("chat.match") : t("chat.matches", { count: atMatches.length });
-            // With a truncated index, local results are provisional — the
-            // debounced server search over the full listing replaces them.
-            const truncatedHint = fileIndex?.truncated && !serverResultInUse
-               ? (atQuery.query ? t("chat.searchingAll") : t("chat.indexTruncated"))
-              : "";
-            return (
-              <div
-                ref={atMenuRef}
-                style={{ maxHeight: atMenuMaxHeight === null ? "min(48vh, 400px)" : `min(48vh, 400px, ${atMenuMaxHeight}px)` }}
-                className="native-popover app-menu composer-completion-popover"
-              >
-                <div
-                  className="composer-completion-header"
-                >
-                  <span>
-                    {indexLoading ? t("chat.loadingFiles") : t("chat.files", { label: matchCountLabel, hint: truncatedHint })}
-                  </span>
-                   {showHints && <span className="composer-completion-hint">{t("chat.tabEnter")}</span>}
-                </div>
-                <div className="composer-completion-body">
-                  {!indexLoading && atMatches.length === 0 ? (
-                    <div className="composer-completion-empty">
-                       {needsServerSearch && !serverResultInUse ? t("chat.searching") : t("chat.noMatchingFiles")}
-                    </div>
-                  ) : (
-                    atMatches.map((entry, index) => {
-                      const active = index === atActiveIndex;
-                      const name = entry.path.split("/").pop() ?? entry.path;
-                      const dirPrefix = entry.path.slice(0, entry.path.length - name.length);
-                      return (
-                        <button
-                          key={`${entry.isDir ? "d" : "f"}:${entry.path}`}
-                          ref={(node) => {
-                            atItemRefs.current[index] = node;
-                          }}
-                          type="button"
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            applyAtCompletion(entry);
-                          }}
-                          onMouseEnter={() => setAtActiveIndex(index)}
-                          className={`composer-completion-item is-file${active ? " is-active" : ""}`}
-                        >
-                          <span className="composer-completion-icon">
-                            {entry.isDir ? <FolderIcon size={14} /> : getFileIcon(name, 14)}
-                          </span>
-                          <span className="composer-ellipsis">
-                            {dirPrefix && <span className="composer-path-dim">{dirPrefix}</span>}
-                            {name}
-                            {entry.isDir && <span className="composer-path-dim">/</span>}
-                          </span>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-          <ComposerOutbox items={queuedMessages?.pending ?? []} onAction={onQueuedMessageAction} />
-          <div ref={composerRef} className="chat-composer">
           {draftKey && (persistenceStatus === "pending" || persistenceStatus === "loading") && (
             <DraftSavingIndicator key={JSON.stringify([draftKey, value])} loading={persistenceStatus === "loading"} />
           )}
@@ -2625,54 +2519,463 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               ))}
             </div>
           )}
-          {attachedImages.length > 0 && (
-            <div className="composer-attachments">
-              {attachedImages.map((img, i) => (
-                <div key={i} className="composer-attachment">
-                  <button
-                    type="button"
-                    onClick={() => setLightboxSrc(img.previewUrl)}
-                    title="View image"
-                    aria-label="View image"
-                    className="composer-attachment-open"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={img.previewUrl}
-                      alt=""
-                      className="composer-attachment-thumb"
-                    />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); removeImage(i); }}
-                    title="Remove image"
-                    aria-label="Remove image"
-                    className="composer-chip-remove is-corner"
-                  >
-                    <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                      <line x1="1" y1="1" x2="7" y2="7" /><line x1="7" y1="1" x2="1" y2="7" />
-                    </svg>
-                  </button>
-                </div>
-              ))}
+
+        {preparationError && <div role="alert">{preparationError}</div>}
+        {/* Image previews */}
+        {attachedImages.length > 0 && (
+          <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+            {attachedImages.map((img, i) => (
+              <div key={i} style={{ position: "relative", flexShrink: 0 }}>
+                <ImagePreview key={img.previewUrl} src={img.previewUrl}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={img.previewUrl}
+                    alt=""
+                    style={{ width: 56, height: 56, objectFit: "cover", borderRadius: "var(--radius-sm)", border: "var(--hairline) solid var(--border)", display: "block" }}
+                  />
+                </ImagePreview>
+                <button
+                  type="button"
+                  onClick={() => removeImage(i)}
+                  style={{
+                    position: "absolute", top: -4, right: -4,
+                    width: 16, height: 16, borderRadius: "50%",
+                    background: "var(--bg-panel)", border: "var(--hairline) solid var(--border)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    cursor: "pointer", padding: 0, color: "var(--text-muted)",
+                  }}
+                >
+                  <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                    <line x1="1" y1="1" x2="7" y2="7" /><line x1="7" y1="1" x2="1" y2="7" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {attachedFiles.length > 0 && (
+          <div className="composer-file-chips" style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+            {attachedFiles.map((file) => (
+              <span key={file.id} className="composer-file-chip" title={`${file.name} · ${formatAttachmentSize(file.size)}`}>
+                <span className="composer-file-chip-name">{file.name}</span>
+                <span className="composer-file-chip-size">{formatAttachmentSize(file.size)}</span>
+                <button
+                  type="button"
+                  className="composer-file-chip-remove"
+                  onClick={() => removeAttachedFile(file.id)}
+                  aria-label={t("chat.removeAttachment", { name: file.name })}
+                >
+                  <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+                    <line x1="1" y1="1" x2="7" y2="7" /><line x1="7" y1="1" x2="1" y2="7" />
+                  </svg>
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Main input */}
+        <div style={{ position: "relative", minWidth: 0 }}>
+          {historyMenuOpen && inputHistory.length > 0 && (
+            <div
+              ref={historyMenuRef}
+              className="native-popover app-menu app-suggestion-menu"
+              style={{
+                position: "absolute",
+                left: 0,
+                right: 0,
+                bottom: "calc(100% + 8px)",
+                zIndex: "var(--z-dropdown)",
+                background: "var(--bg)",
+                border: "var(--hairline) solid var(--border)",
+                borderRadius: "var(--radius-md)",
+                boxShadow: "var(--shadow-popover)",
+                overflow: "hidden",
+                maxHeight: "min(44vh, 360px)",
+              }}
+            >
+              <div
+                title={t("chat.inputHistory")}
+                style={{
+                  height: 30,
+                  padding: "0 10px",
+                  borderBottom: "var(--hairline) solid var(--border)",
+                  display: "flex",
+                  alignItems: "center",
+                  color: "var(--text-dim)",
+                }}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M3 12a9 9 0 1 0 3-6.7" />
+                  <path d="M3 4v5h5" />
+                  <path d="M12 7v5l3 2" />
+                </svg>
+              </div>
+              <div style={{ maxHeight: "calc(min(44vh, 360px) - 31px)", overflowY: "auto", padding: 4 }}>
+                {inputHistory.map((item, index) => {
+                  const active = index === historyActiveIndex;
+                  return (
+                    <button
+                      key={`${index}:${item}`}
+                      ref={(node) => {
+                        historyItemRefs.current[index] = node;
+                      }}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        applyHistoryInput(item);
+                      }}
+                      onMouseEnter={() => setHistoryActiveIndex(index)}
+                      style={{
+                        width: "100%",
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: 8,
+                        padding: "7px 8px",
+                        border: "none",
+                        borderRadius: "var(--radius-sm)",
+                        background: active ? "var(--bg-selected)" : "none",
+                        color: "var(--text)",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        fontSize: "var(--fs-body)",
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      <span style={{ flexShrink: 0, fontFamily: "var(--font-mono)", fontSize: "var(--fs-micro)", color: "var(--text-dim)", paddingTop: 1 }}>
+                        {index + 1}
+                      </span>
+                      <span style={{ minWidth: 0, display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 2, overflow: "hidden", overflowWrap: "anywhere" }}>
+                        {item}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
-          {lightboxSrc && (
-            <ImageLightbox src={lightboxSrc} alt="" onClose={() => setLightboxSrc(null)} />
+          {slashMenuOpen && slashQuery !== null && (
+            <div
+              className="native-popover app-menu app-suggestion-menu"
+              ref={slashMenuRef}
+              style={{
+                position: "absolute",
+                left: 0,
+                right: 0,
+                bottom: "calc(100% + 8px)",
+                zIndex: "var(--z-dropdown)",
+                background: "var(--bg)",
+                border: "var(--hairline) solid var(--border)",
+                borderRadius: "var(--radius-md)",
+                boxShadow: "var(--shadow-popover)",
+                overflow: "hidden",
+                boxSizing: "border-box",
+                display: "flex",
+                flexDirection: "column",
+                maxHeight: slashMenuMaxHeight === null
+                  ? "min(72.8vh, 598px)"
+                  : `min(72.8vh, 598px, ${slashMenuMaxHeight}px)`,
+              }}
+            >
+              <div
+                style={{
+                  padding: "8px 10px",
+                  borderBottom: "var(--hairline) solid var(--border)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  fontSize: "var(--fs-micro)",
+                  color: "var(--text-dim)",
+                  flexShrink: 0,
+                }}
+              >
+                 <span>{slashCommandsLoading ? t("chat.loadingCommands") : t("chat.slashCommands", { label: slashCommandCountLabel })}</span>
+                 <span style={{ fontFamily: "var(--font-mono)" }}>{t("chat.tabEnter")}</span>
+              </div>
+              <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", padding: 10 }}>
+                {!slashCommandsLoading && filteredSlashCommands.length === 0 ? (
+                  <div style={{ padding: "2px 2px 4px", fontSize: "var(--fs-caption)", color: "var(--text-dim)" }}>
+                     {t("chat.noCommands")}
+                  </div>
+                ) : (
+                  groupedSlashCommands.map((group) => (
+                    <section key={group.source} style={{ marginBottom: 12 }}>
+                      <div
+                        style={{
+                          position: "sticky",
+                          top: -10,
+                          zIndex: 1,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 8,
+                          padding: "4px 0 6px",
+                          background: "var(--bg)",
+                          color: "var(--text-dim)",
+                          fontSize: "var(--fs-micro)",
+                          fontWeight: "var(--fw-semibold)",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                           <span>{t(SLASH_SOURCE_GROUP_LABEL_KEYS[group.source])}</span>
+                        <span style={{ fontFamily: "var(--font-mono)", fontWeight: "var(--fw-medium)" }}>{group.items.length}</span>
+                      </div>
+                      <div
+                        className="app-menu-items"
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                          gap: 8,
+                        }}
+                      >
+                        {group.items.map(({ command, index }) => {
+                          const active = index === slashActiveIndex;
+                          const dormant = isDormantSkillCommand(command, skillDormancy);
+                          return (
+                            <button
+                              key={`${command.source}:${command.name}`}
+                              ref={(node) => {
+                                slashItemRefs.current[index] = node;
+                              }}
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                applySlashCommand(command);
+                              }}
+                              onMouseEnter={() => setSlashActiveIndex(index)}
+                              style={{
+                                width: "100%",
+                                minWidth: 0,
+                                minHeight: 58,
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 4,
+                                justifyContent: "center",
+                                padding: "9px 10px",
+                                border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
+                                borderRadius: "var(--radius-md)",
+                                background: active ? "var(--bg-selected)" : "var(--bg-panel)",
+                                color: "var(--text)",
+                                cursor: "pointer",
+                                textAlign: "left",
+                                boxShadow: active ? "0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent)" : "none",
+                              }}
+                            >
+                              <span style={{
+                                fontSize: "var(--fs-body)",
+                                fontFamily: "var(--font-mono)",
+                                overflowWrap: "anywhere",
+                                wordBreak: "break-word",
+                                color: dormant ? "var(--text-dim)" : undefined,
+                              }}>
+                                /{command.name}
+                                {dormant && (
+                                  <span style={{
+                                    marginLeft: 6,
+                                    padding: "0 4px",
+                                    border: "var(--hairline) solid var(--border)",
+                                    borderRadius: "var(--radius-xs)",
+                                    fontSize: "var(--fs-micro)",
+                                    color: "var(--text-dim)",
+                                    whiteSpace: "nowrap",
+                                  }}>
+                                    {t("chat.dormant")}
+                                  </span>
+                                )}
+                              </span>
+                               {command.description && (
+                                <span style={{
+                                  display: "-webkit-box",
+                                  WebkitBoxOrient: "vertical",
+                                  WebkitLineClamp: 2,
+                                  overflow: "hidden",
+                                  fontSize: "var(--fs-micro)",
+                                  lineHeight: 1.35,
+                                  color: "var(--text-dim)",
+                                }}>
+                                   {getSlashDescription(command, t)}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ))
+                )}
+              </div>
+            </div>
           )}
+          {hashMenuOpen && hashQuery !== null && (
+            <SessionMentionMenu
+              loaded={sessionIndex !== null}
+              matches={hashMatches}
+              activeIndex={hashActiveIndex}
+              itemRefs={hashItemRefs}
+              onPick={applyHashCompletion}
+              onHover={setHashActiveIndex}
+            />
+          )}
+          {atMenuOpen && atQuery !== null && (() => {
+            const indexLoading = fileIndexLoading && (!fileIndex || fileIndex.cwd !== cwd);
+             const matchCountLabel = atMatches.length === 1 ? t("chat.match") : t("chat.matches", { count: atMatches.length });
+            // With a truncated index, local results are provisional — the
+            // debounced server search over the full listing replaces them.
+            const truncatedHint = fileIndex?.truncated && !serverResultInUse
+               ? (atQuery.query ? t("chat.searchingAll") : t("chat.indexTruncated"))
+              : "";
+            return (
+              <div
+                ref={atMenuRef}
+                className="native-popover app-menu app-suggestion-menu"
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  bottom: "calc(100% + 8px)",
+                  zIndex: "var(--z-dropdown)",
+                  background: "var(--bg)",
+                  border: "var(--hairline) solid var(--border)",
+                  borderRadius: "var(--radius-md)",
+                  boxShadow: "var(--shadow-popover)",
+                  overflow: "hidden",
+                  boxSizing: "border-box",
+                  display: "flex",
+                  flexDirection: "column",
+                  maxHeight: atMenuMaxHeight === null
+                    ? "min(48vh, 400px)"
+                    : `min(48vh, 400px, ${atMenuMaxHeight}px)`,
+                }}
+              >
+                <div
+                  style={{
+                    padding: "8px 10px",
+                    borderBottom: "var(--hairline) solid var(--border)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 8,
+                    fontSize: "var(--fs-micro)",
+                    color: "var(--text-dim)",
+                    flexShrink: 0,
+                  }}
+                >
+                  <span>
+                    {indexLoading ? t("chat.loadingFiles") : t("chat.files", { label: matchCountLabel, hint: truncatedHint })}
+                  </span>
+                   <span style={{ fontFamily: "var(--font-mono)" }}>{t("chat.tabEnter")}</span>
+                </div>
+                <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", padding: 4 }}>
+                  {!indexLoading && atMatches.length === 0 ? (
+                    <div style={{ padding: "6px 8px", fontSize: "var(--fs-caption)", color: "var(--text-dim)" }}>
+                       {needsServerSearch && !serverResultInUse ? t("chat.searching") : t("chat.noMatchingFiles")}
+                    </div>
+                  ) : (
+                    atMatches.map((entry, index) => {
+                      const active = index === atActiveIndex;
+                      const name = entry.path.split("/").pop() ?? entry.path;
+                      const dirPrefix = entry.path.slice(0, entry.path.length - name.length);
+                      return (
+                        <button
+                          key={`${entry.isDir ? "d" : "f"}:${entry.path}`}
+                          ref={(node) => {
+                            atItemRefs.current[index] = node;
+                          }}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            applyAtCompletion(entry);
+                          }}
+                          onMouseEnter={() => setAtActiveIndex(index)}
+                          style={{
+                            width: "100%",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "6px 8px",
+                            border: "none",
+                            borderRadius: "var(--radius-sm)",
+                            background: active ? "var(--bg-selected)" : "none",
+                            color: "var(--text)",
+                            cursor: "pointer",
+                            textAlign: "left",
+                            fontSize: "var(--fs-body)",
+                            fontFamily: "var(--font-mono)",
+                          }}
+                        >
+                          <span style={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
+                            {entry.isDir ? <FolderIcon size={14} /> : getFileIcon(name, 14)}
+                          </span>
+                          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {dirPrefix && <span style={{ color: "var(--text-dim)" }}>{dirPrefix}</span>}
+                            {name}
+                            {entry.isDir && <span style={{ color: "var(--text-dim)" }}>/</span>}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+          <ComposerOutbox items={queuedMessages?.pending ?? []} onAction={onQueuedMessageAction} />
+          <div
+            ref={composerRef}
+            className="chat-composer"
+            // Tints the card's hairline (native-theme.css): a shell command, or a
+            // run that will take this message as a steer / follow-up.
+            data-state={compact ? undefined : bashMode ? "bash" : undefined}
+          >
           <div
             className="chat-composer-editor"
+            style={{
+              minWidth: 0,
+              display: "flex",
+              flexDirection: compact ? "column" : "row",
+              gap: 8,
+              alignItems: compact ? "stretch" : "center",
+              background: "var(--bg)",
+              borderRadius: compact ? 0 : 14,
+              padding: compact ? 0 : isMobile ? "6px 6px 6px 12px" : "10px 10px 10px 14px",
+              boxShadow: compact ? "none" : "var(--shadow-composer)",
+              transition: "border-color var(--dur-base) var(--ease-native), background var(--dur-base) var(--ease-native), box-shadow var(--dur-base) var(--ease-native)",
+            } as React.CSSProperties}
           >
+          {/* Attaching is a content action, so it lives in the card with the
+              text it goes with; the row below holds only session context. */}
+          {!compact && (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              title={t(!onAttachFiles ? "chat.attachImage" : "chat.attachFiles")}
+              aria-label={t(!onAttachFiles ? "chat.attachImage" : "chat.attachFiles")}
+              className="native-toolbar-button composer-attach-button"
+              data-active={attachedImages.length > 0 || attachedFiles.length > 0 || undefined}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+          )}
           <textarea
-            aria-label={t("chat.messageLabel")}
-            aria-controls={slashMenuOpen && slashQuery !== null ? slashListId : undefined}
-            aria-activedescendant={slashMenuOpen && slashQuery !== null && displayedSlashCommands[slashActiveIndex] ? `${slashListId}-${slashActiveIndex}` : undefined}
-            aria-autocomplete="list"
-            readOnly={Boolean(draftKey && hydratedDraftKey !== draftKey)}
             ref={textareaRef}
-            className="composer-textarea"
-            style={{ fontSize }}
+            className="chat-input-textarea"
+            aria-label={compact ? t("chat.quoteQuestion") : t("chat.messageLabel")}
+            readOnly={Boolean(draftKey && hydratedDraftKey !== draftKey)}
             value={value}
             onChange={(e) => {
               valueRef.current = e.target.value;
@@ -2699,7 +3002,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             }}
             onInput={handleInput}
             onPaste={handlePaste}
-            placeholder={!showHints ? "" :
+            placeholder={
               isStreaming && (onSteer || onFollowUp)
                 ? t("chat.queuePlaceholder")
                 : isStreaming ? t("chat.agentPlaceholder")
@@ -2708,7 +3011,31 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 : t("chat.messagePlaceholder")
             }
             rows={1}
+            style={{
+              flex: compact ? "none" : 1,
+              minWidth: 0,
+              width: "100%",
+              background: "none",
+              border: "none",
+              outline: "none",
+              resize: "none",
+              color: "var(--text)",
+              fontSize: "var(--chat-content-font-size, 14px)",
+              lineHeight: 1.6,
+              fontFamily: "inherit",
+              minHeight: compact ? 96 : 24,
+              maxHeight: 200,
+              overflow: "auto",
+            }}
           />
+
+          {/* The / @ # triggers, kept out of the placeholder: shown faintly
+              beside Send only while the card is focused and empty. */}
+          {!compact && !isNarrow && !isStreaming && value.length === 0 && (
+            <span className="composer-trigger-hint" aria-hidden="true">
+              {t(chatOnly ? "chat.composerHintChatOnly" : "chat.composerHint")}
+            </span>
+          )}
 
           {(value.length > 0 || attachedImages.length > 0 || attachedFiles.length > 0) && (
             <button type="button" className="composer-clear-button"
@@ -2750,154 +3077,51 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
         {/* Bash mode status label */}
         {bashMode && (
-          <div className={`text-xs px-2 py-1 composer-bash-note${bashExcluded ? " is-muted" : ""}`}>
+          <div className="text-xs px-2 py-1" style={{ color: bashExcluded ? "var(--text-muted)" : "var(--success)", marginTop: 4 }}>
              {t("chat.shell")} · {bashExcluded ? t("chat.outputLocal") : t("chat.outputModel")}
           </div>
         )}
 
-        {preparationError && <div role="alert">{preparationError}</div>}
         {/* Bottom bar: left | center (context) | right */}
-        <div className={`chat-composer-controls${isNarrow ? " is-narrow" : ""}`}>
+        {!compact && <div className="chat-composer-controls" style={{
+          marginTop: 6,
+          display: isNarrow ? "grid" : "flex",
+          gridTemplateColumns: isNarrow ? "auto minmax(0, 1fr) auto" : undefined,
+          alignItems: "center",
+          gap: 6,
+        }}>
 
           {/* LEFT: project context + model selector (idle) or steer/followup toggle (streaming) */}
-          <div className="composer-controls-left">
-            {!compact && (
-              <button
-                type="button"
-                className={`native-toolbar-button composer-toolbar-chip is-icon-only composer-attach-button${attachedImages.length ? " has-attachments" : ""}`}
-                onClick={() => fileInputRef.current?.click()}
-                title={t(!onAttachFiles ? "chat.attachImage" : "chat.attachFiles")}
-                aria-label={t(!onAttachFiles ? "chat.attachImage" : "chat.attachFiles")}
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                  <circle cx="8.5" cy="8.5" r="1.5" />
-                  <polyline points="21 15 16 10 5 21" />
-                </svg>
-              </button>
-            )}
-            {showHints && projectLabel && (
+
+          <div style={{ flex: isNarrow ? "1 1 auto" : "0 0 auto", minWidth: 0, display: "flex", alignItems: "center", gap: 2 }}>
+            {projectLabel && (
               <ComposerProjectChip
                 menuRef={projectDropdownRef}
                 open={projectDropdownOpen}
                 onOpenChange={setProjectDropdownOpen}
-                label={projectLabel}
+                // On a phone the owner prefix ate the whole chip ("you…"); the folder name is what identifies it.
+                label={isNarrow ? projectLabel.split("/").pop() || projectLabel : projectLabel}
                 projectPath={projectPath}
-                isCompact={isCompact}
+                maxWidth={isNarrow ? 112 : isCompact ? 120 : 170}
                 projectOptions={projectOptions}
                 onProjectChange={onProjectChange}
                 onSelectProject={onSelectProject}
               />
             )}
-            {cwd && onBranchNavigate && <BranchControl key={draftKey} cwd={cwd} onNavigate={onBranchNavigate} />}
-            {/* A mid-run switch applies to the next model request; only a pending switch is busy. */}
-            {(modelOptions.length > 0 || currentName || modelError) && onModelChange && (
-                <div ref={dropdownRef} className={`composer-anchor composer-model-anchor${isNarrow ? " is-narrow" : ""}`}>
-                  <button
-                    className={`native-toolbar-button composer-toolbar-chip composer-model-trigger${isNarrow ? " is-narrow" : isCompact ? " is-compact" : ""}${modelDropdownOpen ? " is-open" : ""}`}
-                    onClick={(e) => {
-                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                      setModelDropdownRect({ top: rect.top, left: rect.left, width: rect.width });
-                      setModelDropdownOpen((open) => {
-                        if (open) setModelFilter("");
-                        return !open;
-                      });
-                    }}
-                    disabled={modelSwitching}
-                    aria-busy={modelSwitching || undefined}
-                    ref={modelButtonRef}
-                    title={modelSwitching ? "Switching model" : modelOptions.length > 0 ? "Change model" : "No available models"}
-                  >
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="4" y="4" width="16" height="16" rx="2" />
-                      <rect x="9" y="9" width="6" height="6" />
-                      <line x1="9" y1="1" x2="9" y2="4" /><line x1="15" y1="1" x2="15" y2="4" />
-                      <line x1="9" y1="20" x2="9" y2="23" /><line x1="15" y1="20" x2="15" y2="23" />
-                      <line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" />
-                      <line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" />
-                    </svg>
-                    <span className="composer-ellipsis">
-                      {currentName ?? (modelOptions.length > 0 ? "Select model" : "No models")}
-                    </span>
-                  </button>
-                  {modelDropdownOpen && modelDropdownRect && (() => {
-                    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-                    const bottom = viewportHeight - modelDropdownRect.top + 6;
-                    const maxH = Math.max(120, Math.min(modelDropdownRect.top - 8, viewportHeight * 0.6));
-                    // On mobile, pin to a small left margin and cap width to the
-                    // viewport so long model names never push the panel off-screen.
-                    const panelPos: React.CSSProperties = isMobile
-                      ? { left: 8, right: 8, maxWidth: "calc(100vw - 16px)" }
-                      : { left: modelDropdownRect.left, width: "max-content", minWidth: modelDropdownRect.width };
-                    return (
-                      <div ref={modelDropdownPanelRef} className="native-popover app-menu composer-model-panel" style={{ bottom, ...panelPos, maxHeight: maxH }}>
-                      {showModelFilter && (
-                        <div className="composer-model-filter-row">
-                          <input
-                            value={modelFilter}
-                            onChange={(e) => setModelFilter(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Escape" && !isImeComposing(e)) {
-                                setModelFilter("");
-                                setModelDropdownOpen(false);
-                              }
-                            }}
-                            placeholder={t("chat.filterModels")}
-                            aria-label={t("chat.filterModels")}
-                            autoFocus
-                            autoComplete="off"
-                            spellCheck={false}
-                            className={`composer-model-filter-input${isMobile ? " is-mobile" : ""}`}
-                          />
-                        </div>
-                      )}
-                      <div className="composer-menu-scroll">
-                        {modelsByProvider.length === 0 ? (
-                          <div className="composer-menu-empty">
-                            {modelFilter.trim() ? t("chat.noMatchingModels") : "No available models"}
-                          </div>
-                        ) : modelsByProvider.map((group, gi) => (
-                          <div key={group.provider}>
-                            {(modelsByProvider.length > 1) && (
-                              <div className={`composer-model-group-header${gi > 0 ? " is-divided" : ""}`}>
-                                {group.providerName ?? group.provider}
-                              </div>
-                            )}
-                            {group.options.map((opt) => {
-                              const isActive = opt.modelId === model?.modelId && opt.provider === model?.provider;
-                              return (
-                                <ComposerOptionRow
-                                  key={`${opt.provider}:${opt.modelId}`}
-                                  active={isActive}
-                                  onSelect={() => {
-                                    setModelDropdownOpen(false);
-                                    setModelFilter("");
-                                    if (!isActive || isAutoModelSelection) { setDraftSetup(previous => previous ? { ...previous, model: { provider: opt.provider, modelId: opt.modelId } } : previous); onModelChange(opt.provider, opt.modelId); }
-                                  }}
-                                  star={onSetDefaultModel ? {
-                                    isDefault: defaultModel?.provider === opt.provider && defaultModel?.modelId === opt.modelId,
-                                    saveLabel: t("chat.saveDefaultModel"),
-                                    defaultLabel: t("chat.defaultModel"),
-                                    onSave: () => {
-                                      setModelDropdownOpen(false);
-                                      setModelFilter("");
-                                      setDraftSetup(previous => previous ? { ...previous, model: { provider: opt.provider, modelId: opt.modelId } } : previous);
-                                      onSetDefaultModel(opt.provider, opt.modelId);
-                                    },
-                                  } : undefined}
-                                >
-                                  {opt.name}
-                                </ComposerOptionRow>
-                              );
-                            })}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    );
-                  })()}
-                </div>
+            {/* Model selector — visible always, busy while a switch is pending; a switch during a run applies from its next request (C2) */}
+            {(modelOptions.length > 0 || model || modelError) && onModelChange && (
+              <ModelSelector
+                openRequest={modelOpenRequest}
+                options={modelOptions}
+                value={model}
+                onChange={onModelChange}
+                busy={modelSwitching}
+                isAutoSelection={isAutoModelSelection}
+                defaultValue={defaultModel}
+                onSetDefault={onSetDefaultModel}
+              />
             )}
+            {/* A virtual model routes each request; show where the latest response went, like pi's footer. */}
             {routedModel && routedModelName && (
               <span
                 className="routed-model-hint"
@@ -2906,127 +3130,267 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 → {routedModelName}{routedModel.thinkingLevel && !isNarrow ? ` • ${routedModel.thinkingLevel}` : ""}
               </span>
             )}
-            {onThinkingLevelChange && (
-              <div ref={thinkingDropdownRef} className="composer-anchor">
-                <button
-                  className={`native-toolbar-button composer-toolbar-chip composer-effort-trigger${thinkingDropdownOpen ? " is-open" : ""}`}
-                  onClick={() => setThinkingDropdownOpen((v) => !v)}
-                   title={isStreaming ? t("chat.currentReasoning", { level: thinkingDisplayLabel }) : t("chat.changeReasoning", { level: thinkingDisplayLabel })}
-                   aria-label={t("chat.changeReasoningLabel")}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M9.5 2A5.5 5.5 0 0 0 4 7.5c0 1.7.78 3.21 2 4.21V14a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1v-2.29c1.22-1 2-2.51 2-4.21A5.5 5.5 0 0 0 9.5 2z" />
-                    <line x1="7" y1="18" x2="12" y2="18" />
-                    <line x1="8" y1="21" x2="11" y2="21" />
-                  </svg>
-                  <span className="composer-nowrap">{thinkingDisplayLabel}</span>
-                </button>
-                {thinkingDropdownOpen && (
-                  <div className="native-popover app-menu composer-dropdown-panel is-thinking">
-                    <div className="composer-menu-scroll">
-                    {selectableThinkingLevels(THINKING_LEVELS, availableThinkingLevels, thinkingLevelMap).map((lvl) => {
-                      const isActive = lvl === "auto" ? isAutoThinkingSelection : !isAutoThinkingSelection && resolvedThinkingLevel === lvl;
-                       const desc = t(THINKING_LEVEL_DESC_KEYS[lvl]);
-                      const mappedVal = (lvl !== "auto" && thinkingLevelMap) ? thinkingLevelMap[lvl] : undefined;
-                      const displayLabel = (mappedVal != null && mappedVal !== lvl) ? mappedVal : lvl;
-                      const showOriginal = mappedVal != null && mappedVal !== lvl;
-                      return (
-                        <ComposerOptionRow
-                          key={lvl}
-                          active={isActive}
-                          onSelect={() => { setThinkingDropdownOpen(false); if (!isActive) { setDraftSetup(previous => previous ? { ...previous, effort: lvl } : previous); onThinkingLevelChange(lvl); } }}
-                          star={onSetDefaultThinkingLevel && lvl !== "auto" ? {
-                            isDefault: savedDefaultThinkingLevel === lvl,
-                            saveLabel: t("chat.saveDefaultThinking"),
-                            defaultLabel: t("chat.defaultThinking"),
-                            onSave: () => {
-                              setThinkingDropdownOpen(false);
-                              setDraftSetup(previous => previous ? { ...previous, effort: lvl } : previous);
-                              onSetDefaultThinkingLevel(lvl);
-                            },
-                          } : undefined}
-                        >
-                          <span className="composer-option-label">
-                            {displayLabel}
-                            {showOriginal && <span className="composer-option-alias">({lvl})</span>}
-                          </span>
-                          <span className="composer-option-desc">{desc}</span>
-                        </ComposerOptionRow>
-                      );
-                    })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-            {chatOnly && (
-              <div ref={toolDropdownRef} className="composer-anchor composer-chat-access-anchor">
-                <button
-                  type="button"
-                  className={`native-toolbar-button composer-toolbar-chip${toolDropdownOpen ? " is-open" : ""}`}
-                  aria-label={toolPresetLabel}
-                  aria-expanded={toolDropdownOpen}
-                  onClick={() => setToolDropdownOpen((open) => !open)}
-                >
-                  <span className="composer-nowrap">{toolPresetLabel}</span>
-                </button>
-                {toolDropdownOpen && (
-                  <div className="native-popover app-menu composer-dropdown-panel is-tools is-chat-access" role="menu">
-                    <div className="composer-menu-scroll">
-                      <ChatAccessRows
-                        access={chatAccess}
-                        onToggleUnlocked={(next) => {
-                          setToolDropdownOpen(false);
-                          onToggleChatUnlocked?.(next);
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-            <ExtensionStatusLine statuses={extensionStatuses} />
+            <ContextUsageRing contextUsage={contextUsage} sessionStats={sessionStats} onOpenStats={onSessionStatsPanelOpen} />
           </div>
 
-          {/* Usage is separated from the model and effort settings. */}
-          <div ref={controlsMenuRef} className={`composer-controls-right${isNarrow ? " is-narrow" : ""}`}>
-            {hasTranscript && <ContextUsageRing key={draftKey} contextUsage={contextUsage} sessionStats={sessionStats} />}
-            {showHints && isNarrow && !isStreaming && onToolPresetChange && (
+          {/* spacer */}
+          {!isNarrow && <div style={{ flex: 1 }} />}
+
+          {/* RIGHT: thinking + tools preset + compact + sound (idle) | Stop + sound (streaming) */}
+          <div ref={controlsMenuRef} style={{
+            flex: "0 0 auto",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "flex-end",
+            position: "relative",
+            marginLeft: isNarrow ? 0 : "auto",
+          }}>
+            {isNarrow && (
               <button
                 type="button"
-                title={controlsMenuOpen ? undefined : t("chat.moreControls")}
-                aria-label={t("chat.moreControls")}
+                 title={controlsMenuOpen ? undefined : t("chat.moreControls")}
+                 aria-label={t("chat.moreControls")}
                 aria-expanded={controlsMenuOpen}
                 aria-hidden={controlsMenuOpen || undefined}
                 tabIndex={controlsMenuOpen ? -1 : undefined}
+                className="native-toolbar-button"
                 onClick={() => {
-                  setModelDropdownOpen(false);
-                  setModelFilter("");
                   setControlsMenuOpen(true);
                 }}
-                className={`composer-more-button${controlsMenuOpen ? " is-hidden" : ""}`}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: "var(--control-h-lg)",
+                  height: "var(--control-h-lg)",
+                  padding: 0,
+                  borderRadius: "var(--radius-md)",
+                  cursor: controlsMenuOpen ? "default" : "pointer",
+                  visibility: controlsMenuOpen ? "hidden" : "visible",
+                  pointerEvents: controlsMenuOpen ? "none" : "auto",
+                }}
               >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="8" r="1.25" /><circle cx="8" cy="8" r="1.25" /><circle cx="13" cy="8" r="1.25" /></svg>
+                {/* An icon like its neighbours; the label stays in title/aria-label. */}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0" />
+                  <circle cx="16" cy="6" r="2" /><circle cx="10" cy="12" r="2" /><circle cx="18" cy="18" r="2" />
+                </svg>
               </button>
             )}
-            <div className={`composer-controls-group${isNarrow ? " is-narrow" : ""}${controlsMenuOpen ? " is-open" : ""}`}>
-            {showHints && !isStreaming && onToolPresetChange && (
-              <div ref={toolDropdownRef} className="composer-anchor">
+            <div style={{
+              display: isNarrow ? (controlsMenuOpen ? "flex" : "none") : "flex",
+              alignItems: "center",
+              gap: isNarrow ? 1 : 2,
+              ...(isNarrow ? {
+                position: "absolute",
+                right: 0,
+                bottom: 0,
+                zIndex: 60,
+                padding: 1,
+                width: "max-content",
+                maxWidth: "calc(100vw - 32px)",
+                flexWrap: "nowrap",
+                justifyContent: "flex-end",
+                border: "var(--hairline) solid color-mix(in srgb, var(--border) 72%, transparent)",
+                borderRadius: "var(--radius-lg)",
+                background: "color-mix(in srgb, var(--bg-panel) 92%, var(--bg))",
+                boxShadow: "var(--shadow-popover)",
+                backdropFilter: "blur(10px)",
+              } : null),
+            }}>
+            {/* Keep reasoning and Config as separate, consistent option menus. */}
+            {(onThinkingLevelChange || chatOnly) && (
+              <div ref={thinkingDropdownRef} style={{ position: "relative" }}>
                 <button
-                  className={`native-toolbar-button composer-toolbar-chip${isCompact && !controlsMenuOpen ? " is-icon-only" : ""}${toolDropdownOpen ? " is-open" : ""}`}
+                  className="native-toolbar-button"
+                  onClick={() => setThinkingDropdownOpen((v) => !v)}
+                  title={runSettingsTitle}
+                  aria-label={onThinkingLevelChange ? t("chat.changeReasoningLabel") : toolPresetLabel}
+                  aria-haspopup="listbox"
+                  aria-expanded={thinkingDropdownOpen}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                    padding: (isCompact && !controlsMenuOpen) ? "0 6px" : "8px 12px",
+                    width: (isCompact && !controlsMenuOpen) ? 32 : undefined,
+                    height: "var(--control-h-lg)",
+                    background: thinkingDropdownOpen ? "var(--bg-hover)" : "none",
+                    border: "none",
+                    borderRadius: "var(--radius-md)",
+                    color: "var(--text-muted)",
+                    cursor: "pointer",
+                    fontSize: "var(--fs-caption)",
+                    transition: "background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native)",
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <line x1="4" y1="7" x2="14" y2="7" /><line x1="18" y1="7" x2="20" y2="7" /><circle cx="16" cy="7" r="2" />
+                    <line x1="4" y1="17" x2="6" y2="17" /><line x1="10" y1="17" x2="20" y2="17" /><circle cx="8" cy="17" r="2" />
+                  </svg>
+                  {(!isCompact || controlsMenuOpen) && <span style={{ whiteSpace: "nowrap" }}>{runSettingsLabel}</span>}
+                </button>
+                {thinkingDropdownOpen && (() => {
+                  const vh = typeof window !== "undefined" ? window.visualViewport?.height ?? window.innerHeight : 800;
+                  const maxH = Math.max(120, vh * 0.6);
+                  const vw = typeof window !== "undefined" ? window.innerWidth : 800;
+                  const menuWidth = Math.min(320, Math.max(0, vw - 24));
+                  const anchorLeft = thinkingDropdownRef.current?.getBoundingClientRect().left ?? 12;
+                  const mobileLeft = Math.max(12 - anchorLeft, Math.min(0, vw - 12 - menuWidth - anchorLeft));
+                  return (
+                  <div className="native-popover app-menu composer-run-menu" role="listbox" style={{
+                    position: "absolute",
+                    bottom: "calc(100% + 6px)",
+                    ...(isMobile ? { left: mobileLeft } : { right: 0 }),
+                    zIndex: 100,
+                    overflow: "hidden", minWidth: Math.min(240, menuWidth), maxWidth: menuWidth,
+                    maxHeight: maxH, display: "flex", flexDirection: "column",
+                  }}>
+                    <div className="app-menu-list">
+                    {onThinkingLevelChange && (
+                      <>
+                      <div className="composer-menu-heading">{t("chat.reasoningHeading")}</div>
+                      {THINKING_LEVELS.filter((lvl) => {
+                        if (!availableThinkingLevels) return true;
+                        if (lvl === "auto") return true;
+                        return availableThinkingLevels.includes(lvl);
+                      }).map((lvl) => {
+                        const isActive = lvl === "auto"
+                          ? isAutoThinkingSelection
+                          : !isAutoThinkingSelection && resolvedThinkingLevel === lvl;
+                        const desc = t(THINKING_LEVEL_DESC_KEYS[lvl]);
+                        const mappedVal = (lvl !== "auto" && thinkingLevelMap) ? thinkingLevelMap[lvl] : undefined;
+                        const displayLabel = (mappedVal != null && mappedVal !== lvl) ? mappedVal : lvl;
+                        const showOriginal = mappedVal != null && mappedVal !== lvl;
+                        return (
+                          <SelectorRow
+                            key={lvl}
+                            active={isActive}
+                            onSelect={() => {
+                              setThinkingDropdownOpen(false);
+                              if (lvl === "auto") {
+                                if (!isAutoThinkingSelection) onThinkingLevelChange("auto");
+                                return;
+                              }
+                              if (!isActive || isAutoThinkingSelection) onThinkingLevelChange(lvl);
+                            }}
+                            gutter={Boolean(onSetDefaultThinkingLevel)}
+                            star={onSetDefaultThinkingLevel && lvl !== "auto"
+                              ? {
+                                  isDefault: savedDefaultThinkingLevel === lvl,
+                                  saveLabel: t("chat.saveDefaultThinking"),
+                                  defaultLabel: t("chat.defaultThinking"),
+                                  onSave: () => {
+                                    onSetDefaultThinkingLevel(lvl);
+                                  },
+                                }
+                              : undefined}
+                          >
+                            <span style={{ flex: 1 }}>
+                              {displayLabel}
+                              {showOriginal && <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", fontFamily: "var(--font-mono)", marginLeft: 5 }}>({lvl})</span>}
+                            </span>
+                            <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginLeft: 8 }}>{desc}</span>
+                          </SelectorRow>
+                        );
+                      })}
+                      </>
+                    )}
+
+                    {chatOnly && (
+                      <>
+                        <div className="composer-menu-heading" data-separated={onThinkingLevelChange ? true : undefined}>
+                          {t("chat.toolsHeading")}
+                        </div>
+                        <ChatAccessRows
+                          access={chatAccess}
+                          onToggleUnlocked={(next) => {
+                            setThinkingDropdownOpen(false);
+                            onToggleChatUnlocked?.(next);
+                          }}
+                        />
+                      </>
+                    )}
+                    </div>
+                  </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Manual compaction lives in the session menu below; an active one
+                (manual or auto, mid-run included) stays in the row so it is
+                visible and can be stopped. */}
+            {onCompact && isCompacting && (
+              <div style={{ position: "relative" }}>
+                <button
+                  className="native-toolbar-button"
+                  onClick={onAbortCompaction}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                    padding: (isCompact && !controlsMenuOpen) ? "0 6px" : "8px 12px",
+                    width: (isCompact && !controlsMenuOpen) ? 32 : undefined,
+                    height: "var(--control-h-lg)",
+                    background: "color-mix(in srgb, var(--danger) 8%, transparent)",
+                    border: "none",
+                    borderRadius: "var(--radius-md)",
+                    color: "var(--danger)",
+                    cursor: "pointer",
+                    fontSize: "var(--fs-caption)", opacity: 1,
+                    transition: "background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native)",
+                  }}
+                   title={t("chat.stopCompaction")}
+                   aria-label={t("chat.stopCompaction")}
+                >
+                  <svg width="12" height="12" viewBox="0 0 10 10" fill="none"><rect x="2" y="2" width="6" height="6" rx="1" fill="currentColor" /></svg>{(!isCompact || controlsMenuOpen) && <span style={{ whiteSpace: "nowrap" }}>{summarizationRetry ? t("chat.compactingRetry", { attempt: summarizationRetry.attempt, max: summarizationRetry.maxAttempts }) : t("chat.compacting")}</span>}
+                </button>
+              </div>
+            )}
+
+            {onToolPresetChange && (
+              <div ref={toolDropdownRef} style={{ position: "relative" }}>
+                <button
+                  className="native-toolbar-button"
                   onClick={() => !isStreaming && setToolDropdownOpen((v) => !v)}
                   disabled={isStreaming}
-                   title={t("chat.changeToolPreset") + `: ${toolPresetLabel}`}
-                   aria-label={t("chat.changeToolPreset")}
+                  title={t("chat.changeToolPreset") + `: ${toolPresetLabel}`}
+                  aria-label={t("chat.changeToolPreset")}
+                  aria-haspopup="listbox"
+                  aria-expanded={toolDropdownOpen}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                    padding: (isCompact && !controlsMenuOpen) ? "0 6px" : "8px 12px",
+                    width: (isCompact && !controlsMenuOpen) ? 32 : undefined,
+                    height: "var(--control-h-lg)",
+                    background: toolDropdownOpen ? "var(--bg-hover)" : "none",
+                    border: "none",
+                    borderRadius: "var(--radius-md)",
+                    color: "var(--text-muted)",
+                    cursor: isStreaming ? "not-allowed" : "pointer",
+                    fontSize: "var(--fs-caption)",
+                    opacity: isStreaming ? 0.5 : 1,
+                    transition: "background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native)",
+                  }}
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
                   </svg>
-                  {(!isCompact || controlsMenuOpen) && <span className="composer-nowrap">{toolPresetLabel}</span>}
+                  {(!isCompact || controlsMenuOpen) && <span style={{ whiteSpace: "nowrap" }}>{toolPresetLabel}</span>}
                 </button>
-                {toolDropdownOpen && (
-                  <div className="native-popover app-menu composer-dropdown-panel is-tools">
-                    <div className="composer-menu-scroll">
+                {toolDropdownOpen && (() => {
+                  const vh = typeof window !== "undefined" ? window.visualViewport?.height ?? window.innerHeight : 800;
+                  const maxH = Math.max(120, vh * 0.6);
+                  const vw = window.innerWidth;
+                  const width = Math.min(304, vw - 32);
+                  const anchorRight = toolDropdownRef.current?.getBoundingClientRect().right ?? vw - 16;
+                  const left = Math.max(16, Math.min(anchorRight - width, vw - width - 16));
+                  return (
+                  <div className="native-popover app-menu composer-tool-menu" role="listbox" aria-label={t("chat.changeToolPreset")} style={{
+                    position: "absolute", bottom: "calc(100% + 6px)", right: anchorRight - left - width,
+                    zIndex: 100, background: "var(--bg)", border: "var(--hairline) solid var(--border)",
+                    borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-popover)",
+                    overflow: "hidden", minWidth: 120,
+                    maxHeight: maxH, display: "flex", flexDirection: "column",
+                  }}>
+                    <div className="app-menu-list">
                     {TOOL_PRESETS.map((lvl) => {
                       const preset = TOOL_PRESET_MAP[lvl];
                       const isActive = (toolPreset ?? "configured") === preset;
@@ -3037,23 +3401,35 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       else if (lvl === "default") desc = t("chat.builtInTools", { count: 4 });
                       else desc = t("chat.allBuiltInTools");
                       return (
-                        <button
+                        <SelectorRow
                           key={lvl}
-                          onClick={() => { setToolDropdownOpen(false); if (!isActive) { const tools = preset === "configured" ? "inherit" : preset; setDraftSetup(previous => previous ? { ...previous, tools } : previous); onToolPresetChange(preset); } }}
-                          className={`composer-option-row${isActive ? " is-active" : ""}`}
+                          active={isActive}
+                          onSelect={() => { setToolDropdownOpen(false); if (!isActive) onToolPresetChange(preset); }}
                         >
-                          {isActive
-                            ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="composer-icon"><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
-                            : <span className="composer-check-spacer" />}
-                          <span className="composer-option-label">{t(`chat.toolPresetName.${lvl}`)}</span>
-                          <span className="composer-option-desc">{desc}</span>
-                        </button>
+                          <span className="app-menu-copy">
+                            <span>{t(`chat.toolPresetName.${lvl}`)}</span>
+                            <small>{desc}</small>
+                          </span>
+                        </SelectorRow>
                       );
                     })}
                     </div>
                   </div>
-                )}
+                  );
+                })()}
               </div>
+            )}
+
+            {(automationKnown || canCompactNow) && (
+              <SessionAutomationMenu
+                menuRef={automationDropdownRef}
+                open={automationDropdownOpen}
+                onOpenChange={setAutomationDropdownOpen}
+                alignLeft={isMobile}
+                automation={automationKnown ? automation : undefined}
+                onSetAutomation={onSetAutomation}
+                onCompact={canCompactNow ? onCompact : undefined}
+              />
             )}
 
             {isNarrow && controlsMenuOpen && (
@@ -3063,11 +3439,21 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                  aria-label={t("chat.collapseControls")}
                 aria-expanded={true}
                 onClick={() => {
-                  setToolDropdownOpen(false);
                   setThinkingDropdownOpen(false);
                   setControlsMenuOpen(false);
                 }}
-                className="composer-collapse-button"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 36,
+                  height: "var(--control-h-lg)",
+                  padding: 0,
+                  marginLeft: 0,
+                  borderRadius: "0 var(--radius-md) var(--radius-md) 0",
+                  cursor: "pointer",
+                }}
+                className="composer-controls-close"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <line x1="18" y1="6" x2="6" y2="18" />
@@ -3078,9 +3464,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             </div>
           </div>
 
-        </div>
+        </div>}
         </div>
       </div>
-    </div>
+    </fieldset>
   );
 });

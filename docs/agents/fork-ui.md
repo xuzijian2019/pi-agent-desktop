@@ -1,5 +1,21 @@
 # Layout, settings and client behavior — fork notes
 
+## Composer alignment decision (2026-11-15)
+
+The owner explicitly replaced the simplified fork composer with upstream's
+composer for both new and continued sessions. Use upstream editor geometry,
+attachment button, model selector, reasoning/tool controls, automation and
+context hover/click behavior. Do not restore the unrelated welcome branding.
+Project switching remains disambiguated. Workbench branch operations remain
+outside the composer rather than restoring its old branch chip.
+
+This does not remove safety logic: IndexedDB draft recovery/conflicts, pasted
+text and reference preparation, attachment cleanup/generation guards, IME and
+single-shot/cross-session send protection remain. The queue has a bounded
+scroll region so long queues cannot hide the editor. The `/model` command opens
+the same upstream model selector. Tests for the previous deliberately removed
+controls are replaced with positive upstream-control tests, not skipped.
+
 ## Terminal appearance
 
 `LazyTerminalPanel` caches the imported component and renders it synchronously after

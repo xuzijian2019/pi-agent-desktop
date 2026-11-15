@@ -4,7 +4,7 @@ import test from "node:test";
 
 const source = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
 const session = await readFile(new URL("../hooks/useAgentSession.ts", import.meta.url), "utf8");
-const thinkingControl = source.slice(source.indexOf("{onThinkingLevelChange && ("));
+const thinkingControl = source.slice(source.indexOf("{(onThinkingLevelChange || chatOnly) && ("));
 
 // The SDK re-reads the thinking level before every model request of a run,
 // so a change made mid-run applies from the next request (#851).
@@ -15,14 +15,14 @@ test("keeps one thinking control and lets it change the level while the session 
   assert.doesNotMatch(button, /disabled=/);
   assert.match(button, /onClick=\{\(\) => setThinkingDropdownOpen\(\(v\) => !v\)\}/);
   assert.doesNotMatch(source, /if \(!isStreaming\) return;\s*setThinkingDropdownOpen\(false\)/);
-  assert.match(thinkingControl, /title=\{isStreaming/);
-  assert.match(thinkingControl, /t\("chat\.currentReasoning", \{ level: thinkingDisplayLabel \}\)/);
-  assert.match(thinkingControl, /t\("chat\.changeReasoning", \{ level: thinkingDisplayLabel \}\)/);
+  assert.match(thinkingControl, /title=\{runSettingsTitle\}/);
+  assert.match(source, /t\("chat\.currentReasoning", \{ level: thinkingDisplayLabel \}\)/);
+  assert.match(source, /t\("chat\.changeReasoning", \{ level: thinkingDisplayLabel \}\)/);
 });
 
 test("shows the resolved level and treats auto as an uncommitted default", async () => {
   assert.match(source, /resolvedThinkingLevel = thinkingLevel && thinkingLevel !== "auto"/);
-  assert.match(source, /lvl === "auto" \? isAutoThinkingSelection : !isAutoThinkingSelection && resolvedThinkingLevel === lvl/);
+  assert.match(source, /lvl === "auto"\s*\? isAutoThinkingSelection\s*: !isAutoThinkingSelection && resolvedThinkingLevel === lvl/);
   assert.match(source, /onThinkingLevelChange\(lvl\)/);
 });
 

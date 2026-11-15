@@ -127,7 +127,7 @@ for (const theme of ["light", "dark"] as const) {
       await expect(page.locator(".chat-window")).toContainText(fixture.message);
 
       await showSidebar(page);
-      const project = page.getByRole("treeitem", { name: fixture.cwd, exact: true });
+      const project = page.locator(`[data-project-root=${JSON.stringify(fixture.cwd)}] > .sidebar-project-tree-row > .sidebar-project-tree-row-main`);
       await expect(project).toBeVisible();
       await project.click({ button: "right" });
       await page.getByRole("menuitem", { name: "Move to archive", exact: true }).click();

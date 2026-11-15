@@ -5,8 +5,7 @@
 // ChatInput (upstream-owned) keeps the open state and ref (its outside-click
 // handler closes every composer menu) and mounts this.
 
-import { useState, type Dispatch, type RefObject, type SetStateAction } from "react";
-import { createPortal } from "react-dom";
+import type { Dispatch, RefObject, SetStateAction } from "react";
 import { canUseNativeMenu, menuPointBelow, showNativeMenu } from "@/lib/desktop-menu";
 import { getProjectDisplayName } from "@/lib/project-display";
 import { useI18n } from "@/hooks/useI18n";
@@ -25,7 +24,7 @@ interface ComposerProjectChipProps {
   onOpenChange: Dispatch<SetStateAction<boolean>>;
   label: string;
   projectPath?: string | null;
-  isCompact?: boolean;
+  maxWidth: number;
   /** Active project roots a new-session composer can switch between. */
   projectOptions: string[];
   onProjectChange?: (projectRoot: string) => void;
@@ -34,23 +33,21 @@ interface ComposerProjectChipProps {
 }
 
 export function ComposerProjectChip({
-  menuRef, open, onOpenChange, label, projectPath, isCompact = false, projectOptions, onProjectChange, onSelectProject,
+  menuRef, open, onOpenChange, label, projectPath, maxWidth, projectOptions, onProjectChange, onSelectProject,
 }: ComposerProjectChipProps) {
   const { t } = useI18n();
-  // Full-path flyout beside the hovered row; kept out of the native tooltip.
-  const [projectPathTip, setProjectPathTip] = useState<{ path: string; top: number; left: number } | null>(null);
   return (
-    <div ref={menuRef} className="composer-anchor is-static">
+    <div ref={menuRef} style={{ position: "relative", flexShrink: 0 }}>
       <button
         type="button"
-        className={`chat-project-context${isCompact ? " is-compact" : ""}`}
+        className="chat-project-context"
+        style={{ maxWidth }}
         title={`${t("chat.switchProject")} · ${t("chat.currentProject", { path: projectPath ?? label })}`}
         aria-label={t("chat.currentProject", { path: projectPath ?? label })}
         aria-haspopup={projectOptions.length > 0 && onProjectChange ? "menu" : undefined}
         aria-expanded={projectOptions.length > 0 && onProjectChange ? open : undefined}
         onClick={(event) => {
           if (projectOptions.length > 0 && onProjectChange) {
-            setProjectPathTip(null);
             // Desktop shell: the project list as a native popup.
             if (canUseNativeMenu()) {
               void showNativeMenu(
@@ -65,7 +62,7 @@ export function ComposerProjectChip({
               ).then((shown) => { if (!shown) onOpenChange(true); });
               return;
             }
-            onOpenChange((open) => !open);
+            onOpenChange((isOpen) => !isOpen);
           } else onSelectProject?.();
         }}
         disabled={!onSelectProject && !(projectOptions.length > 0 && onProjectChange)}
@@ -77,13 +74,22 @@ export function ComposerProjectChip({
       </button>
       {open && projectOptions.length > 0 && onProjectChange && (
         <div
-          className="native-popover app-menu composer-project-menu"
+          className="native-popover app-menu"
           role="menu"
-          onMouseLeave={() => setProjectPathTip(null)}
-          onScroll={() => setProjectPathTip(null)}
+          style={{
+            position: "absolute",
+            left: 0,
+            bottom: "calc(100% + 6px)",
+            zIndex: 500,
+            minWidth: 220,
+            maxWidth: 320,
+            maxHeight: "min(60vh, 420px)",
+            overflowY: "auto",
+            padding: 5,
+          }}
         >
           {projectOptions.map((projectRoot) => {
-            const label = getProjectLabel(projectRoot, projectOptions) ?? projectRoot;
+            const optionLabel = getProjectLabel(projectRoot, projectOptions) ?? projectRoot;
             const isCurrent = projectRoot === projectPath;
             return (
               <button
@@ -93,48 +99,39 @@ export function ComposerProjectChip({
                 aria-current={isCurrent ? "true" : undefined}
                 onClick={() => {
                   onOpenChange(false);
-                  setProjectPathTip(null);
                   if (!isCurrent) onProjectChange(projectRoot);
                 }}
-                className={`composer-project-option${isCurrent ? " is-current" : ""}`}
-                onMouseEnter={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  setProjectPathTip({ path: projectRoot, top: rect.top, left: rect.right + 8 });
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  width: "100%",
+                  minWidth: 0,
+                  padding: "7px 9px",
+                  border: 0,
+                  borderRadius: "var(--radius-sm)",
+                  background: isCurrent ? "var(--bg-selected)" : "transparent",
+                  color: isCurrent ? "var(--text)" : "var(--text-muted)",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  fontSize: "var(--fs-caption)",
                 }}
+                onMouseEnter={(e) => {
+                  if (!isCurrent) e.currentTarget.style.background = "var(--bg-hover)";
+                }}
+                onMouseLeave={(e) => {
+                  if (!isCurrent) e.currentTarget.style.background = "transparent";
+                }}
+                title={projectRoot}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
                 </svg>
-                <span className="composer-ellipsis">{label}</span>
-                {isCurrent && <span className="composer-check">✓</span>}
+                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{optionLabel}</span>
               </button>
             );
           })}
         </div>
-      )}
-      {projectPathTip && open && createPortal(
-        (() => {
-          const vh = window.visualViewport?.height ?? window.innerHeight;
-          const top = Math.max(8, Math.min(projectPathTip.top, vh - 40));
-          return (
-            <div
-              role="tooltip"
-              className="composer-path-tooltip"
-              style={{
-                top,
-                left: projectPathTip.left,
-                maxWidth: `calc(100vw - ${projectPathTip.left + 8}px)`,
-                maxHeight: `calc(${vh}px - ${top + 8}px)`,
-              }}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="composer-icon">
-                <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
-              </svg>
-              <span className="composer-wrap-anywhere">{projectPathTip.path}</span>
-            </div>
-          );
-        })(),
-        document.body,
       )}
     </div>
   );

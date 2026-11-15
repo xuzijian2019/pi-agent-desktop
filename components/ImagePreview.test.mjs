@@ -5,11 +5,14 @@ import test from "node:test";
 const source = await readFile(new URL("./ImagePreview.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
-test("composer attachments retain the fork lightbox and separate remove button", async () => {
+test("composer attachments use the shared modal preview and a separate remove button", async () => {
   const inputSource = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
-  assert.match(inputSource, /setLightboxSrc\(img.previewUrl\)/);
-  assert.match(inputSource, /<ImageLightbox/);
-  assert.match(inputSource, /removeImage\(i\)/);
+  assert.match(inputSource, /<ImagePreview key=\{img.previewUrl\} src=\{img.previewUrl\}>[\s\S]*?<img\s+src=\{img.previewUrl\}/);
+  // Remove is a sibling of the preview trigger, never nested inside it: it must
+  // not open a modal while deleting the attachment.
+  assert.match(inputSource, /<\/ImagePreview>\s*<button\s+type="button"\s+onClick=\{\(\) => removeImage\(i\)\}/);
+  assert.match(source, /onClick=\{\(\) => setOpen\(true\)\}/);
+  assert.match(source, /aria-haspopup="dialog"/);
 });
 
 test("uses a native modal dialog and restores focus to its trigger", () => {

@@ -110,7 +110,7 @@ test("persists existing profile toggles immediately without submitting unsaved f
 test("keeps scoped model selection in both profile settings and the fork composer", async () => {
   assert.match(source, /fetch\(`\/api\/models\?cwd=/);
   assert.match(source, /<ModelSelector[\s\S]*?options=\{modelSelectorOptions\}/);
-  assert.match(chatInputSource, /modelsByProvider\.map/);
+  assert.match(chatInputSource, /<ModelSelector[\s\S]*?options=\{modelOptions\}[\s\S]*?busy=\{modelSwitching\}/);
   assert.match(chatInputSource, /modelSwitching/);
   assert.match(source, /agents\.modelUnavailable/);
 });

@@ -39,14 +39,20 @@ test("renders the status text with the plain text as tooltip", () => {
   assert.match(html, /title="ready"/);
 });
 
-test("ctx.ui.setStatus reaches one status component in the fork composer", () => {
+test("ctx.ui.setStatus reaches exactly one status shelf in either composer flow", () => {
   // The hook must apply setStatus requests and every get_state snapshot; the component
   // was once removed and the state left dangling, so statuses were silently dropped.
   assert.match(hookSource, /case "setStatus":\s*setExtensionStatuses\(/);
   assert.match(hookSource, /\.extensionStatuses !== undefined\) setExtensionStatuses\(/);
-  assert.match(chatInputSource, /<ExtensionStatusLine statuses=\{extensionStatuses\} \/>/);
-  assert.doesNotMatch(chatInputSource, /<ExtensionStatusBar\b/);
-  assert.doesNotMatch(chatWindowSource, /<ExtensionStatus(?:Bar|Line)\b/);
+  // The upstream-shaped input no longer owns the footer. Its parent mounts one
+  // shelf in each mutually exclusive new/existing-session branch instead.
+  assert.doesNotMatch(chatInputSource, /<ExtensionStatus(?:Bar|Line)\b/);
+  assert.doesNotMatch(chatWindowSource, /<ExtensionStatusBar\b/);
+  const flows = chatWindowSource.slice(chatWindowSource.indexOf("{isEmptyNew ? (")).split("      ) : (\n      <>\n      {/* Composer overlays");
+  assert.equal(flows.length, 2);
+  for (const flow of flows) {
+    assert.equal((flow.match(/<ExtensionStatusLine statuses=\{extensionStatuses\} \/>/g) ?? []).length, 1);
+  }
 });
 
 test("follows a session an extension command moved to", async () => {

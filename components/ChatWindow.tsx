@@ -19,6 +19,8 @@ import { MarkdownBody } from "./MarkdownBody";
 import { useEphemeralConversation } from "@/hooks/useEphemeralConversation";
 import { ChatCommandDialog } from "./ChatCommandDialog";
 import type { AppSlashCommand, ViewSlashCommand } from "@/lib/web-slash-commands";
+import { BranchControl } from "./workbench/BranchControl";
+import { ExtensionStatusLine } from "./ExtensionStatusLine";
 import { ChatInput, getUserMessageText, type ChatInputHandle } from "./ChatInput";
 import { ExtensionWidgets } from "./ExtensionWidgets";
 import { AnsiText } from "./AnsiText";
@@ -304,7 +306,7 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
   const {
     loading, error, messages, activeToolResults, entryIds, historyCursor, hasEarlierMessages, streamState,
     agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
-    retryInfo, contextUsage, forkingEntryId,
+    retryInfo, contextUsage, forkingEntryId, summarizationRetry, automation, handleSetAutomation,
     isCompacting, compactError, compactNotice, compactResult, displayModel: displayModelValue, modelSwitching, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages,
     notices, extensionDialog, waitingExtensionDialogCount, extensionCustomUi, waitingExtensionCustomUiCount, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput, setNoticePaused,
@@ -320,7 +322,7 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
     isNearBottomRef, showScrollToBottom,
     branchSummaryPending, handleAbortBranchSummary, routedModel,
     applyTaskSetup, handleSend, handleAbort, handleAbortRetry, handleFork, handleEditContent, cancelEdit, handleModelChange,
-    handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleQueuedMessageAction,
+    handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction, handleQueuedMessageAction,
     dismissModelScopeWarnings,
     handleRecallQueue,
     handleBuiltinSlashCommand, retryLoad,
@@ -1300,12 +1302,19 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
       modelSwitching={modelSwitching}
       defaultModel={defaultModel}
       onSetDefaultModel={handleSetDefaultModel}
+      onCompact={session || isNew ? handleCompact : undefined}
+      isCompacting={isCompacting}
+      onAbortCompaction={handleAbortCompaction}
+      summarizationRetry={summarizationRetry}
+      automation={automation}
+      onSetAutomation={handleSetAutomation}
+      onSessionStatsPanelOpen={openStats}
       compactError={compactError}
       compactNotice={compactNotice}
       compactResult={compactResult}
       extensionStatuses={extensionStatuses}
       toolPreset={toolPreset}
-      onToolPresetChange={!chatOnly && isEmptyNew ? handleToolPresetChange : undefined}
+      onToolPresetChange={!chatOnly && (session || isNew) ? handleToolPresetChange : undefined}
       thinkingLevel={thinkingLevel}
       isAutoThinkingSelection={isAutoThinkingSelection}
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
@@ -1372,6 +1381,11 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {!chatOnly && cwd && onBranchNavigate && (
+        <div className="chat-workspace-header">
+          <BranchControl key={session?.id ?? newSessionDraftKey ?? cwd} cwd={cwd} onNavigate={onBranchNavigate} />
+        </div>
+      )}
       <div ref={chatContentRegionRef} className="relative flex min-h-0 flex-1 flex-col">
       {(recapBusy || recapError || recap) && <section className="mx-4 my-2 max-h-[40%] shrink-0 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--bg-panel)] p-4" aria-label={t("recap.title")}>
         <div className="mb-2 flex flex-wrap items-center gap-2 text-sm"><strong>{t("recap.title")}</strong>
@@ -1456,12 +1470,13 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
       <div ref={scrollbarGutterProbeRef} aria-hidden="true" className="pointer-events-none absolute left-0 top-0 h-px w-24 overflow-y-scroll opacity-0" />
       {isEmptyNew ? (
         <div
-          className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8"
+          className="flex flex-1 flex-col justify-center overflow-y-auto"
           style={{ scrollbarGutter: "stable" }}
         >
-          <div className="chat-empty-state w-full">
+          <div className="w-full">
             <NoticeShelf notices={notices} onPauseChange={setNoticePaused} />
             {chatInputElement}
+            {extensionStatuses.length > 0 && <ExtensionStatusLine statuses={extensionStatuses} />}
           </div>
         </div>
       ) : (
@@ -1613,6 +1628,11 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
             />
           )}
           {chatInputElement}
+          {extensionStatuses.length > 0 && (
+            <div className="extension-status-shelf has-status">
+              {extensionStatuses.length > 0 && <ExtensionStatusLine statuses={extensionStatuses} />}
+            </div>
+          )}
         </div>
       </div>
       </div>

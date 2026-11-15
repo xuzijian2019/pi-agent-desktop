@@ -40,9 +40,16 @@ for (const theme of ["light", "dark"] as const) {
       const composer = page.getByRole("textbox", { name: "Message", exact: true });
       await expect(composer).toBeEditable();
       const trigger = page.getByRole("button", { name: "⑂ main", exact: true }).first();
+      // Git operations live in the chat header, not the upstream composer.
+      await expect(page.locator(".chat-composer-controls").getByRole("button", { name: "⑂ main", exact: true })).toHaveCount(0);
       await trigger.click();
       const dialog = page.getByRole("dialog", { name: "Git branch", exact: true });
       await expect(dialog).toBeVisible();
+      await expect.poll(async () => {
+        const rect = (await dialog.boundingBox())!;
+        const button = (await trigger.boundingBox())!;
+        return rect.x >= 0 && rect.y >= button.y + button.height && rect.x + rect.width <= width + 1 && rect.y + rect.height <= 901;
+      }).toBe(true);
       await dialog.getByRole("button", { name: "Create branch", exact: true }).click();
       await dialog.getByLabel("Name", { exact: true }).fill("feature/not-created");
       const baseSelect = dialog.getByRole("combobox", { name: "Base branch", exact: true });
@@ -81,8 +88,8 @@ for (const theme of ["light", "dark"] as const) {
       await expect(dialog).toBeVisible();
       await expect(baseSelect).toHaveText(base);
       await expect(locationSelect).toHaveText("New worktree");
-      // The popup intentionally covers the textarea center. Find an actually
-      // exposed textarea point, then use a real pointer click (never force or
+      // Find an actually exposed textarea point after the header move, then
+      // use a real pointer click (never force or
       // dispatchEvent) so this still verifies the outside-dismissal handler.
       const outsidePoint = await composer.evaluate(el => {
         const rect = el.getBoundingClientRect();

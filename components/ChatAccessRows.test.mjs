@@ -96,15 +96,13 @@ test("chat access uses flex option rows with readable, viewport-bounded menu geo
   assert.doesNotMatch(html, /class="composer-menu-row"/);
   const css = readFileSync(new URL("../app/native-theme.css", import.meta.url), "utf8");
   const input = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
-  assert.match(input, /composer-dropdown-panel is-tools is-chat-access/);
-  assert.match(input, /className="composer-anchor composer-chat-access-anchor"/);
-  assert.match(css, /\.composer-option-row\s*\{[^}]*display: flex;/);
-  assert.match(css, /\.composer-dropdown-panel\.is-chat-access\s*\{[^}]*width: 360px;[^}]*min-width: 0;[^}]*max-width: min\(360px, 100%, calc\(100vw - 32px\)\);[^}]*left: 0;[^}]*right: auto;/);
-  assert.match(css, /\.chat-composer-controls:has\(\.composer-chat-access-anchor\)\s*\{[^}]*position: relative;/);
-  assert.match(css, /\.composer-chat-access-anchor\s*\{[^}]*position: static;/);
-  assert.match(css, /\.is-chat-access \.composer-menu-scroll\s*\{[^}]*gap: var\(--menu-row-gap\);/);
-  assert.match(css, /\.is-chat-access \.chat-access-row\s*\{[^}]*white-space: normal;[^}]*overflow-wrap: anywhere;/);
-  assert.match(css, /\.is-chat-access \.chat-access-summary\s*\{[^}]*flex-direction: column;/);
+  assert.match(input, /className="native-popover app-menu composer-run-menu"/);
+  assert.match(input, /overflow: "hidden", minWidth: Math\.min\(240, menuWidth\), maxWidth: menuWidth,/);
+  assert.match(input, /const menuWidth = Math\.min\(320, Math\.max\(0, vw - 24\)\);/);
+  assert.match(input, /maxHeight: maxH, display: "flex", flexDirection: "column",/);
+  assert.match(css, /\.composer-run-menu \{[^}]*max-width: calc\(100vw - 32px\);/);
+  assert.match(css, /\.composer-run-menu \.chat-access-row \{[^}]*display: flex;[^}]*min-width: 0;[^}]*white-space: normal;[^}]*overflow-wrap: anywhere;/);
+  assert.match(css, /\.composer-run-menu \.chat-access-summary \{[^}]*flex-direction: column;/);
   assert.match(css, /\.chat-access-switch\s*\{[^}]*flex: 0 0 auto;[^}]*width: 26px;[^}]*height: 15px;/);
 });
 

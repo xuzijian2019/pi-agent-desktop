@@ -219,16 +219,17 @@ for (const theme of ["light", "dark"] as const) for (const width of [1440, 390])
     await page.getByRole("button", { name: "Ask in new chat", exact: true }).click();
     const quoteDialog = page.getByRole("dialog", { name: "New chat about selected text", exact: true });
     await expect(quoteDialog).toBeVisible();
-    await expect(quoteDialog.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(`> ${quote}\n\n`);
+    await expect(quoteDialog.getByRole("textbox")).toHaveValue(`> ${quote}\n\n`);
     await expect(page.getByRole("button", { name: "Ask in side chat", exact: true })).toHaveCount(0);
     await capture(page, `quote-new-chat-${theme}-${width}.png`);
     await quoteDialog.getByRole("button", { name: "Close", exact: true }).click();
     await expect(input).toHaveValue(before);
     await input.fill("/recap");
-    await expect(page.locator(".composer-completion-body.is-slash")).toContainText("recap");
+    await expect(page.locator(".app-suggestion-menu:has(section)")).toContainText("recap");
     await input.fill("/side");
-    await expect(page.locator(".composer-completion-body.is-slash")).not.toContainText("/side");
+    await expect(page.locator(".app-suggestion-menu:has(section)")).not.toContainText("/side");
     await input.fill("");
+    await capture(page, `existing-composer-empty-${theme}-${width}.png`);
 
     await page.keyboard.press("Control+,");
     const settings = page.locator(".settings-dialog-surface");
@@ -295,12 +296,12 @@ for (const theme of ["light", "dark"] as const) for (const width of [1440, 390])
     await input.fill("Unsent draft remains editable during the run.\n".repeat(4));
     await contained(input, width);
     await expect(input).toBeInViewport();
-    await contained(page.locator(".composer-queue-strip"), width);
+    await contained(page.locator(".composer-queued-row").first().locator(".."), width);
     await capture(page, `long-queue-${theme}-${width}.png`);
-    const model = page.locator(".composer-model-trigger");
+    const model = page.locator(".model-selector > button");
     await expect(model).toBeEnabled();
     await model.click();
-    const menu = page.locator(".composer-model-panel");
+    const menu = page.locator(".model-selector [role=listbox]");
     await expect(menu).toBeVisible();
     await contained(menu, width);
     await expect(menu).toContainText("Offline fixture");
