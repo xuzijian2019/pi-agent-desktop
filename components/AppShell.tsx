@@ -43,6 +43,7 @@ import { useDesktopConnection } from "@/lib/desktop-connection";
 import { isTauriDesktop, setCloseQuitsNative } from "@/lib/desktop-native";
 import { useNativeContextMenu } from "@/hooks/useNativeContextMenu";
 import { DomContextMenuHost } from "./DomContextMenuHost";
+import { revealLabelKey } from "@/lib/file-context-menu";
 import { getFileName } from "@/lib/file-paths";
 import { isPathInside } from "@/lib/file-links";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
@@ -1312,7 +1313,17 @@ export function AppShell() {
     }
   }, [isMobile]);
   const handleOpenTasks = useCallback(() => openWorkspaceView("tasks"), [openWorkspaceView]);
-  const handleOpenScheduled = useCallback(() => openWorkspaceView("scheduled"), [openWorkspaceView]);
+  // The task the Scheduled page opens on; null opens its list. Bumped per open so
+  // picking the same task again from the Tasks calendar still remounts on it.
+  const [scheduledFocus, setScheduledFocus] = useState<{ taskId: string; seq: number } | null>(null);
+  const handleOpenScheduled = useCallback(() => {
+    setScheduledFocus(null);
+    openWorkspaceView("scheduled");
+  }, [openWorkspaceView]);
+  const handleOpenScheduledTask = useCallback((taskId: string) => {
+    setScheduledFocus((current) => ({ taskId, seq: (current?.seq ?? 0) + 1 }));
+    openWorkspaceView("scheduled");
+  }, [openWorkspaceView]);
   const handleOpenArtifacts = useCallback(() => openWorkspaceView("artifacts"), [openWorkspaceView]);
 
   // Validated and allow-listed like any project pick, which /api/models needs for the new folder.
@@ -2039,7 +2050,7 @@ export function AppShell() {
       <div
         ref={sidebarResizer.panelRef}
         id="session-sidebar"
-        inert={rightPanelFullWidth || (!sidebarOpen && !sidebarPeek)}
+        inert={rightPanelFullWidth || (!sidebarOpen && !sidebarPeek) || (isMobile && !mobileSidebarReady)}
         onMouseEnter={sidebarPeek ? holdSidebarPeek : undefined}
         onMouseMove={sidebarPeek ? holdSidebarPeek : undefined}
         onMouseLeave={sidebarPeek ? () => closeSidebarPeekAfter(SIDEBAR_PEEK_LEAVE_MS) : undefined}
@@ -2305,11 +2316,14 @@ export function AppShell() {
           <TasksView
             sessions={sessionCatalog}
             runningSessionIds={runningSessionIds}
-            onOpenSession={(sessionId) => void handleOpenSession(sessionId)}
+            onOpenSession={(sessionId, entryId) => void handleOpenSession(sessionId, entryId)}
+            onOpenScheduledTask={handleOpenScheduledTask}
           />
         )}
         {scheduledOpen && (
           <ScheduledView
+            key={scheduledFocus ? `task-${scheduledFocus.seq}` : "list"}
+            initialTaskId={scheduledFocus?.taskId}
             projectRoots={availableProjectRoots}
             defaultCwd={isChatWorkspaceActive ? null : selectedSession?.cwd ?? newSessionCwd ?? activeCwd}
             onBrowseFolder={desktopMode ? handleBrowseScheduledFolder : undefined}
@@ -2529,7 +2543,9 @@ export function AppShell() {
                           const path = activeFileTab?.filePath;
                           if (!path) return;
                           setFileActionsMenuOpen(false);
-                          void import("@/lib/desktop-native").then(({ openPathNative }) => openPathNative(path));
+                          void import("@/lib/desktop-native").then(({ openPathNative }) => openPathNative(path)).catch((error: unknown) => {
+                            appNotify.error({ message: translate("fileViewer.actionFailed", { error: error instanceof Error ? error.message : String(error) }) });
+                          });
                         }}
                       >
                         <span className="file-action-menu-icon" aria-hidden="true">
@@ -2539,7 +2555,7 @@ export function AppShell() {
                             <line x1="10" y1="14" x2="21" y2="3" />
                           </svg>
                         </span>
-                        <span>{translate("contextPanel.openExternally")}</span>
+                        <span>{translate("fileViewer.openDefaultApp")}</span>
                       </button>
                       <button
                         type="button"
@@ -2549,7 +2565,9 @@ export function AppShell() {
                           const path = activeFileTab?.filePath;
                           if (!path) return;
                           setFileActionsMenuOpen(false);
-                          void import("@/lib/desktop-native").then(({ revealItemInDirNative }) => revealItemInDirNative(path));
+                          void import("@/lib/desktop-native").then(({ revealItemInDirNative }) => revealItemInDirNative(path)).catch((error: unknown) => {
+                            appNotify.error({ message: translate("fileViewer.actionFailed", { error: error instanceof Error ? error.message : String(error) }) });
+                          });
                         }}
                       >
                         <span className="file-action-menu-icon" aria-hidden="true">
@@ -2557,7 +2575,7 @@ export function AppShell() {
                             <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
                           </svg>
                         </span>
-                        <span>{translate("contextPanel.revealInFinder")}</span>
+                        <span>{translate(revealLabelKey(desktopChrome.platform))}</span>
                       </button>
                     </>
                   )}

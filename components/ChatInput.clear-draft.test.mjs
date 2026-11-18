@@ -20,16 +20,19 @@ test("explicit clear retires prepared sends and queue submissions without sendin
     const started = Promise.withResolvers();
     const calls = [];
     const version = { current: 0 };
-    const run = callback(name, {
+    const context = {
       invalidDraftImages: false, orphanedPaste: false, draftKey: "a", hydratedDraftKey: "a", persistenceStatus: "saved",
       value: "original", pastedTexts: [], attachedImages: [], attachedFilesRef: { current: [] },
       splicePastedTexts: text => text, dispatchBuiltin: async () => false, isStreaming: false, workspaceUnavailable: null,
-      onBuiltinCommand: undefined, draftKeyRef: { current: "a" }, preparingRef: { current: false },
+      onBuiltinCommand: undefined, draftKeyRef: { current: "a" },
+      submissionPendingRef: { current: false }, submissionGenerationRef: { current: 0 },
       attachmentClearVersionRef: version, snapshotRef: { current: () => ({ value: "original" }) },
       prepare() { started.resolve(); return pending.promise; }, setPreparationError() {},
       onSend: (...args) => calls.push(args), onSteer: (...args) => calls.push(args), onFollowUp: (...args) => calls.push(args),
       clearInput: () => calls.push("clear"),
-    });
+    };
+    context.submitPreparedMessage = callback("submitPreparedMessage", context);
+    const run = callback(name, context);
     const finished = run("steer");
     await started.promise;
     version.current += 1;
