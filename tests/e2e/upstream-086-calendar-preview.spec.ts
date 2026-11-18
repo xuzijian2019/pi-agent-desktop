@@ -101,10 +101,21 @@ for (const width of [1280, 390]) {
     await page.addInitScript(() => { localStorage.setItem("pi-locale", "en"); localStorage.setItem("pi-theme", "auto"); });
     await page.emulateMedia({ colorScheme: "light" });
     const submissions: string[] = [];
-    // A preview button must not issue an agent command, even if a provider is configured.
+    // Permit only the composer's read-only tool discovery. Every sending,
+    // mutating, unknown or malformed POST must still fail this draft-only test.
     await page.route(/\/api\/agent\/[^/]+(?:\?.*)?$/, async route => {
       if (route.request().method() === "POST") {
-        submissions.push(route.request().postData() ?? "");
+        const body = route.request().postData() ?? "";
+        let command: unknown;
+        try { command = JSON.parse(body); } catch { /* Recorded below as an unexpected command. */ }
+        if (command && typeof command === "object" && !Array.isArray(command)
+          && Object.keys(command).length === 1 && "type" in command && command.type === "get_tools") {
+          // Match POST /api/agent/[id]'s success envelope without starting an
+          // AgentSession merely to enumerate tools for this offline fixture.
+          await route.fulfill({ status: 200, json: { success: true, data: [] } });
+          return;
+        }
+        submissions.push(body);
         await route.fulfill({ status: 409, json: { error: "Unexpected agent submission in preview-only fixture" } });
       } else await route.continue();
     });

@@ -39,3 +39,9 @@
 ## Remaining boundaries
 - Web/dev-server evidence is not production packaged-runtime acceptance. No Mac native/Tauri/AppKit, signing, binary build or packaged-app acceptance performed or required by the owner's current scope. Rust placeholder/payload CI does not change that boundary.
 - Draft PR only. Main merge requires later explicit approval for that PR. No direct main push, auto-merge, force-push, rebase, squash, tag or release.
+
+## First CI and browser evidence
+- Published head 5f135796f248052574070bef93a0130df540d0b5, exact local tree 0c3e42dc397626608b96abe300bd244d90279981 and two intended parents. Existing GitHub connector published the tree because the cloud CLI had no credentials; no credentials created or exposed.
+- CI run 44209396487 checked out synthetic merge 9f94a15789431de4d97c200fde40aa05be95b911. Eight jobs successful; E2E cancelled around the existing 20-minute limit after completing item 89 of 99, without a full summary. Browser dependency installation consumed 3m38s. No timeout or unrelated CI policy change made.
+- All four new calendar cases and narrow preview case passed. The real nested-prompt/streaming security fixture passed (3 cases, zero skips). Desktop preview failed only because its fixture counted the normal read-only get_tools query as a mutation. The fixture now supplies a normal empty-tool response solely for the exact get_tools request; unknown/malformed/extra-field requests and all mutations still fail the no-submission assertion.
+- Opened and inspected actual CI screenshots: calendar desktop light detail/dark month, narrow light detail/dark agenda, and all four theme-aware preview desktop/phone light/dark images. Calendar content is readable, long titles wrap/ellipsis, detail actions fit, preview state survives theme changes. Dev-only Next indicator overlaps the extreme lower-left area on phone as in prior runs; not packaged runtime evidence. Final-head rerun remains required.
