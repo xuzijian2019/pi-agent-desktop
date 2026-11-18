@@ -693,11 +693,11 @@ function forkSendContext(value, images, calls, handled) {
     isBareMcpCommand,
     workspaceUnavailable: null,
     draftKeyRef: { current: null },
-    preparingRef: { current: false },
     attachmentClearVersionRef: { current: 0 },
     setPreparationError() {},
     snapshotRef: { current: () => ({ value }) },
     prepare: async () => ({ text: value, images }),
+    async submitPreparedMessage(images, submit) { submit(value, images.length ? images : undefined); calls.cleared += 1; },
     clearInput() { calls.cleared += 1; },
   };
 }
@@ -1024,11 +1024,11 @@ test("handleSend sends exactly once and routes builtin commands through the pend
       dispatchBuiltin: async () => false,
       onBuiltinCommand: async () => { builtinCalls += 1; return { handled: builtinHandled }; },
       draftKeyRef: { current: null },
-      preparingRef: { current: false },
-      attachmentClearVersionRef: { current: 0 },
+        attachmentClearVersionRef: { current: 0 },
       setPreparationError() {},
       snapshotRef: { current: () => ({ value }) },
       prepare: async () => ({ text: resolved ?? value.trim(), images: attachedImages }),
+      async submitPreparedMessage(images, submit) { submit(resolved ?? value.trim(), images.length ? images : undefined); cleared += 1; },
       onSend(message, images) { sends += 1; handler.sent = { message, images }; },
       clearInput() { cleared += 1; },
     });
@@ -1230,4 +1230,119 @@ test("quote insertion preserves surrounding draft and leaves the caret after the
   assert.equal(selection[0], value.indexOf("\nTail"));
   assert.equal(selection[1], selection[0]);
   assert.equal(ta.style.height, "200px", "upstream caps the editor height while preserving all quoted text and the caret");
+});
+
+test("prepared submission shares upstream single-flight and generation guards without losing fork drafts", async () => {
+  function fixture() {
+    let release;
+    const pending = new Promise(resolve => { release = resolve; });
+    const images = [];
+    const draft = { value: "original", images, files: [{ text: "old" }], texts: [], references: { target: { id: "original-id" } } };
+    const state = {
+      JSON, draftKey: "a", draftKeyRef: { current: "a" },
+      submissionPendingRef: { current: false }, submissionGenerationRef: { current: 0 },
+      attachmentClearVersionRef: { current: 0 },
+      snapshotRef: { current: () => draft },
+      async prepare() {
+        // The actual prepare() snapshots before the first await, retaining pasted
+        // text/files/reference selection and the chat-only preparation policy.
+        const captured = JSON.parse(JSON.stringify(draft));
+        await pending;
+        return { text: `${captured.value}:${captured.references.target.id}:${captured.files[0].text}`, images: captured.images };
+      },
+      errors: [], setPreparationError(error) { state.errors.push(error); },
+      clearInput() { state.clears += 1; }, clears: 0,
+    };
+    const submit = chatInputCallback("submitPreparedMessage", state);
+    const sent = [];
+    return { state, draft, images, release, sent, run: () => submit(images, text => sent.push(text)) };
+  }
+  const concurrent = fixture();
+  const first = concurrent.run();
+  await concurrent.run();
+  concurrent.release(); await first;
+  assert.deepEqual(concurrent.sent, ["original:original-id:old"]);
+  assert.equal(concurrent.state.clears, 1);
+  assert.equal(concurrent.state.submissionPendingRef.current, false);
+
+  for (const change of [
+    draft => { draft.value = "new text"; },
+    draft => { draft.images = [{}]; },
+    draft => { draft.files = [{ text: "new file" }]; },
+    draft => { draft.texts = [{ token: "paste", content: "new paste" }]; },
+    draft => { draft.references.target.id = "new-id"; },
+    draft => { draft.setup = { effort: "high" }; },
+  ]) {
+    const f = fixture(); const work = f.run(); change(f.draft);
+    f.release(); await work;
+    assert.deepEqual(f.sent, ["original:original-id:old"], "submission retains its full preparation snapshot");
+    assert.equal(f.state.clears, 0, "new draft content and setup survive completion");
+  }
+  for (const invalidate of [
+    state => { state.draftKeyRef.current = "b"; },
+    state => { state.submissionGenerationRef.current += 1; state.submissionPendingRef.current = false; },
+    state => { state.attachmentClearVersionRef.current += 1; },
+  ]) {
+    const f = fixture(); const work = f.run(); invalidate(f.state); f.release(); await work;
+    assert.equal(f.sent.length, 0); assert.equal(f.state.clears, 0);
+    assert.equal(f.state.submissionPendingRef.current, false);
+  }
+  const mixed = fixture();
+  const calls = { builtin: [], cleared: 0 };
+  const context = {
+    ...forkSendContext("original", mixed.images, calls, false),
+    ...mixed.state, hydratedDraftKey: "a", attachedFilesRef: { current: mixed.draft.files },
+    isStreaming: false,
+    submitPreparedMessage: chatInputCallback("submitPreparedMessage", mixed.state),
+    onSend: text => mixed.sent.push(text), onSteer: text => mixed.sent.push(text),
+    onFollowUp: text => mixed.sent.push(text), onPromptWithStreamingBehavior: null,
+  };
+  const send = chatInputCallback("handleSend", context);
+  const queue = chatInputCallback("sendQueued", context);
+  const normal = send(); await Promise.resolve();
+  await queue("steer"); await queue("followup");
+  mixed.release(); await normal;
+  assert.deepEqual(mixed.sent, ["original:original-id:old"]);
+  assert.equal(mixed.state.clears, 1);
+
+  const old = fixture(); const oldWork = old.run();
+  old.state.submissionGenerationRef.current += 1;
+  old.state.submissionPendingRef.current = true;
+  old.release(); await oldWork;
+  assert.equal(old.state.submissionPendingRef.current, true, "old completion cannot unlock a newer submission");
+  assert.equal(old.sent.length, 0);
+
+  const restored = fixture();
+  let editor = "original";
+  restored.state.clearInput = () => { editor = ""; };
+  const restoreWork = chatInputCallback("submitPreparedMessage", restored.state)(
+    restored.images, () => { editor = `rejected${editor ? `\n\n${editor}` : ""}`; }, true,
+  );
+  restored.release(); await restoreWork;
+  assert.equal(editor, "rejected", "queue clears before a synchronous rejection restores the draft");
+
+  const failed = fixture();
+  failed.state.prepare = async () => { throw new Error("network"); };
+  await failed.run();
+  assert.equal(failed.state.submissionPendingRef.current, false);
+  assert.equal(failed.state.errors.at(-1), "Error: network");
+  assert.equal(failed.state.clears, 0);
+  failed.state.prepare = async () => ({ text: "ok", images: [] });
+  await failed.run();
+  assert.deepEqual(failed.sent, ["ok"]);
+
+  const staleFailure = fixture();
+  let rejectOld;
+  staleFailure.state.prepare = () => new Promise((_, reject) => { rejectOld = reject; });
+  const staleWork = staleFailure.run();
+  staleFailure.state.submissionGenerationRef.current += 1;
+  staleFailure.state.submissionPendingRef.current = true;
+  rejectOld(new Error("stale failure")); await staleWork;
+  assert.deepEqual(staleFailure.state.errors, [""], "old errors cannot overwrite a newer session's preparation state");
+  assert.equal(staleFailure.state.submissionPendingRef.current, true);
+
+  const source = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
+  assert.match(source, /useEffect\(\(\) => \(\) => \{\s*submissionGenerationRef\.current \+= 1;\s*submissionPendingRef\.current = false;\s*\}, \[draftKey\]\)/);
+  assert.match(source, /const draft = snapshotRef\.current\(\); const owner = draftKeyRef\.current/);
+  assert.match(source, /const prepared = chatOnly[\s\S]*?: await prepareOutgoingMessage\(draft, fetch, controller\.signal\)/);
 });

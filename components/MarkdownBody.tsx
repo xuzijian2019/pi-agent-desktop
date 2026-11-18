@@ -14,6 +14,7 @@ import { isAudioPath, isVideoPath } from "@/lib/file-types";
 import { copyText } from "@/lib/clipboard";
 import { ImagePreview } from "./ImagePreview";
 import { MermaidBlock, CodeBlock } from "./MermaidBlock";
+import { PreviewPromptContext } from "./PreviewPromptContext";
 import { HtmlPreviewBlock } from "./HtmlPreviewBlock";
 import { htmlPreviewKind } from "@/lib/html-preview";
 import { ArtifactCard } from "./ArtifactCard";
@@ -40,6 +41,8 @@ interface MarkdownBodyProps {
   onNavigateLink?: (href: string) => void;
   /** Render `:::artifact{...}` blocks as artifact cards (assistant text only). */
   artifacts?: boolean;
+  /** Explicitly scopes nested preview requests; null blocks access to a mounted conversation. */
+  onPreviewPrompt?: ((text: string) => void) | null;
 }
 
 function MarkdownImage({
@@ -319,7 +322,7 @@ function buildComponents(
 
 // Memoized: markdown parsing + highlighting is the most expensive render work
 // in the app, so parent re-renders with identical props must be free.
-export const MarkdownBody = memo(function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile, onNavigateLink, keepLineBreaks, keepTextLayout, artifacts }: MarkdownBodyProps) {
+export const MarkdownBody = memo(function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile, onNavigateLink, keepLineBreaks, keepTextLayout, artifacts, onPreviewPrompt }: MarkdownBodyProps) {
   const markdown = useStreamingMarkdownText(children, Boolean(isStreaming));
   const normalizedMarkdown = useMemo(
     () => normalizeDisplayMath(artifacts && markdown.includes(":::artifact") ? encodeArtifactsForMarkdown(markdown) : markdown),
@@ -349,7 +352,9 @@ export const MarkdownBody = memo(function MarkdownBody({ children, className, is
 
   return (
     <div className={["markdown-body", className].filter(Boolean).join(" ")}>
-      {body}
+      {onPreviewPrompt === undefined ? body : (
+        <PreviewPromptContext.Provider value={onPreviewPrompt}>{body}</PreviewPromptContext.Provider>
+      )}
     </div>
   );
 });

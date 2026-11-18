@@ -983,7 +983,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [draftSetup, setDraftSetup] = useState<TaskSetup>();
   const [referenceSelections, setReferenceSelections] = useState<Record<string, ReferenceSelection>>({});
   const [preparationError, setPreparationError] = useState("");
-  const preparingRef = useRef(false);
   const preparationRef = useRef<{ key: string; result: PreparedOutgoing } | null>(null);
   const preparationController = useRef<AbortController | null>(null);
   const snapshot = useCallback((): ChatDraft => ({ value: valueRef.current, images: attachedImagesRef.current.map(imageToDraftImage), files: attachedFilesRef.current, texts: pastedTextsToDraftTexts(pastedTextsRef.current), setup: draftSetup, references: { ...Object.fromEntries([...sessionMentionTargetsRef.current].map(([label, id]) => [label, { id }])), ...referenceSelections } }), [draftSetup, referenceSelections, sessionMentionTargetsRef]);
@@ -1556,6 +1555,44 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     return true;
   }, [attachedImages.length, isStreaming, onModelChange, modelList, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap, onBuiltinCommand, onViewCommand, clearInput, t]);
 
+  const submissionPendingRef = useRef(false);
+  const submissionGenerationRef = useRef(0);
+  useEffect(() => () => {
+    submissionGenerationRef.current += 1;
+    submissionPendingRef.current = false;
+  }, [draftKey]);
+
+  // Upstream's single-flight gate wraps the fork's full preparation pipeline:
+  // pasted text, attachment snapshots, chat-only policy and reference recovery.
+  const submitPreparedMessage = useCallback(async (
+    images: AttachedImage[],
+    submit: (message: string, images?: AttachedImage[]) => void,
+    clearBeforeSubmit = false,
+  ) => {
+    if (submissionPendingRef.current || draftKeyRef.current !== draftKey) return;
+    submissionPendingRef.current = true;
+    const generation = submissionGenerationRef.current;
+    const clearVersion = attachmentClearVersionRef.current;
+    const original = JSON.stringify(snapshotRef.current());
+    setPreparationError("");
+    try {
+      const prepared = await prepare();
+      if (generation !== submissionGenerationRef.current
+        || draftKeyRef.current !== draftKey
+        || clearVersion !== attachmentClearVersionRef.current) return;
+      const unchanged = () => JSON.stringify(snapshotRef.current()) === original;
+      // Queue handlers may synchronously restore a rejected submission.
+      if (clearBeforeSubmit && unchanged()) clearInput();
+      submit(prepared.text, prepared.images.length ? images : undefined);
+      if (!clearBeforeSubmit && unchanged()) clearInput();
+    } catch (error) {
+      if (generation === submissionGenerationRef.current && draftKeyRef.current === draftKey
+        && clearVersion === attachmentClearVersionRef.current) setPreparationError(String(error));
+    } finally {
+      if (generation === submissionGenerationRef.current) submissionPendingRef.current = false;
+    }
+  }, [draftKey, clearInput, prepare]);
+
   const handleSend = useCallback(async () => {
     if (invalidDraftImages || orphanedPaste || (draftKey && hydratedDraftKey !== draftKey) || persistenceStatus === "conflict") return;
     const msg = splicePastedTexts(value, pastedTexts).trim();
@@ -1577,16 +1614,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (isStreaming) return;
     // A run cannot start in a cwd that is gone; keep the draft until it is back or another project is picked.
     if (workspaceUnavailable) return;
-    if (preparingRef.current) return;
-    preparingRef.current = true; setPreparationError("");
-    try {
-      const original = JSON.stringify(snapshotRef.current());
-      const prepared = await prepare();
-      if (draftKeyRef.current !== draftKey || clearVersion !== attachmentClearVersionRef.current) return;
-      onSend(prepared.text, prepared.images.length ? attachedImages : undefined);
-      if (JSON.stringify(snapshotRef.current()) === original) clearInput();
-    } catch (e) { setPreparationError(String(e)); } finally { preparingRef.current = false; }
-  }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, workspaceUnavailable, isStreaming, onBuiltinCommand, onSend, clearInput, prepare, dispatchBuiltin]);
+    await submitPreparedMessage(attachedImages, onSend);
+  }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, workspaceUnavailable, isStreaming, onBuiltinCommand, onSend, clearInput, submitPreparedMessage, dispatchBuiltin]);
 
   const slashQuery = !compact && value.startsWith("/") && !/\s/.test(value.slice(1))
     ? value.slice(1).toLowerCase()
@@ -1840,20 +1869,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         return;
       }
     }
-    if (preparingRef.current) return;
-    preparingRef.current = true; setPreparationError("");
-    try {
-      const original = JSON.stringify(snapshotRef.current());
-      const prepared = await prepare();
-      if (draftKeyRef.current !== draftKey || clearVersion !== attachmentClearVersionRef.current) return;
+    const hasFiles = attachedFilesRef.current.length > 0;
+    await submitPreparedMessage(attachedImages, (message, images) => {
       const streamingBehavior = mode === "steer" ? "steer" : "followUp";
-      const images = prepared.images.length ? attachedImages : undefined;
-      if (mode === "steer" && !attachedFilesRef.current.length && msg.startsWith("/") && onPromptWithStreamingBehavior) onPromptWithStreamingBehavior(prepared.text, streamingBehavior, images);
-      else if (mode === "steer" && onSteer) onSteer(prepared.text, images);
-      else if (onFollowUp) onFollowUp(prepared.text, images);
-      if (JSON.stringify(snapshotRef.current()) === original) clearInput();
-    } catch (e) { setPreparationError(String(e)); } finally { preparingRef.current = false; }
-  }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, onPromptWithStreamingBehavior, onSteer, onFollowUp, onBuiltinCommand, clearInput, prepare, dispatchBuiltin]);
+      if (mode === "steer" && !hasFiles && msg.startsWith("/") && onPromptWithStreamingBehavior) onPromptWithStreamingBehavior(message, streamingBehavior, images);
+      else if (mode === "steer" && onSteer) onSteer(message, images);
+      else if (onFollowUp) onFollowUp(message, images);
+    }, true);
+  }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, onPromptWithStreamingBehavior, onSteer, onFollowUp, onBuiltinCommand, clearInput, submitPreparedMessage, dispatchBuiltin]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {

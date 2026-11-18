@@ -5,6 +5,6 @@
   },
   "pi-web": {
     "version": "0.15.0",
-    "reason": "Desktop 0.8.5 ships pi-web 0.15.0 (merged in 0.8.3); upstream 0.16.0 (2026-11-12) will be merged separately after its UI changes are reviewed."
+    "reason": "Desktop 0.8.6 ships pi-web 0.15.0 (merged in 0.8.3); upstream 0.16.0 (2026-11-12) will be merged separately after its UI changes are reviewed."
   }
 }

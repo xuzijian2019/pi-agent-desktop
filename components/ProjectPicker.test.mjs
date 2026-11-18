@@ -10,6 +10,9 @@ const jiti = createJiti(import.meta.url, {
 });
 const { ProjectPicker, selectVisibleProjects, shouldShowProjectFilter } = await jiti.import("./ProjectPicker.tsx");
 
+const { I18nProvider } = await jiti.import("@/hooks/useI18n");
+const renderPicker = (element) => renderToStaticMarkup(React.createElement(I18nProvider, null, element));
+
 const many = Array.from({ length: 12 }, (_, i) => `/work/project-${i}`);
 
 const baseProps = {
@@ -60,7 +63,7 @@ test("panel variant renders rows and actions statically, without an open state",
   // Regression: inside the add-project modal the popover was absolutely
   // positioned and clipped by the shell's overflow: hidden, leaving only the
   // filter box visible. The panel variant must render everything inline.
-  const html = renderToStaticMarkup(React.createElement(ProjectPicker, { ...baseProps, variant: "panel" }));
+  const html = renderPicker(React.createElement(ProjectPicker, { ...baseProps, variant: "panel" }));
   assert.match(html, /Filter projects…/);
   assert.match(html, /\/work\/project-0/);
   assert.match(html, /Use default directory/);
@@ -69,7 +72,7 @@ test("panel variant renders rows and actions statically, without an open state",
 });
 
 test("panel variant omits the filter box while the list fits under the cap", () => {
-  const html = renderToStaticMarkup(React.createElement(ProjectPicker, {
+  const html = renderPicker(React.createElement(ProjectPicker, {
     ...baseProps,
     recentProjects: many.slice(0, 3),
     variant: "panel",
@@ -80,7 +83,7 @@ test("panel variant omits the filter box while the list fits under the cap", () 
 });
 
 test("block variant keeps its popover closed until triggered", () => {
-  const html = renderToStaticMarkup(React.createElement(ProjectPicker, baseProps));
+  const html = renderPicker(React.createElement(ProjectPicker, baseProps));
   assert.match(html, /Select project…/);
   assert.ok(!html.includes("Open Folder…"));
   assert.ok(!html.includes("/work/project-0"));
@@ -88,7 +91,7 @@ test("block variant keeps its popover closed until triggered", () => {
 
 
 test("panel projects use the same semantic selection marker as the shared menu", () => {
-  const html = renderToStaticMarkup(React.createElement(ProjectPicker, {
+  const html = renderPicker(React.createElement(ProjectPicker, {
     ...baseProps, selectedProject: "/work/project-2", variant: "panel",
   }));
   assert.equal((html.match(/aria-current="true"/g) ?? []).length, 1);

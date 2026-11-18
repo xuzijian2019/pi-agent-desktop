@@ -85,7 +85,8 @@ test("upstream project menu preserves disambiguation and safe mention pipeline",
   assert.match(palette, /el\.style\.height = `\$\{el\.scrollHeight\}px`/);
   assert.doesNotMatch(palette, /Math\.min\(el\.scrollHeight, 200\)/);
   assert.match(source, /sessionMentionTargetsRef\.current = new Map\(Object\.entries\(draft\?\.references/);
-  assert.match(source, /if \(preparingRef\.current\) return;[\s\S]*?onSend\(prepared\.text,/);
+  assert.match(source, /if \(submissionPendingRef\.current \|\| draftKeyRef\.current !== draftKey\) return;[\s\S]*?const prepared = await prepare\(\);[\s\S]*?submit\(prepared\.text,/);
+  assert.match(source, /await submitPreparedMessage\(attachedImages, onSend\)/);
   assert.doesNotMatch(source, /onSend\(resolvedMessage/);
 });
 
@@ -93,13 +94,16 @@ test("prepared composer sends remain single-shot and never clear a newer draft",
   const ts = (await import("typescript")).default;
   const { Script } = await import("node:vm");
   const ast = ts.createSourceFile("ChatInput.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  function findSend(node) {
-    if (ts.isVariableDeclaration(node) && node.name.getText(ast) === "handleSend") return node.initializer.arguments[0];
-    return ts.forEachChild(node, findSend);
+  function findCallback(node, name) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(ast) === name) return node.initializer.arguments[0];
+    return ts.forEachChild(node, child => findCallback(child, name));
   }
-  const callback = findSend(ast);
+  const callback = findCallback(ast, "handleSend");
   assert.ok(callback, "actual composer send callback is present");
   const script = new Script(ts.transpileModule(callback.getText(ast), { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText);
+  const preparationCallback = findCallback(ast, "submitPreparedMessage");
+  assert.ok(preparationCallback, "actual shared preparation callback is present");
+  const preparationScript = new Script(ts.transpileModule(preparationCallback.getText(ast), { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText);
   for (const scenario of ["unchanged", "edited", "switched"]) {
     let resolve;
     const preparation = new Promise((done) => { resolve = done; });
@@ -110,15 +114,17 @@ test("prepared composer sends remain single-shot and never clear a newer draft",
     let prepareCount = 0;
     let draft = { value: "original" };
     const draftKeyRef = { current: "a" };
-    const handler = script.runInNewContext({
+    const context = {
       invalidDraftImages: false, orphanedPaste: false, draftKey: "a", hydratedDraftKey: "a", persistenceStatus: "saved",
       attachedFilesRef: { current: [] }, value: "original", pastedTexts: [], attachedImages: [], isStreaming: false, workspaceUnavailable: false,
       splicePastedTexts: (text) => text, dispatchBuiltin: async () => false, onBuiltinCommand: undefined,
-      draftKeyRef, preparingRef: { current: false }, attachmentClearVersionRef: { current: 0 }, snapshotRef: { current: () => draft },
+      draftKeyRef, submissionPendingRef: { current: false }, submissionGenerationRef: { current: 0 }, attachmentClearVersionRef: { current: 0 }, snapshotRef: { current: () => draft },
       setPreparationError(message) { assert.equal(message, ""); },
       prepare() { prepareCount += 1; started(); return preparation; },
       onSend(...args) { calls.push(args); }, clearInput() { clearCount += 1; },
-    });
+    };
+    context.submitPreparedMessage = preparationScript.runInNewContext(context);
+    const handler = script.runInNewContext(context);
     const first = handler();
     const duplicate = handler();
     await preparing;

@@ -184,8 +184,15 @@ jobs:
         continue-on-error: true
 
   e2e:
+    name: e2e (${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Keep every test and the existing limit; independent runners avoid the
+    # expanding UI suite exhausting its budget after browser setup/build.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -195,14 +202,14 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run build
-      - run: npm run test:e2e
+      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/2
         env:
           E2E_SERVER_MODE: start
       # Successful screenshots are retained too: UI merges need visual review.
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: e2e-validation
+          name: e2e-validation-${{ matrix.shard }}
           path: |
             test-results/
             playwright-report/
