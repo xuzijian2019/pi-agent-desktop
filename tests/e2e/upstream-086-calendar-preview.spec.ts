@@ -22,6 +22,11 @@ async function seed(request: APIRequestContext, reply: string) {
   ];
   await writeFile(path.join(directory, `${timestamp.replaceAll(":", "-")}_${id}.jsonl`), entries.map(entry => JSON.stringify(entry)).join("\n") + "\n");
   await expect.poll(async () => (await (await request.get("/api/sessions?force=1")).json()).sessions.some((row: { id: string }) => row.id === id)).toBe(true);
+  // Sessions are written outside the API, so the independently cached file
+  // roots may lag the fresh session catalogue. Wait for the real cwd gate
+  // before opening UI routes; otherwise a transient 403 creates a dev error
+  // badge that covers the narrow calendar's Open session button.
+  await expect.poll(async () => (await request.get(`/api/worktrees?cwd=${encodeURIComponent(cwd)}`)).status()).toBe(200);
   return { id, cwd, title };
 }
 
