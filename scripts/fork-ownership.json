@@ -60,9 +60,9 @@
     },
     "components/ChatWindow.tsx": {
       "risk": "high",
-      "drift": 2064,
+      "drift": 2078,
       "reason": "Redesigned empty state — the new-session branding header (app icon + PRODUCT_NAME) is removed and only the update chip remains. Overlay composer and recap stay fork-owned; side chat was removed by user request on 2026-10-24. Kept deliberately.",
-      "structuralDrift": 1778,
+      "structuralDrift": 1792,
       "disposition": "accepted"
     },
     "hooks/useTheme.ts": {
@@ -74,9 +74,9 @@
     },
     "components/ChatInput.tsx": {
       "risk": "high",
-      "drift": 2482,
+      "drift": 2637,
       "reason": "Composer chrome restyle. Phase 3 stream H2 and Phase 4 part C together replaced 134 of the 136 inline style objects with classes in app/native-theme.css; the 2 that remain carry a measured popover position. Structural drift is 1044 against 1002 on main: +5 from the part C checkpoint (the per-tone banner colour constant and the queued-message recall button's pointer handlers), +3 from diff realignment across the remaining conversions, and +34 from dropping the onMouseEnter/onMouseLeave colour hacks on the composer controls, which the classifier scores as structural because it deletes upstream lines. That last 34 is isolated in a single commit. Saved-draft restoration adds 4 structural lines, bringing the current measured structural drift to 1015. Upstream changed this file in v0.8.1, and components/ChatInput*.test.mjs plus tests/e2e/workbench.spec.ts cover it.",
-      "structuralDrift": 1885,
+      "structuralDrift": 2036,
       "disposition": "accepted"
     },
     "components/MessageView.tsx": {
@@ -102,9 +102,9 @@
     },
     "lib/rpc-manager.ts": {
       "risk": "high",
-      "drift": 969,
+      "drift": 997,
       "reason": "Small fork edit in a file upstream changes often. Workbench activity tracking was removed on 2026-09-25, which dropped structural drift back under the high threshold. Upstream/main 26eb188 (2026-10-04 merge, round 1) added running-state broadcasts and the built-in MCP extension on the desktop side, which pi-web 96966e5 does not have; measured against that baseline this lifts structural drift to 269. Still accepted.",
-      "structuralDrift": 969,
+      "structuralDrift": 997,
       "disposition": "accepted"
     },
     "components/BranchNavigator.tsx": {
@@ -158,9 +158,9 @@
     },
     "hooks/useAgentSession.ts": {
       "risk": "high",
-      "drift": 1901,
+      "drift": 1910,
       "reason": "Fork session lifecycle guards plus editable composer outbox submission, queue events and per-message edit/send/delete. Restoring an edited pending message must target the original session draft and preserve current input. Never replace with upstream direct followUp submission.",
-      "structuralDrift": 1901,
+      "structuralDrift": 1910,
       "disposition": "accepted"
     },
     "next.config.ts": {

@@ -267,7 +267,7 @@ test("slow draft saves show feedback without moving the editor", async ({ page }
   await page.reload(); await expect(input).toHaveValue("slow save");
 });
 
-test("returning to New Session restores its unsent large paste", async ({ page, request }) => {
+test("returning to New Session restores its unsent inline paste token", async ({ page, request }) => {
   const cwd = `${WORK_ROOT}/new-draft-${randomUUID()}`; await mkdir(cwd, { recursive: true });
   await page.goto(`/?cwd=${encodeURIComponent(cwd)}`);
   const composer = page.getByRole("textbox", { name: "Message", exact: true });
@@ -278,7 +278,7 @@ test("returning to New Session restores its unsent large paste", async ({ page, 
   await expect.poll(async () => (await (await request.get(`/api/agent/${id}`)).json()).state?.isBashRunning).not.toBe(true);
   const newSession = page.getByRole("button", { name: "New Session", exact: true });
   await newSession.click(); await expect(composer).toBeEditable();
-  const pasted = "draft log content ".repeat(10_000);
+  const pasted = "draft log content ".repeat(80);
   await composer.evaluate((element, pasted) => {
     const clipboardData = new DataTransfer(); clipboardData.setData("text/plain", pasted);
     element.dispatchEvent(new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }));

@@ -32,7 +32,7 @@ function Gallery(){
   <ChatInput isStreaming={false} onSend={()=>{}} onAbort={()=>{}} toolPreset={tools} onToolPresetChange={setTools}
    thinkingLevel={thinking} onThinkingLevelChange={setThinking} savedDefaultThinkingLevel={defaultThinking} onSetDefaultThinkingLevel={level=>{setDefaultThinking(level);setThinking(level);}}
    model={model} defaultModel={defaultModel} modelList={[{id:'first',name:'First model',provider:'fixture'},{id:'second',name:'Second model',provider:'fixture'}]}
-   onModelChange={(provider,modelId)=>setModel({provider,modelId})} onSetDefaultModel={(provider,modelId)=>{setDefaultModel({provider,modelId});setModel({provider,modelId});}} inputHistory={['First prompt','Second prompt']}
+   onModelChange={(provider,modelId)=>setModel({provider,modelId})} onSetDefaultModel={(provider,modelId)=>{setDefaultModel({provider,modelId});setModel({provider,modelId});}} inputHistory={[{text:'First prompt',images:[]},{text:'Second prompt',images:[]}]}
    slashCommands={[{name:'help',source:'builtin',description:'First command'},{name:'status',source:'builtin',description:'Second command'},{name:'clear',source:'builtin',description:'Third command'}]}/>
   <div id="action-samples" style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:16,marginTop:20}}>
    {['app-topbar-more-menu','dom-context-menu'].map(kind=><div key={kind} data-menu-sample={kind} className={'native-popover app-menu '+kind} role="menu" style={{position:'static',width:'auto'}}>

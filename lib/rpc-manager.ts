@@ -11,6 +11,7 @@ import { userImageDisplayText, userMessageImageCount } from "./user-image-displa
 import { cwdMissingError } from "./missing-cwd";
 import { invalidateModelsCache } from "./models-cache";
 import { invalidateModelRuntimeWithExtensions } from "./model-runtime";
+import { llamaCppExtension } from "./pi-sdk-internals";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
 import { generateSessionTitle } from "./session-title";
 import { findDeferredModel, findDeferredStartupModel, rememberProviderModels } from "./deferred-provider-models";
@@ -103,6 +104,7 @@ import {
 } from "./chat-workspace";
 import { appendChatUnlock, readChatUnlocked } from "./chat-unlock";
 import { saveAttachedFilesToFolder } from "./chat-attachment-files";
+import { splitAttachedFiles } from "./chat-attachments";
 import { deriveSessionPolicy, type SessionPolicy } from "./session-policy";
 import { chatInstructionsSection, readChatSettings, resolveChatStartDefaults } from "./chat-settings";
 import { ChatFileGrants, isNetworkExposedServer } from "./chat-file-access";
@@ -1058,6 +1060,9 @@ export class AgentSessionWrapper {
     try {
       await this.inner.prompt(entry.message, {
         ...(entry.images?.length ? { images: entry.images } : {}),
+        // A parked submission must retain the same literal-text treatment as
+        // initial admission; otherwise compaction could re-enable /commands.
+        ...(splitAttachedFiles(entry.message).files.length > 0 ? { expandPromptTemplates: false } : {}),
         source: "rpc",
         streamingBehavior: entry.streamingBehavior ?? "steer",
         preflightResult: (result) => {
@@ -1480,6 +1485,14 @@ export class AgentSessionWrapper {
   }
 
   async send(command: Record<string, unknown>): Promise<unknown> {
+    // Normalize file-bearing legacy queue commands before taking the checkout
+    // lock. Re-entering send() from sendCommand() would acquire the same lock.
+    if ((command.type === "steer" || command.type === "follow_up")
+      && typeof command.message === "string"
+      && splitAttachedFiles(command.message).files.length > 0) {
+      await this.send({ ...command, type: "prompt", streamingBehavior: command.type === "steer" ? "steer" : "followUp" });
+      return null;
+    }
     if (["prompt", "steer", "follow_up"].includes(String(command.type))) {
       return withCheckoutGuard(this.cwd, () => this.sendCommand(command));
     }
@@ -1538,6 +1551,8 @@ export class AgentSessionWrapper {
         await this.composerQueue.sendNow(command.id as string);
         return { item: null, pending: this.composerQueue.snapshot(), pendingVersion: this.composerQueue.version };
       case "prompt": {
+        const literalAttachmentPrompt = typeof command.message === "string"
+          && splitAttachedFiles(command.message).files.length > 0;
         // A chat's folder keeps a copy of the text files attached to the message.
         if (this.chatFolder && typeof command.message === "string") {
           saveAttachedFilesToFolder(this.cwd, command.message);
@@ -1626,7 +1641,8 @@ export class AgentSessionWrapper {
           // extension's command skips this, and the built-in `/mcp`, which acts on the
           // registered servers, registers them without waiting (`mcpPromptPreparation()`).
           const mcpPreparation = this.mcpHost && !this.inner.isStreaming
-            ? mcpPromptPreparation(typeof command.message === "string" ? command.message : "", this.extensionCommandCandidates())
+            ? literalAttachmentPrompt ? "wait"
+              : mcpPromptPreparation(typeof command.message === "string" ? command.message : "", this.extensionCommandCandidates())
             : "none";
           if (this.mcpHost && mcpPreparation !== "none") {
             const controller = new AbortController();
@@ -1656,6 +1672,11 @@ export class AgentSessionWrapper {
             prompt = this.inner.prompt(command.message as string, {
               ...(promptImages?.length ? { images: promptImages } : {}),
               ...(streamingBehavior ? { streamingBehavior } : {}),
+              // Files are serialized as text, but the whole submission is model
+              // input. Use the SDK's option to suppress /extension dispatch and
+              // skill/template expansion, including outbox deliveries. Plain
+              // commands retain the SDK default; input hooks still run normally.
+              ...(literalAttachmentPrompt ? { expandPromptTemplates: false } : {}),
               source: "rpc",
               // Match pi's RPC contract: acknowledge only after synchronous prompt
               // validation and extension preflight have accepted the submission.
@@ -3856,6 +3877,7 @@ export async function startRpcSession(
         ?? (chatOnly ? subagentResources.appendSystemPrompt[0] ?? "" : undefined),
     }) : undefined;
     const subagentExtensionFactories = [
+      llamaCppExtension,
       ...(subagentCodemode ? [subagentCodemode] : []),
       ...(subagentMcp && subagentResources
         ? [...subagentMcp.extensions, createSubagentMcpPolicyExtension(() => subagentResources)]
@@ -3870,7 +3892,7 @@ export async function startRpcSession(
         ? {
             ...subagentExtensionLoaderOptions(subagentResources),
             ...skillsBinding!.loaderOptions,
-            ...(subagentExtensionFactories.length > 0 ? { extensionFactories: subagentExtensionFactories } : {}),
+            extensionFactories: subagentExtensionFactories,
             noPromptTemplates: true,
             noThemes: true,
             noContextFiles: true,
@@ -3889,6 +3911,7 @@ export async function startRpcSession(
               noContextFiles: true,
               systemPrompt: chatWorkspacePrompt(chatFilesEnabled, { folder: chatFolder, unlocked: chatUnlocked }),
               extensionFactories: [
+                llamaCppExtension,
                 ...(builtins?.extensions ?? []),
                 createArtifactGuideExtension(),
                 // A chat with a folder saves into it; only a legacy chat still saves to Downloads.
@@ -3918,6 +3941,7 @@ export async function startRpcSession(
         : {
             appendSystemPromptOverride: (base) => [...base, EDIT_TOOL_PRIORITY_INSTRUCTION],
             extensionFactories: [
+              llamaCppExtension,
               ...(builtins?.extensions ?? []),
               createReadOnlyMcpPolicyExtension(),
               createArtifactGuideExtension(),
