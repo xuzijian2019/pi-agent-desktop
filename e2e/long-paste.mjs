@@ -88,17 +88,30 @@ try {
   await page.getByRole("button", { name: "Clear text and attachments", exact: true }).click();
   await composer.press("ArrowUp");
   const history = page.locator(".app-suggestion-menu");
+  await history.waitFor();
+  const menu = await history.boundingBox();
+  const viewport = page.viewportSize();
+  assert.ok(menu && viewport && menu.x >= 0 && menu.y >= 0
+    && menu.x + menu.width <= viewport.width + 1
+    && menu.y + menu.height <= viewport.height + 1, "history menu must fit in the narrow viewport");
+  await page.screenshot({ path: `${out}/history-menu-320.png`, animations: "disabled" });
   await history.getByRole("button", { name: /Earlier image prompt/ }).click();
   assert.equal(await composer.inputValue(), "Earlier image prompt");
   const previewImage = page.locator(".chat-input-shell img[src^='data:image/png;base64,']");
   await previewImage.waitFor();
+  await previewImage.evaluate(image => image.decode());
   await history.waitFor({ state: "hidden" });
+  const firstImage = await previewImage.getAttribute("src");
+  assert.ok(firstImage);
   await page.getByRole("button", { name: "Clear text and attachments", exact: true }).click();
+  await previewImage.waitFor({ state: "detached" });
   await composer.press("ArrowUp");
   await history.getByRole("button", { name: /1 image/ }).click();
   assert.equal(await composer.inputValue(), "");
   await previewImage.waitFor();
+  await previewImage.evaluate(image => image.decode());
   await history.waitFor({ state: "hidden" });
+  assert.notEqual(await previewImage.getAttribute("src"), firstImage, "image-only replay restores its own image");
   await page.screenshot({ path: `${out}/history-image-only-320.png`, animations: "disabled" });
   assert.deepEqual(errors, []);
   console.log("PASS: long paste, preview, selection, draft restore, attachment-only send, insert as text, byte and count limits, history image replay");
