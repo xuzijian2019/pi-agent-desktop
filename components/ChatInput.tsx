@@ -6,7 +6,7 @@ import type { BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, Slas
 import type { SkillsResponse } from "@/lib/api-types";
 import type { ModelScopeWarning } from "@/lib/model-scope-warnings";
 import type { UnavailableWorkspaceNotice } from "@/lib/workspace-availability";
-import type { TextContent, UserMessage } from "@/lib/types";
+import type { UserMessage } from "@/lib/types";
 import { mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft as rekeyStoredDraft, clearDraft, getDraft, setDraft, loadDraft, subscribeDrafts, getDraftStatus, retryDraft, type ChatDraftImage } from "@/lib/draft-store";
 import { buildPasteToken, normalizePastedText, shouldChipPastedText, splicePastedTexts, type ChatDraftText, type PastedTextChip } from "@/lib/pasted-text";
 import { MAX_ATTACHED_IMAGE_BYTES, MAX_ATTACHED_IMAGES, isBase64ImageWithinLimits } from "@/lib/image-attachments";
@@ -19,6 +19,8 @@ import { SelectorRow } from "./SelectorRow";
 import { SessionAutomationMenu } from "./SessionAutomationMenu";
 import { ImagePreview } from "./ImagePreview";
 import { selectableThinkingLevels } from "@/lib/thinking-level-options";
+import { getUserMessageDraftImages, getUserMessageText, type ComposerHistoryEntry } from "@/lib/composer-history";
+export { getUserMessageDraftImages, getUserMessageText };
 import type { RoutedModelInfo } from "@/lib/types";
 import { getMarkdownListContinuation } from "@/lib/markdown-list-continuation";
 import { quoteSeparator } from "@/lib/quoted-selection";
@@ -38,6 +40,8 @@ import {
   CHAT_ATTACHMENT_MAX_FILES,
   CHAT_ATTACHMENT_MAX_TOTAL_BYTES,
   composeMessageWithAttachedFiles,
+  createPastedTextAttachment,
+  LONG_PASTE_MIN_CHARACTERS,
   extractDocxText,
   formatAttachmentSize,
   readChatTextAttachments,
@@ -135,7 +139,8 @@ interface Props {
   }) => void;
   queuedMessages?: QueuedMessages | null;
   onQueuedMessageAction?: (id: string, action: ComposerQueueAction) => Promise<void>;
-  inputHistory?: string[];
+  /** Previous prompts, including any images the composer can restore. */
+  inputHistory?: ComposerHistoryEntry[];
   onRecallQueue?: () => void;
   slashCommands?: SlashCommandInfo[];
   slashCommandsLoading?: boolean;
@@ -560,30 +565,6 @@ export function canRestoreUserMessage(
   return !value.trim() && attachedImageCount === 0 && pendingImageCount === 0;
 }
 
-export function getUserMessageText(message: UserMessage): string {
-  if (typeof message.content === "string") return message.content;
-  return message.content
-    .filter((block): block is TextContent => block.type === "text")
-    .map((block) => block.text)
-    .join("\n");
-}
-
-export function getUserMessageDraftImages(message: UserMessage): ChatDraftImage[] {
-  if (typeof message.content === "string") return [];
-  return message.content.flatMap((block) => {
-    if (block.type !== "image") return [];
-
-    // Support both the current nested image format and older flat pi-ai entries.
-    const flat = block as unknown as { data?: unknown; mimeType?: unknown };
-    const data = block.source?.type === "base64" ? block.source.data : flat.data;
-    const mimeType = block.source?.type === "base64" ? block.source.media_type : flat.mimeType;
-    if (typeof data !== "string" || typeof mimeType !== "string") return [];
-
-    const image = { data, mimeType };
-    return isBase64ImageWithinLimits(image) ? [image] : [];
-  });
-}
-
 function revokeImagePreview(image: AttachedImage): void {
   if (image.previewUrl.startsWith("blob:")) {
     URL.revokeObjectURL(image.previewUrl);
@@ -911,11 +892,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     draftKey ? getDraft(draftKey)?.files ?? [] : []
   ));
   const attachmentDraftAliasesRef = useRef(new Map<string, string>());
+  const [pasteNotice, setPasteNotice] = useState<{ draftKey: string | undefined; message: string } | null>(null);
+  const [filePreview, setFilePreview] = useState<{ draftKey: string | undefined; id: string } | null>(null);
+  const previewFileId = filePreview?.draftKey === draftKey ? filePreview?.id : null;
   const attachedFilesRef = useRef(attachedFiles);
   attachedFilesRef.current = attachedFiles;
   const projectLabel = getProjectLabel(projectPath, projectOptions);
   const trimmedValue = value.trimStart();
-  const bashMode = !chatOnly && attachedImages.length === 0 && trimmedValue.startsWith("!");
+  const bashMode = !chatOnly && attachedImages.length === 0 && attachedFiles.length === 0 && pastedTexts.length === 0 && trimmedValue.startsWith("!");
   const bashExcluded = bashMode && trimmedValue.startsWith("!!");
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [slashActiveIndex, setSlashActiveIndex] = useState(0);
@@ -980,6 +964,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   attachedImagesRef.current = attachedImages;
   pastedTextsRef.current = pastedTexts;
 
+  const [hydratedDraftKey, setHydratedDraftKey] = useState<string>();
   const [draftSetup, setDraftSetup] = useState<TaskSetup>();
   const [referenceSelections, setReferenceSelections] = useState<Record<string, ReferenceSelection>>({});
   const [preparationError, setPreparationError] = useState("");
@@ -1004,6 +989,39 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, [chatOnly, model, thinkingLevel, toolPreset, t]);
   useEffect(() => () => { preparationController.current?.abort(); }, [draftKey]);
 
+  const restoreHistoryEntry = useCallback((entry: ComposerHistoryEntry): boolean => {
+    const ta = textareaRef.current;
+    const current = ta ? ta.value : valueRef.current;
+    if (draftKeyRef.current !== draftKey || (draftKey && (hydratedDraftKey !== draftKey || getDraftStatus(draftKey) === "conflict"))) return false;
+    const attachmentCount = attachedImagesRef.current.length + attachedFilesRef.current.length + pastedTextsRef.current.length;
+    if (!canRestoreUserMessage(current, attachmentCount, pendingImageCountRef.current)) return false;
+    const { text: restoredText, files: restoredFiles } = splitMessageForComposer(entry.text);
+    const restoredImages = draftImagesToAttachedImages(entry.images);
+    const version = ++attachmentClearVersionRef.current;
+    valueRef.current = restoredText;
+    attachedImagesRef.current = restoredImages;
+    attachedFilesRef.current = restoredFiles;
+    setAttachedFiles(restoredFiles);
+    setValue(restoredText);
+    setFilePreview(null);
+    setPasteNotice(null);
+    setAttachedImages((previous) => {
+      previous.forEach(revokeImagePreview);
+      return restoredImages;
+    });
+    setHistoryMenuOpen(false);
+    setAtQuery(null);
+    setHashQuery(null);
+    requestAnimationFrame(() => {
+      if (!ta || draftKeyRef.current !== draftKey || attachmentClearVersionRef.current !== version || valueRef.current !== restoredText) return;
+      ta.focus();
+      ta.setSelectionRange(restoredText.length, restoredText.length);
+      ta.style.height = "auto";
+      ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+    });
+    return true;
+  }, [draftKey, hydratedDraftKey, setHashQuery]);
+
   useImperativeHandle(ref, () => ({
     snapshot,
     currentSetup: () => ({ model: model ?? null, effort: thinkingLevel ?? "auto", tools: toolPreset && toolPreset !== "configured" ? toolPreset : "inherit" }),
@@ -1023,33 +1041,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       });
     },
     replaceMessage(message: UserMessage) {
-      const ta = textareaRef.current;
-      const current = ta ? ta.value : value;
-      if (!canRestoreUserMessage(current, attachedImagesRef.current.length + attachedFilesRef.current.length, pendingImageCountRef.current)) return false;
-
-      // The message's attached files come back as attachments, not as markup in the text.
-      const split = splitMessageForComposer(getUserMessageText(message));
-      const restoredText = split.text;
-      const restoredImages = draftImagesToAttachedImages(getUserMessageDraftImages(message));
-      valueRef.current = restoredText;
-      attachedImagesRef.current = restoredImages;
-      attachedFilesRef.current = split.files;
-      setAttachedFiles(split.files);
-      setValue(restoredText);
-      setAtQuery(null);
-      setHashQuery(null);
-      setHistoryMenuOpen(false);
-      setAttachedImages((prev) => {
-        prev.forEach(revokeImagePreview);
-        return restoredImages;
-      });
-      requestAnimationFrame(() => {
-        if (!ta) return;
-        ta.focus();
-        ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
-      });
-      return true;
+      return restoreHistoryEntry({ text: getUserMessageText(message), images: getUserMessageDraftImages(message) });
     },
     prependText(text: string) {
       if (!text.trim()) return;
@@ -1369,6 +1361,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const clearAttachedFiles = useCallback(() => {
     attachedFilesRef.current = [];
     setAttachedFiles([]);
+    setPasteNotice(null);
+    setFilePreview(null);
   }, []);
 
   const removeAttachedFile = useCallback((id: string) => {
@@ -1404,7 +1398,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     });
   }, [value]);
 
-  const [hydratedDraftKey, setHydratedDraftKey] = useState<string>();
   const [, refreshDraftStatus] = useState(0);
   useEffect(() => subscribeDrafts(() => refreshDraftStatus((n) => n + 1)), []);
   useEffect(() => {
@@ -1597,6 +1590,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (invalidDraftImages || orphanedPaste || (draftKey && hydratedDraftKey !== draftKey) || persistenceStatus === "conflict") return;
     const msg = splicePastedTexts(value, pastedTexts).trim();
     if (!msg && !attachedImages.length && !attachedFilesRef.current.length) return;
+    // Legacy inline tokens expand to fenced text, not attachment markup.
+    // Keep them in the draft rather than passing their payload to a shell.
+    if (pastedTexts.length && !attachedImages.length && !attachedFilesRef.current.length && msg.startsWith("!")) {
+      setPreparationError(t("chat.commandTextOnly"));
+      return;
+    }
     const clearVersion = attachmentClearVersionRef.current;
     if (await dispatchBuiltin(msg)) return;
     if (clearVersion !== attachmentClearVersionRef.current) return;
@@ -1615,9 +1614,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     // A run cannot start in a cwd that is gone; keep the draft until it is back or another project is picked.
     if (workspaceUnavailable) return;
     await submitPreparedMessage(attachedImages, onSend);
-  }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, workspaceUnavailable, isStreaming, onBuiltinCommand, onSend, clearInput, submitPreparedMessage, dispatchBuiltin]);
+  }, [invalidDraftImages, orphanedPaste, draftKey, hydratedDraftKey, persistenceStatus, value, pastedTexts, attachedImages, workspaceUnavailable, isStreaming, onBuiltinCommand, onSend, clearInput, submitPreparedMessage, dispatchBuiltin, t]);
 
-  const slashQuery = !compact && value.startsWith("/") && !/\s/.test(value.slice(1))
+  const slashQuery = !compact && !attachedImages.length && !attachedFiles.length && value.startsWith("/") && !/\s/.test(value.slice(1))
     ? value.slice(1).toLowerCase()
     : null;
 
@@ -1816,21 +1815,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     historyItemRefs.current[historyActiveIndex]?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [historyActiveIndex, historyMenuOpen]);
 
-  const applyHistoryInput = useCallback((text: string) => {
-    setValue(text);
-    setHistoryMenuOpen(false);
-    setHistoryActiveIndex(0);
-    setAtQuery(null);
-    setHashQuery(null);
-    requestAnimationFrame(() => {
-      const ta = textareaRef.current;
-      if (!ta) return;
-      ta.focus();
-      ta.setSelectionRange(text.length, text.length);
-      ta.style.height = "auto";
-      ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
-    });
-  }, [setHashQuery]);
+  const applyHistoryInput = useCallback((entry: ComposerHistoryEntry) => {
+    if (restoreHistoryEntry(entry)) setHistoryActiveIndex(0);
+  }, [restoreHistoryEntry]);
 
   const applySlashCommand = useCallback((command: SlashCommandPaletteItem, execute = false) => {
     if (execute && command.source === "builtin" && !["name", "compact", "side", "btw"].includes(command.name)) {
@@ -2053,15 +2040,39 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       processImageFiles(files);
       return;
     }
-    // Large plain-text pastes become a compact chip so the composer stays
-    // readable; spliced back as a fenced block on send. Skipped in bash mode:
-    // a fence glued into a shell command would corrupt it.
+    // Long plain-text pastes become bounded files rather than textarea text.
     const html = e.clipboardData.getData("text/html");
     const text = e.clipboardData.getData("text/plain");
-    if (!bashMode && shouldChipPastedText(text)) {
-      e.preventDefault(); insertPastedTextChip(normalizePastedText(text)); return;
+    if (!compact && text.length >= LONG_PASTE_MIN_CHARACTERS) {
+      e.preventDefault();
+      const result = createPastedTextAttachment(text, attachedFilesRef.current, t("chat.pastedTextName"));
+      if (result.rejection) {
+        const rejection = result.rejection;
+        const limit = rejection.reason === "too-many" ? String(rejection.limit)
+          : "limit" in rejection ? formatAttachmentSize(rejection.limit) : "";
+        setPasteNotice({ draftKey, message: t("chat.attachRejected", {
+          detail: `${rejection.name}: ${t(`chat.attachReason.${rejection.reason}`, { limit })}`,
+        }) });
+      } else {
+        const next = [...attachedFilesRef.current, result.file];
+        attachedFilesRef.current = next;
+        setAttachedFiles(next);
+        setPasteNotice({ draftKey, message: t("chat.longPasteAttached") });
+        setHistoryMenuOpen(false);
+        setSlashMenuOpen(false);
+        setAtMenuOpen(false);
+        setHashMenuOpen(false);
+      }
+      return;
     }
-    if (items.length === 0 && !text) {
+    // Legacy inline tokens remain supported for shorter multi-line pastes and
+    // existing drafts. A single paste takes exactly one path.
+    if (!compact && !trimmedValue.startsWith("!") && shouldChipPastedText(text)) {
+      e.preventDefault();
+      insertPastedTextChip(normalizePastedText(text));
+      return;
+    }
+    if (!compact && items.length === 0 && !text) {
       e.preventDefault();
       void import("@/lib/desktop-native").then(({ readClipboardImageFileNative }) => readClipboardImageFileNative()).then(file => { if (file) processImageFiles([file]); }).catch(() => {});
     }
@@ -2093,7 +2104,26 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       ta.focus();
       ta.setSelectionRange(start + markdown.length, start + markdown.length);
     });
-  }, [compact, processImageFiles, updateAtQuery, bashMode, insertPastedTextChip]);
+  }, [compact, processImageFiles, updateAtQuery, draftKey, t, setHashMenuOpen, trimmedValue, insertPastedTextChip]);
+
+  const restoreAttachmentAsText = useCallback((file: ChatTextAttachment) => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const start = ta.selectionStart;
+    const nextValue = ta.value.slice(0, start) + file.text + ta.value.slice(ta.selectionEnd);
+    valueRef.current = nextValue;
+    setValue(nextValue);
+    removeAttachedFile(file.id);
+    setFilePreview(null);
+    setPasteNotice(null);
+    setHistoryMenuOpen(false);
+    updateAtQuery(nextValue, start + file.text.length);
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.setSelectionRange(start + file.text.length, start + file.text.length);
+      handleInput();
+    });
+  }, [removeAttachedFile, updateAtQuery, handleInput]);
 
   useEffect(() => {
     if (slashQuery === null) {
@@ -2581,8 +2611,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           <div className="composer-file-chips" style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
             {attachedFiles.map((file) => (
               <span key={file.id} className="composer-file-chip" title={`${file.name} · ${formatAttachmentSize(file.size)}`}>
-                <span className="composer-file-chip-name">{file.name}</span>
+                <button type="button" className="composer-file-chip-name composer-file-action"
+                  onClick={() => setFilePreview(previewFileId === file.id ? null : { draftKey, id: file.id })}
+                  aria-expanded={previewFileId === file.id}>
+                  {file.name}
+                </button>
                 <span className="composer-file-chip-size">{formatAttachmentSize(file.size)}</span>
+                <button type="button" className="composer-file-action" onClick={() => restoreAttachmentAsText(file)}>
+                  {t("chat.attachmentAsText")}
+                </button>
                 <button
                   type="button"
                   className="composer-file-chip-remove"
@@ -2595,6 +2632,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 </button>
               </span>
             ))}
+          </div>
+        )}
+
+        {attachedFiles.filter((file) => file.id === previewFileId).map((file) => (
+          <pre key={file.id} className="message-attached-file-body composer-file-preview" aria-label={file.name}>{file.text}</pre>
+        ))}
+        {pasteNotice?.draftKey === draftKey && pasteNotice && (
+          <div className="composer-paste-notice" role="status">
+            {pasteNotice.message}
+            <button type="button" className="composer-file-action" onClick={() => setPasteNotice(null)} aria-label={t("i18n.close")}>
+              ×
+            </button>
           </div>
         )}
 
@@ -2650,7 +2699,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   const active = index === historyActiveIndex;
                   return (
                     <button
-                      key={`${index}:${item}`}
+                      key={`${index}:${item.text}:${item.images.length}`}
                       ref={(node) => {
                         historyItemRefs.current[index] = node;
                       }}
@@ -2680,7 +2729,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         {index + 1}
                       </span>
                       <span style={{ minWidth: 0, display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 2, overflow: "hidden", overflowWrap: "anywhere" }}>
-                        {item}
+                        {item.text || t("chat.historyImageOnly", { count: item.images.length })}
                       </span>
                     </button>
                   );

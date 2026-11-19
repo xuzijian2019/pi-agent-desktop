@@ -15,7 +15,7 @@ const { renderToStaticMarkup } = await jiti.import("react-dom/server");
 const { draftTextsToPastedTexts, pastedTextsToDraftTexts, ChatInput, ModelErrorBanner, ModelScopeWarningBanner, canClearBuiltinCommandInput, canRestoreUserMessage, canRunBuiltinSlashCommandWhileStreaming, compressImageFile, cycleListIndex, filterModelOptions, getTopbarBoundary, getUpwardMenuMaxHeight, getUserMessageText, getUserMessageDraftImages, isExactSlashCommand, modelSupportsImageInput, replaceLinksWithMarkdown, shouldCompressImageFile, offersBuiltinSlashCommandWhileStreaming, submitsSlashCommandOnEnter } = await jiti.import("./ChatInput.tsx");
 
 const { isBareMcpCommand } = await jiti.import("@/lib/mcp-command.ts");
-const { composeMessageWithAttachedFiles } = await jiti.import("@/lib/chat-attachments.ts");
+const { composeMessageWithAttachedFiles, splitMessageForComposer } = await jiti.import("@/lib/chat-attachments.ts");
 const { ModelSelector } = await jiti.import("./ModelSelector.tsx");
 const { clearDraft, getDraft, mergeRestoredSubmissionDraft, mergeRestoredSubmissionText, rekeyDraft, setDraft } = await jiti.import("@/lib/draft-store");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
@@ -782,6 +782,59 @@ test("does not restore a historical message over a pending image attachment", ()
   assert.equal(canRestoreUserMessage("draft", 0, 0), false);
 });
 
+test("the shared history restore observes draft ownership and restores text, files and images together", async () => {
+  const source = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
+  const start = source.indexOf("  const restoreHistoryEntry = useCallback(");
+  const end = source.indexOf("  useImperativeHandle(ref,", start);
+  assert.ok(start >= 0 && end > start);
+  const callback = ts.transpileModule(source.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const image = { data: "AQID", mimeType: "image/png" };
+  const text = composeMessageWithAttachedFiles("Recall this", [{ name: "notes.txt", text: "line 1\nline 2" }]);
+  function restore(overrides = {}) {
+    const raf = [];
+    const files = { current: [] }, images = { current: [] }, value = { current: "" };
+    const owner = { current: "draft" }, epoch = { current: 0 };
+    const env = {
+      draftKey: "draft", hydratedDraftKey: "draft", getDraftStatus: () => "saved",
+      draftKeyRef: owner, valueRef: value, textareaRef: { current: null },
+      attachedImagesRef: images, attachedFilesRef: files, pastedTextsRef: { current: [] },
+      pendingImageCountRef: { current: 0 }, attachmentClearVersionRef: epoch,
+      canRestoreUserMessage, splitMessageForComposer,
+      draftImagesToAttachedImages: (entries) => entries.map((entry) => ({ ...entry, previewUrl: "data:example" })),
+      useCallback: (fn) => fn, setAttachedFiles() {}, setValue() {}, setAttachedImages() {},
+      setFilePreview() {}, setPasteNotice() {}, setHistoryMenuOpen() {}, setAtQuery() {}, setHashQuery() {},
+      requestAnimationFrame: (fn) => raf.push(fn),
+      ...overrides,
+    };
+    const apply = new Function(...Object.keys(env), `${callback}\nreturn restoreHistoryEntry;`)(...Object.values(env));
+    return { accepted: apply({ text, images: [image] }), files: files.current, images: images.current, value: value.current, epoch: epoch.current, raf, owner };
+  }
+  const restored = restore();
+  assert.equal(restored.accepted, true);
+  assert.equal(restored.value, "Recall this");
+  assert.equal(restored.epoch, 1);
+  assert.deepEqual(restored.images, [{ ...image, previewUrl: "data:example" }]);
+  assert.deepEqual(restored.files.map(({ name, text }) => ({ name, text })), [{ name: "notes.txt", text: "line 1\nline 2" }]);
+  for (const overrides of [
+    { draftKeyRef: { current: "other" } },
+    { hydratedDraftKey: "other" },
+    { getDraftStatus: () => "conflict" },
+    { pastedTextsRef: { current: [{ id: 1 }] } },
+    { pendingImageCountRef: { current: 1 } },
+    { textareaRef: { current: { value: "New work" } } },
+  ]) {
+    const rejected = restore(overrides);
+    assert.equal(rejected.accepted, false);
+    assert.equal(rejected.epoch, 0);
+    assert.equal(rejected.raf.length, 0);
+  }
+  let focused = false;
+  const stale = restore({ textareaRef: { current: { value: "", focus() { focused = true; } } } });
+  stale.owner.current = "another";
+  stale.raf[0]();
+  assert.equal(focused, false);
+});
+
 test("restores a cleared submission using the queued React state", () => {
   let value = "failed submission";
   const updates = [
@@ -993,6 +1046,23 @@ test("renders image warnings for known text-only defaults without an explicit mo
   } finally {
     clearDraft(draftKey);
   }
+});
+
+test("a legacy pasted-text token never becomes shell input", async () => {
+  let prepared = false;
+  const errors = [];
+  const handler = chatInputCallback("handleSend", {
+    invalidDraftImages: false, orphanedPaste: false, draftKey: null, persistenceStatus: "idle",
+    value: "!review the pasted text", pastedTexts: [{ token: "legacy" }],
+    splicePastedTexts: (value) => value + "\nquoted text",
+    attachedImages: [], attachedFilesRef: { current: [] },
+    setPreparationError: (error) => errors.push(error),
+    t: (key) => key,
+    submitPreparedMessage: async () => { prepared = true; },
+  });
+  await handler();
+  assert.equal(prepared, false);
+  assert.deepEqual(errors, ["chat.commandTextOnly"]);
 });
 
 test("handleSend sends exactly once and routes builtin commands through the pending guard", async () => {
