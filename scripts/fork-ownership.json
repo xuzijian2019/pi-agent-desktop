@@ -60,9 +60,9 @@
     },
     "components/ChatWindow.tsx": {
       "risk": "high",
-      "drift": 2078,
+      "drift": 2086,
       "reason": "Redesigned empty state — the new-session branding header (app icon + PRODUCT_NAME) is removed and only the update chip remains. Overlay composer and recap stay fork-owned; side chat was removed by user request on 2026-10-24. Kept deliberately.",
-      "structuralDrift": 1792,
+      "structuralDrift": 1800,
       "disposition": "accepted"
     },
     "hooks/useTheme.ts": {
@@ -81,9 +81,9 @@
     },
     "components/MessageView.tsx": {
       "risk": "high",
-      "drift": 1686,
+      "drift": 1709,
       "reason": "Message bubble markup adjusted. Transcript search adds read-only historical rendering and exact-match expansion. Phase 3 stream H3 then replaced ~90 inline style objects with classes in app/native-theme.css, which is why the total is large and almost two thirds cosmetic; the structural half is unchanged transcript-search and written-file rendering. The 2026-09-20 upstream merge added transcript tool expansion and tool-result image hooks on top of the fork's transcript-search rendering, which pushed structural drift just over the high threshold.",
-      "structuralDrift": 1004,
+      "structuralDrift": 1025,
       "disposition": "accepted"
     },
     "lib/i18n/registry.ts": {
