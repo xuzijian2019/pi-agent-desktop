@@ -75,6 +75,8 @@ export interface AssistantMessage {
   role: "assistant";
   content: AssistantContentBlock[];
   model: string;
+  /** SDK adapter that produced the message; absent on older transcripts. */
+  api?: string;
   provider: string;
   /** The model the provider reports having answered with (e.g. what OpenRouter `auto` resolved to). */
   responseModel?: string;

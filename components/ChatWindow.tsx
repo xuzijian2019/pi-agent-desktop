@@ -36,7 +36,7 @@ import type { SessionStatsInfo } from "@/lib/pi-types";
 import { importDroppedProjectFiles, partitionChatDroppedFiles } from "@/lib/chat-file-drop";
 
 import type { ToolEntry } from "@/lib/tool-presets";
-import type { SettingsSection } from "@/lib/settings-navigation";
+import { rememberModelSettingsFocus, type SettingsSection } from "@/lib/settings-navigation";
 import { findChatScrollAnchor, type ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { captureScrollDistance, getVisibleRenderWindow, isScrollAtTail, restoreScrollTop, VISIBLE_PAGE_SIZE } from "@/lib/chat-lazy-load";
 import { sessionVisibleCounts } from "@/lib/scroll-memory";
@@ -336,6 +336,11 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
     deferInitialScroll: Boolean(pendingScrollRestore), onScrollPositionChange,
   });
   const sessionBusy = agentRunning || bashRunning;
+  // A refused thinking level's error opens Settings › Models on that model.
+  const openModelSettings = useCallback((provider: string, modelId: string) => {
+    rememberModelSettingsFocus(provider, modelId);
+    onOpenSettings?.("models");
+  }, [onOpenSettings]);
   // A chat's folder and whether it may use the computer; the server owns both.
   const chatAccess = useChatAccess(session?.id, chatOnly && Boolean(session) && !isNew, handleChatAccessRebuilt);
   const handleToggleChatUnlocked = useCallback((nextUnlocked: boolean) => {
@@ -1115,6 +1120,7 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
           onCompact={options.recoverTruncation ? handleCompact : undefined}
           isCompacting={options.recoverTruncation ? isCompacting : undefined}
           compactError={options.recoverTruncation ? compactError : undefined}
+          onOpenModelSettings={onOpenSettings ? openModelSettings : undefined}
         />
       );
       if (!isVisible) return view;
@@ -1223,7 +1229,7 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
   }, [
     messages, activeToolResults, hasEarlierMessages, pendingSearchScroll, searchBlock, onOpenSession, entryIds, streamActive, sessionBusy, isNew, forkingEntryId,
     modelNames, messageCwd, openFile, stableHandleEditContent, cancelEdit, editEntryId,
-    stableHandleFork, sessionIdForViews, handleCompact, isCompacting, compactError,
+    stableHandleFork, sessionIdForViews, handleCompact, isCompacting, compactError, onOpenSettings, openModelSettings,
     visibleCount, t, sessionIdRef, setSentinelNode, messageKeys,
   ]);
 
