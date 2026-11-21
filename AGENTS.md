@@ -99,6 +99,7 @@ app/api/
   models-config/route.ts          GET/PUT — read/write ~/.pi/agent/models.json
   models-config/catalog/route.ts  GET models.dev pricing presets
   models-config/discover/route.ts POST fetch a configured provider's upstream model list
+  models-config/builtin-match/route.ts GET ?baseUrl=&modelId= built-in providers at that endpoint + pi's settings for the model
   models-config/test/route.ts     POST test a configured model/provider
   plugins/route.ts                GET/POST package plugin management
   skills/route.ts                 GET/PATCH loaded skills and disable-model-invocation
@@ -310,7 +311,7 @@ changes to shared choices also run `node e2e/option-controls.mjs`.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
-# This is NOT the Next.js you know
+## This is NOT the Next.js you know
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
 
