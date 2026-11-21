@@ -70,8 +70,12 @@ for (const [width, theme] of [[1280, "light"], [390, "dark"]] as const) {
       } else {
         await settings.locator(".settings-section-tab").filter({ hasText: /^Models$/ }).click();
       }
-      await settings.locator("button.models-sidebar-indented-item")
-        .filter({ has: settings.getByText(modelDraft.id, { exact: true }) }).click();
+      // Scope the row to Settings, but match its exact ID relative to the row.
+      const modelRow = settings.locator("button.models-sidebar-indented-item")
+        .filter({ has: page.getByText(modelDraft.id, { exact: true }) });
+      await expect(modelRow).toBeVisible();
+      await modelRow.click();
+      await expect(modelRow).toHaveAttribute("aria-current", "page");
       const advanced = settings.getByRole("button", { name: /^Advanced settings/ });
       if (await advanced.getAttribute("aria-expanded") !== "true") await advanced.click();
       await expect(settings.getByRole("button", { name: "Test thinking levels", exact: true })).toBeVisible();

@@ -27,3 +27,7 @@
 - Isolated npm run web served the index and built-in model match with HTTP 200; local Chromium initialization denied socket creation. No local browser/screenshot pass asserted.
 - Actual browser cases are the two mock Gemini Apply-vs-Save tests at 1280 light and 390 dark, plus persisted native Gemini refusal → exact model selection at 390 dark. CI and final screenshot pixel review recorded in draft PR body.
 - Final local TypeScript clean; 4575 unit passed / 0 failed / 4 environment/platform skips (4579 total). CSS/menu/ownership focused checks: 18 passed. All three new Playwright tests enumerate.
+
+## First CI and fixture correction
+- CI 44908510448 tested d3c488ce plus b3b4b76c. Nine jobs passed; Playwright 103 passed, two failed, one existing skip. Persisted Gemini refusal and settings navigation passed; inspected both actual 390px dark screenshots.
+- Both failed model settings cases never reached the probe: the actual model row was visible, but its nested locator erroneously looked for the parent Settings panel inside the row. Scoped the exact ID lookup relative to its row and added selection verification; no application change, new skip, forced click, larger timeout or relaxed Apply/Save/persistence assertion.
