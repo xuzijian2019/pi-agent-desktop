@@ -44,6 +44,8 @@ export const APP_PREF_KEYS = {
   /** Project session ids hidden from their project until "Show archived" (#200). */
   archivedSessions: "pi-web:archived-sessions",
   updateSnooze: "pi-web:update-snooze",
+  /** First-seen time and outcome of the one-time "star us on GitHub" prompt. */
+  starPrompt: "pi-web:star-prompt",
   closeQuits: "pi-desktop-close-quits",
   browserNotifications: "pi-browser-notifications",
   notificationClaims: "pi-notification-claims",
@@ -58,6 +60,8 @@ export const APP_PREF_KEYS = {
   toolPreset: "pi-tool-preset",
   /** Composer effort (thinking) level carried across sessions. */
   thinkingLevel: "pi-thinking-level",
+  /** Thinking in a turn's working steps: "show", or hidden (anything else). */
+  processThinking: "pi-web:process-thinking",
   /** Tasks page layout: "calendar" or the list (anything else). */
   tasksMode: "pi-web:tasks-mode",
   /** Tasks calendar range: "week" or "month". */

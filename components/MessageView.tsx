@@ -1,7 +1,6 @@
 "use client";
 
-import { memo, useState, useRef, useEffect, useMemo } from "react";
-
+import { memo, useState, useRef, useEffect, useMemo, type CSSProperties } from "react";
 import { MarkdownBody } from "./MarkdownBody";
 import { ImagePreview } from "./ImagePreview";
 
@@ -15,7 +14,8 @@ import { SyntaxHighlighter, vs, vscDarkPlus } from "@/lib/syntax-highlighting";
 import { getWrittenFile, sourceLanguageFromPath, type WrittenFile as ToolWrittenFile } from "@/lib/write-tool-display";
 import { ImageLightbox } from "./ImageLightbox";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
-import { getAssistantErrorMessage, getThinkingPreview, hasAssistantAnswer, isAssistantTruncated, isDisplayableAssistantBlock } from "@/lib/message-display";
+import { getAssistantErrorMessage, getThinkingPreview, hasAssistantAnswer, isAssistantTruncated, isDisplayableAssistantBlock, showsStepThinking } from "@/lib/message-display";
+import { useProcessThinking } from "@/hooks/useProcessThinking";
 import { isThinkingLevelRefusal, refusalAllowedValues } from "@/lib/thinking-level-error";
 import { diffGapLabel, parseUnifiedPatch, type SplitDiffCell, type SplitDiffFile } from "@/lib/patch";
 import { applyPatchPreviewToFiles, applyPatchResultHasFailures, extractApplyPatchPaths, getApplyPatchInputText, parseApplyPatchInput } from "@/lib/apply-patch";
@@ -32,6 +32,8 @@ import { SavedFileCard, isSavedFileInfo } from "./SavedFileCard";
 import type { SubagentToolDetails } from "@/lib/subagent-extension";
 import { CODEMODE_TOOL_NAME, codemodeCalls, codemodeScript, codemodeScriptPreview, stripCodemodeHeader } from "@/lib/codemode-view";
 import { CodemodeCallList } from "./CodemodeToolView";
+import { toolFieldsOfInput, type ToolField } from "@/lib/tool-fields";
+import { parseStreamingJson } from "@earendil-works/pi-ai/utils/json-parse";
 import { imageSource, resultImageFileName } from "@/lib/result-image";
 import { mcpToolLabel, prettyMcpResultText } from "@/lib/mcp-tool-display";
 import { AGENT_SUMMARY_MESSAGE_TYPE, agentSummaryParts, formatRunDuration, parseAgentSummary, type AgentSummaryData } from "@/lib/cc-extension-entries";
@@ -212,6 +214,11 @@ interface Props {
   onCancelEdit?: () => void;
   isEditing?: boolean;
   showTimestamp?: boolean;
+  /**
+   * Leave out the model name: the turn's step before this one came from the
+   * same model (ChatWindow decides; the final answer always keeps it).
+   */
+  hideModel?: boolean;
   prevTimestamp?: number;
   sessionId?: string;
   /**
@@ -295,12 +302,12 @@ function haveSameRelevantToolResults(
   return true;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenSession, entryId, searchBlock, onFork, forking, onEditContent, editDisabled, onCancelEdit, isEditing, showTimestamp, prevTimestamp, sessionId, writtenFiles, onCompact, isCompacting, compactError, onOpenModelSettings }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenSession, entryId, searchBlock, onFork, forking, onEditContent, editDisabled, onCancelEdit, isEditing, showTimestamp, hideModel, prevTimestamp, sessionId, writtenFiles, onCompact, isCompacting, compactError, onOpenModelSettings }: Props) {
   if (message.role === "user") {
     return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onEditContent={onEditContent} editDisabled={editDisabled} onCancelEdit={onCancelEdit} isEditing={isEditing} />;
   }
   if (message.role === "assistant") {
-    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} onCompact={onCompact} isCompacting={isCompacting} compactError={compactError} onOpenModelSettings={onOpenModelSettings} />;
+    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} showTimestamp={showTimestamp} hideModel={hideModel} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} onCompact={onCompact} isCompacting={isCompacting} compactError={compactError} onOpenModelSettings={onOpenModelSettings} />;
   }
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
@@ -340,6 +347,7 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     && prev.onCancelEdit === next.onCancelEdit
     && prev.isEditing === next.isEditing
     && prev.showTimestamp === next.showTimestamp
+    && prev.hideModel === next.hideModel
     && prev.prevTimestamp === next.prevTimestamp
     && prev.writtenFiles === next.writtenFiles
     && prev.sessionId === next.sessionId
@@ -637,6 +645,7 @@ function AssistantMessageView({
   onOpenFile,
   onOpenSession,
   showTimestamp,
+  hideModel = false,
   prevTimestamp,
   sessionId,
   entryId,
@@ -655,6 +664,7 @@ function AssistantMessageView({
   onOpenFile?: (filePath: string, page?: number) => void;
   onOpenSession?: (sessionId: string) => void;
   showTimestamp?: boolean;
+  hideModel?: boolean;
   prevTimestamp?: number;
   sessionId?: string;
   entryId?: string;
@@ -668,9 +678,15 @@ function AssistantMessageView({
   const { t, locale } = useI18n();
   const { showUsage } = useShowMessageUsage();
   const time = showTimestamp ? formatTime(message.timestamp, locale) : null;
-  const blockItems = useMemo(() => (message.content ?? [])
-    .map((block, originalIndex) => ({ block, originalIndex }))
-    .filter(({ block }) => isDisplayableAssistantBlock(block, { isStreaming })), [message.content, isStreaming]);
+  const { show: showProcessThinking } = useProcessThinking();
+  const blockItems = useMemo(() => {
+    const items = (message.content ?? [])
+      .map((block, originalIndex) => ({ block, originalIndex }))
+      .filter(({ block }) => isDisplayableAssistantBlock(block, { isStreaming }));
+    // A working step's thinking rows only when asked for; a search hit inside one still shows.
+    if (showsStepThinking(items.map(({ block }) => block), { isStreaming, showProcessThinking })) return items;
+    return items.filter(({ block }) => block.type !== "thinking" || block === searchBlock);
+  }, [message.content, isStreaming, showProcessThinking, searchBlock]);
   const blocks = useMemo(() => blockItems.map(({ block }) => block), [blockItems]);
   const providerError = getAssistantErrorMessage(message, { isStreaming });
   const levelRefused = isThinkingLevelRefusal(providerError, message.api);
@@ -746,6 +762,10 @@ function AssistantMessageView({
       setTimeout(() => setCopied(false), 1500);
     });
   };
+  // A step that calls a tool is part of the work, not an answer: its text is a
+  // line like "let me check the config", and a Copy row under each of a turn's
+  // steps took 8% of an open 47-step turn. Answers keep it.
+  const showCopy = Boolean(textContent) && !isStreaming && !blocks.some((block) => block.type === "toolCall");
 
   useEffect(() => {
     if (!isStreaming) {
@@ -809,7 +829,7 @@ function AssistantMessageView({
       onMouseLeave={() => setHovered(false)}
     >
       {/* Model label (answers and provider errors only) */}
-      {(!isProcessOnly || providerError) && (
+      {(providerError || isStreaming || (!isProcessOnly && !hideModel)) && (
       <div
         className="message-assistant-model"
       >
@@ -922,17 +942,17 @@ function AssistantMessageView({
         <TurnWrittenFiles files={writtenFiles} onOpenFile={onOpenFile} sessionId={sessionId} />
       )}
 
-      <div className="message-assistant-footer">
+      {((showUsage && message.usage && !isStreaming) || showCopy || (time && !isStreaming)) && <div className="message-assistant-footer">
         {showUsage && message.usage && !isStreaming && (
           <div className="message-meta msg-usage">
             {formatUsage(message.usage)}
           </div>
         )}
-        {textContent && !isStreaming && (
+        {showCopy && (
           <button
             onClick={copyContent}
              title={t("i18n.copyMessage")}
-            className={copied ? "msg-action is-hover-only is-active" : "msg-action is-hover-only"} data-visible={hovered}
+            className={copied ? "msg-action is-hover-only is-active message-copy-action" : "msg-action is-hover-only message-copy-action"} data-visible={hovered}
           >
             {copied ? (
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
@@ -950,7 +970,7 @@ function AssistantMessageView({
         {time && !isStreaming && (
           <span className="message-meta msg-time msg-timestamp">{time}</span>
         )}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -1093,6 +1113,16 @@ function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOp
   // A running script's progress snapshot has calls but no content yet.
   const codemodeRunning = codemode !== null && result !== undefined && result.content.length === 0;
 
+  // Flat arguments as rows instead of a JSON blob, unless the card has a view of
+  // its own (a write's file text, codemode, an applied patch). See `lib/tool-fields.ts`.
+  // Input still streaming goes through pi's own partial parse, the arguments its
+  // TUI draws live, so a multi-line command shows its lines before the call ends.
+  // (Upstream #1324 and #1396; restored after a fork merge dropped the wiring.)
+  const toolFields =
+    expanded && writtenFileText === null && codemode === null && patchFiles === null
+      ? toolFieldsOfInput(isStreamingInput ? parseStreamingJson(block.rawInput) : block.input)
+      : null;
+
   // `server/tool` instead of the registered `mcp__server__tool`, as pi's TUI shows it.
   const mcpLabel = mcpToolLabel(block.toolName, result?.details);
 
@@ -1166,6 +1196,8 @@ function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOp
       {expanded && (isStreamingInput || !isEditTool) && !patchFiles && (
         writtenFile ? (
           <WrittenFileView file={writtenFile} isError={isError} />
+        ) : toolFields ? (
+          <div className="msg-pane msg-tool-input"><ToolFieldRows fields={toolFields} /></div>
         ) : (
           <pre className="msg-pane msg-tool-input">{codemode ? codemode.code.replace(/\r/g, "").trimEnd() : inputStr}</pre>
         )
@@ -1857,6 +1889,53 @@ function getWrittenFileText(block: ToolCallContent): string | null {
   return Object.keys(block.input).every((key) => WRITE_VIEW_KEYS.has(key)) ? content : null;
 }
 
+const TOOL_FIELD_LABEL: CSSProperties = {
+  padding: "4px 12px 4px 0",
+  color: "var(--text-dim)",
+  fontSize: "calc(11px + var(--chat-font-size-offset, 0px))",
+  whiteSpace: "nowrap",
+  verticalAlign: "top",
+};
+
+const TOOL_FIELD_VALUE: CSSProperties = {
+  padding: "4px 0",
+  color: "var(--text-muted)",
+  fontSize: "calc(12px + var(--chat-font-size-offset, 0px))",
+  fontFamily: "var(--font-mono)",
+  overflowWrap: "anywhere",
+};
+
+// A value with newlines of its own keeps them, scrolled in place.
+const TOOL_FIELD_BLOCK: CSSProperties = {
+  margin: 0,
+  padding: "8px 10px",
+  maxHeight: 260,
+  overflow: "auto",
+  border: "1px solid var(--border)",
+  borderRadius: 6,
+  background: "var(--bg)",
+  font: "inherit",
+  lineHeight: 1.5,
+  whiteSpace: "pre-wrap",
+};
+
+function ToolFieldRows({ fields }: { fields: ToolField[] }) {
+  return (
+    <table style={{ borderCollapse: "collapse" }}>
+      <tbody>
+        {fields.map((field) => (
+          <tr key={field.key}>
+            <td style={TOOL_FIELD_LABEL}>{field.key}</td>
+            <td style={TOOL_FIELD_VALUE}>
+              {field.multiline ? <pre style={TOOL_FIELD_BLOCK}>{field.value}</pre> : field.value}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function formatCustomType(type: string): string {
   return type || "extension";
 }
@@ -1868,7 +1947,7 @@ function previewText(text: string): string {
 }
 
 
-function getToolPreview(block: ToolCallContent): string {
+export function getToolPreview(block: ToolCallContent): string {
   const input = block.input;
   if (!input || typeof input !== "object") return "";
   const keys = Object.keys(input);

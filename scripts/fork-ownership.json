@@ -60,9 +60,9 @@
     },
     "components/ChatWindow.tsx": {
       "risk": "high",
-      "drift": 2086,
+      "drift": 2157,
       "reason": "Redesigned empty state — the new-session branding header (app icon + PRODUCT_NAME) is removed and only the update chip remains. Overlay composer and recap stay fork-owned; side chat was removed by user request on 2026-10-24. Kept deliberately.",
-      "structuralDrift": 1800,
+      "structuralDrift": 1869,
       "disposition": "accepted"
     },
     "hooks/useTheme.ts": {
@@ -81,9 +81,9 @@
     },
     "components/MessageView.tsx": {
       "risk": "high",
-      "drift": 1709,
+      "drift": 1686,
       "reason": "Message bubble markup adjusted. Transcript search adds read-only historical rendering and exact-match expansion. Phase 3 stream H3 then replaced ~90 inline style objects with classes in app/native-theme.css, which is why the total is large and almost two thirds cosmetic; the structural half is unchanged transcript-search and written-file rendering. The 2026-09-20 upstream merge added transcript tool expansion and tool-result image hooks on top of the fork's transcript-search rendering, which pushed structural drift just over the high threshold.",
-      "structuralDrift": 1025,
+      "structuralDrift": 1023,
       "disposition": "accepted"
     },
     "lib/i18n/registry.ts": {
@@ -151,16 +151,16 @@
     },
     "components/SettingsPanel.tsx": {
       "risk": "high",
-      "drift": 863,
-      "structuralDrift": 720,
+      "drift": 888,
+      "structuralDrift": 741,
       "disposition": "accepted",
       "reason": "AppSettings was folded into General: Version & Updates and desktop window/tray switches live here (via AppUpdatesSection / DesktopAppSection). The fork's autoTitle switch and web/desktop tagline split sit in the same tab. High structural drift because the JSX tree changed."
     },
     "hooks/useAgentSession.ts": {
       "risk": "high",
-      "drift": 1910,
+      "drift": 1934,
       "reason": "Fork session lifecycle guards plus editable composer outbox submission, queue events and per-message edit/send/delete. Restoring an edited pending message must target the original session draft and preserve current input. Never replace with upstream direct followUp submission.",
-      "structuralDrift": 1910,
+      "structuralDrift": 1934,
       "disposition": "accepted"
     },
     "next.config.ts": {
@@ -207,8 +207,8 @@
     },
     "components/MarkdownBody.tsx": {
       "risk": "high",
-      "drift": 320,
-      "structuralDrift": 308,
+      "drift": 327,
+      "structuralDrift": 315,
       "disposition": "accepted",
       "reason": "Uses the fork's headless streaming adapter and coalesced preprocessing while preserving Pi's plugins and widget mapping. Incoming markdown changes must retain the static/safety fallbacks, immediate completion and stream replacement behavior."
     },
