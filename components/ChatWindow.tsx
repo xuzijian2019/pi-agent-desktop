@@ -13,6 +13,9 @@ import { ConversationFind } from "./ConversationFind";
 import { extractTurnWrittenFiles, type WrittenFile } from "@/lib/turn-written-files";
 import { buildQuotedSelection } from "@/lib/quoted-selection";
 import { MessageView } from "./MessageView";
+import { ToolStepGroup } from "./ToolStepGroup";
+import { useProcessThinking } from "@/hooks/useProcessThinking";
+import { groupToolSteps, stepKind, summarizeToolSteps } from "@/lib/tool-step-groups";
 import { useReportDesktopReady } from "./desktop";
 import { formatAttachmentSize } from "@/lib/chat-attachments";
 import { ConversationNavigator, type ConversationTurnLocation } from "./ConversationNavigator";
@@ -232,6 +235,22 @@ export function getTurnWrittenFiles(finalAssistant: AssistantMessage, turnMessag
   return files;
 }
 
+/** Shows or hides the thinking rows of every turn's working steps (`useProcessThinking`). */
+function ProcessThinkingToggle({ t }: { t: (key: string, params?: Record<string, string | number>) => string }) {
+  const { show, setShow } = useProcessThinking();
+  return (
+    <button
+      type="button"
+      className="process-thinking-toggle"
+      aria-pressed={show}
+      title={t("chat.processThinkingHint")}
+      onClick={() => setShow(!show)}
+    >
+      {show ? t("chat.hideProcessThinking") : t("chat.showProcessThinking")}
+    </button>
+  );
+}
+
 function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = false, reveal = false, children, t }: { messageCount: number; toolCallCount: number; defaultExpanded?: boolean; reveal?: boolean; children: ReactNode; t: (key: string, params?: Record<string, string | number>) => string }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   useLayoutEffect(() => {
@@ -242,6 +261,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
 
   return (
     <div className="process-details" style={{ marginBottom: 14 }}>
+      <div className="process-details-header">
       <button
         className="process-details-trigger"
         type="button"
@@ -270,6 +290,8 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
           {parts.join(" · ")}
         </span>
       </button>
+      {(expanded || reveal) && <ProcessThinkingToggle t={t} />}
+      </div>
       {(expanded || reveal) && (
         <div style={{ marginTop: 8 }}>
           {children}
@@ -705,9 +727,13 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
     const position = pendingScrollRestore;
     const content = messageContentRef.current;
     if (!position || !content || searchTarget) return;
-    const element = Array.from(content.children).find((candidate) => (
+    const matchesAnchor = (candidate: Element) => (
       candidate instanceof HTMLElement && candidate.dataset.entryId === position.anchorEntryId
-    ));
+    );
+    // A remembered working step may now live inside a folded process group.
+    // Prefer a direct answer anchor over the same entry's split process prefix.
+    const element = Array.from(content.children).find(matchesAnchor)
+      ?? Array.from(content.querySelectorAll("[data-entry-id]:not([data-message-role])")).find(matchesAnchor);
     if (element instanceof HTMLElement) {
       scrollToMessage(element, position.anchorOffset);
       setPendingScrollRestore(null);
@@ -1078,7 +1104,17 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
       }
     }
 
-    const renderMessage = (idx: number, options: { attachRef?: boolean; keyPrefix?: string; messageOverride?: AgentMessage; showTimestamp?: boolean; writtenFiles?: WrittenFile[]; recoverTruncation?: boolean } = {}): ReactNode => {
+    const repeatedModel = new Set<number>();
+    let previousAssistant: AssistantMessage | undefined;
+    for (const [idx, msg] of messages.entries()) {
+      if (isMessageGroupAnchor(msg)) previousAssistant = undefined;
+      if (msg.role !== "assistant") continue;
+      const current = msg as AssistantMessage;
+      if (previousAssistant && previousAssistant.provider === current.provider && previousAssistant.model === current.model) repeatedModel.add(idx);
+      previousAssistant = current;
+    }
+
+    const renderMessage = (idx: number, options: { attachRef?: boolean; keyPrefix?: string; messageOverride?: AgentMessage; showTimestamp?: boolean; writtenFiles?: WrittenFile[]; recoverTruncation?: boolean; keepModel?: boolean } = {}): ReactNode => {
       const msg = options.messageOverride ?? messages[idx];
       const isVisible = msg.role === "user" || msg.role === "assistant";
       const keyPrefix = options.keyPrefix ?? "message";
@@ -1115,6 +1151,7 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
           onCancelEdit={cancelEdit}
           isEditing={editEntryId !== null && editEntryId === entryIds[idx]}
           showTimestamp={showTimestamp}
+          hideModel={!options.keepModel && repeatedModel.has(idx)}
           prevTimestamp={idx > 0 ? (messages[idx - 1] as AgentMessage & { timestamp?: number }).timestamp : undefined}
           sessionId={sessionIdForViews ?? sessionIdRef.current ?? undefined}
           onCompact={options.recoverTruncation ? handleCompact : undefined}
@@ -1130,6 +1167,30 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
           {view}
         </div>
       );
+    };
+
+    // Hidden steps keep a landing point for departing scroll anchors; when
+    // search or restore targets a child we open the same grouping before lookup.
+    const revealEntryId = pendingSearchScroll?.entryId ?? pendingScrollRestore?.anchorEntryId;
+    const pushToolSteps = (target: ReactNode[], items: Array<{ idx: number; message: AgentMessage; node: () => ReactNode }>, live: boolean) => {
+      for (const segment of groupToolSteps(items, (item) => stepKind(item.message), { keepLastVisible: live })) {
+        if (segment.kind === "single") {
+          target.push(segment.item.node());
+          continue;
+        }
+        const first = segment.items[0];
+        target.push(
+          <ToolStepGroup
+            key={`tool-steps-${messageKeys[first.idx] ?? first.idx}`}
+            entryId={entryIds[first.idx]}
+            summary={summarizeToolSteps(segment.items.map((item) => item.message), toolResultsMap)}
+            running={live}
+            reveal={Boolean(revealEntryId && segment.items.some((item) => entryIds[item.idx] === revealEntryId))}
+          >
+            {segment.items.map((item) => item.node())}
+          </ToolStepGroup>,
+        );
+      }
     };
 
     const rendered: ReactNode[] = [];
@@ -1152,19 +1213,13 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
 
       const finalAssistantIdx = findFinalAssistantIndex(messages, userIdx, endIdx);
 
-      if (finalAssistantIdx === -1) {
-        for (let renderIdx = groupStartIdx; renderIdx < endIdx; renderIdx++) {
-          rendered.push(renderMessage(renderIdx));
-        }
-        idx = endIdx;
-        continue;
-      }
-
       const isLiveTail = (sessionBusy || streamActive) && endIdx === messages.length && userIdx === lastAnchorIdx;
-      if (isLiveTail) {
+      if (finalAssistantIdx === -1 || isLiveTail) {
+        const items = [];
         for (let renderIdx = groupStartIdx; renderIdx < endIdx; renderIdx++) {
-          rendered.push(renderMessage(renderIdx));
+          items.push({ idx: renderIdx, message: messages[renderIdx], node: () => renderMessage(renderIdx) });
         }
+        pushToolSteps(rendered, items, isLiveTail);
         idx = endIdx;
         continue;
       }
@@ -1181,6 +1236,20 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
       const finalProcessMessage = getDisplayableAssistantBlocks(finalSplit.processMessage).length > 0 ? finalSplit.processMessage : null;
       const finalAnswerMessage = finalSplit.answerMessage;
 
+      const processItems = visibleProcessIndices.map((idx) => ({
+        idx,
+        message: messages[idx],
+        node: () => renderMessage(idx, { attachRef: false, keyPrefix: "process" }),
+      }));
+      if (finalProcessMessage) processItems.push({
+        idx: finalAssistantIdx,
+        message: finalProcessMessage,
+        node: () => renderMessage(finalAssistantIdx, {
+          attachRef: false, keyPrefix: "process-final", messageOverride: finalProcessMessage, showTimestamp: false,
+        }),
+      });
+      const processViews: ReactNode[] = [];
+      pushToolSteps(processViews, processItems, false);
       const processCount = visibleProcessIndices.length + (finalProcessMessage ? 1 : 0);
       if (processCount > 0) {
         rendered.push(
@@ -1190,13 +1259,12 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
           <ProcessDetailsGroup
             key={`process-group-${messageKeys[groupStartIdx] ?? groupStartIdx}-${messageKeys[finalAssistantIdx] ?? finalAssistantIdx}-${finalAnswerMessage ? "answered" : "unanswered"}`}
             defaultExpanded={!finalAnswerMessage}
-            reveal={Boolean(pendingSearchScroll && [...visibleProcessIndices, finalAssistantIdx].some(i => entryIds[i] === pendingSearchScroll.entryId))}
+            reveal={Boolean(revealEntryId && processItems.some(({ idx }) => entryIds[idx] === revealEntryId) && (pendingSearchScroll || entryIds[finalAssistantIdx] !== revealEntryId || !finalAnswerMessage))}
             messageCount={processCount}
             t={t}
             toolCallCount={countToolCalls(messages, visibleProcessIndices) + countToolCallBlocks(finalSplit.processBlocks)}
           >
-            {visibleProcessIndices.map((processIdx) => renderMessage(processIdx, { attachRef: false, keyPrefix: "process" }))}
-            {finalProcessMessage && renderMessage(finalAssistantIdx, { attachRef: false, keyPrefix: "process-final", messageOverride: finalProcessMessage, showTimestamp: false })}
+            {processViews}
           </ProcessDetailsGroup>,
         );
       }
@@ -1204,6 +1272,7 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
       if (finalAnswerMessage) {
         rendered.push(renderMessage(finalAssistantIdx, {
           messageOverride: finalAnswerMessage,
+          keepModel: true,
           writtenFiles: getTurnWrittenFiles(finalAssistant, messages.slice(userIdx + 1, finalAssistantIdx + 1), toolResultsMap, messageCwd),
           // A cut-off last answer offers compaction in place (upstream).
           recoverTruncation: endIdx === messages.length && !streamActive && !hasAssistantAnswer(finalAnswerMessage),
@@ -1227,7 +1296,7 @@ export function ChatWindow({ session, workspaceKind, newSessionCwd, onAgentEnd, 
       </>
     );
   }, [
-    messages, activeToolResults, hasEarlierMessages, pendingSearchScroll, searchBlock, onOpenSession, entryIds, streamActive, sessionBusy, isNew, forkingEntryId,
+    messages, activeToolResults, hasEarlierMessages, pendingSearchScroll, pendingScrollRestore, searchBlock, onOpenSession, entryIds, streamActive, sessionBusy, isNew, forkingEntryId,
     modelNames, messageCwd, openFile, stableHandleEditContent, cancelEdit, editEntryId,
     stableHandleFork, sessionIdForViews, handleCompact, isCompacting, compactError, onOpenSettings, openModelSettings,
     visibleCount, t, sessionIdRef, setSentinelNode, messageKeys,
